@@ -35,40 +35,38 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Brand, Collection } from "@/types";
+import { useUiStore } from "@/stores/ui-store";
+import type { Collection } from "@/types";
 
 const schema = z.object({
   name: z.string().min(1, "Enter a product name."),
   style_number: z.string().optional(),
-  brand_id: z.string().optional(),
   collection_id: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
 
 export function CreateProductDialog({
-  brands = [],
   collections = [],
 }: {
-  brands?: Brand[];
   collections?: Collection[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const activeBrandId = useUiStore((s) => s.activeBrandId);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       name: "",
       style_number: "",
-      brand_id: "",
       collection_id: "",
     },
   });
 
-  const selectedBrandId = form.watch("brand_id");
-  const filteredCollections = selectedBrandId
-    ? collections.filter((c) => c.brand_id === selectedBrandId)
+  const activeCollections = activeBrandId
+    ? collections.filter((c) => c.brand_id === activeBrandId)
     : collections;
 
   function onSubmit(values: FormValues) {
@@ -77,7 +75,7 @@ export function CreateProductDialog({
         const result = await createProduct({
           name: values.name,
           style_number: values.style_number,
-          brand_id: values.brand_id || undefined,
+          brand_id: activeBrandId ?? undefined,
           collection_id: values.collection_id || undefined,
         });
         toast.success("Product created.");
@@ -135,39 +133,7 @@ export function CreateProductDialog({
                 </FormItem>
               )}
             />
-            {brands.length > 0 && (
-              <FormField
-                control={form.control}
-                name="brand_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Brand (optional)</FormLabel>
-                    <Select
-                      onValueChange={(val) => {
-                        field.onChange(val);
-                        form.setValue("collection_id", "");
-                      }}
-                      value={field.value ?? ""}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {brands.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-            {filteredCollections.length > 0 && (
+            {activeCollections.length > 0 && (
               <FormField
                 control={form.control}
                 name="collection_id"
@@ -184,7 +150,7 @@ export function CreateProductDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {filteredCollections.map((c) => (
+                        {activeCollections.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name}
                           </SelectItem>

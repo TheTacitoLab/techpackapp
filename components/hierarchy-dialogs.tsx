@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -14,7 +14,9 @@ import {
   createSeason,
   deleteBrand,
   deleteCollection,
+  renameBrand,
 } from "@/app/(app)/dashboard/actions";
+import { useUiStore } from "@/stores/ui-store";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -445,5 +447,183 @@ export function DeleteCollectionButton({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+// ---- Rename Brand dialog -----------------------------------------------------
+
+export function RenameBrandDialog({ id, name }: { id: string; name: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const form = useForm<z.infer<typeof brandSchema>>({
+    resolver: zodResolver(brandSchema),
+    defaultValues: { name },
+  });
+
+  function onSubmit(values: z.infer<typeof brandSchema>) {
+    startTransition(async () => {
+      try {
+        await renameBrand(id, values.name);
+        toast.success("Brand renamed.");
+        setOpen(false);
+        router.refresh();
+      } catch {
+        toast.error("Could not rename brand.");
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-6 shrink-0">
+          <Pencil className="size-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename brand</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Brand name</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---- Create Collection (simple — uses activeBrandId from Zustand) ------------
+
+const collectionSimpleSchema = z.object({
+  name: z.string().min(1, "Enter a collection name."),
+  season_id: z.string().optional(),
+});
+
+export function CreateCollectionDialogSimple({
+  seasons = [],
+  trigger,
+}: {
+  seasons?: Season[];
+  trigger?: React.ReactNode;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const activeBrandId = useUiStore((s) => s.activeBrandId);
+
+  const form = useForm<z.infer<typeof collectionSimpleSchema>>({
+    resolver: zodResolver(collectionSimpleSchema),
+    defaultValues: { name: "", season_id: "" },
+  });
+
+  function onSubmit(values: z.infer<typeof collectionSimpleSchema>) {
+    if (!activeBrandId) {
+      toast.error("No active brand selected. Go to Settings to set one.");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await createCollection({
+          name: values.name,
+          brand_id: activeBrandId,
+          season_id: values.season_id || undefined,
+        });
+        toast.success("Collection created.");
+        setOpen(false);
+        form.reset();
+        router.refresh();
+      } catch {
+        toast.error("Could not create collection.");
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {trigger ?? (
+          <Button variant="outline" size="sm">
+            <Plus className="size-3.5" />
+            New collection
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create a collection</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Collection name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. Core Range SS26" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {seasons.length > 0 && (
+              <FormField
+                control={form.control}
+                name="season_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Season (optional)</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value ?? ""}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="No season" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {seasons.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name} {s.year}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+            <DialogFooter>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Creating…" : "Create collection"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 }
