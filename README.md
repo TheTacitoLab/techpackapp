@@ -113,8 +113,13 @@ proxy.ts              # Next.js 16 proxy (route protection + session refresh)
 - Route protection lives in `proxy.ts` (Next.js 16 renamed `middleware` →
   `proxy`). Unauthenticated users hitting app routes are sent to `/login`;
   authenticated users on auth routes are sent to `/dashboard`.
-- `/reset-password` sends the reset email; the update-password callback page is
-  a later phase.
+- Email sign-up confirmation routes through `app/auth/callback` (exchanges the
+  PKCE code for a session). In **Supabase → Auth → URL Configuration**, set the
+  **Site URL** to your deployed origin and add `<origin>/**` to **Redirect
+  URLs** (include `http://localhost:3000/**` for local dev). To skip the email
+  step in V1, turn off **Confirm email** in Auth → Providers → Email.
+- `/reset-password` sends the reset email; the update-password page is a later
+  phase.
 - Deferred to later phases (not built here): canvas/Konva, BOM, measurements,
   construction/labels, PDF export, factory portal, versioning, billing,
   Stripe/Resend/PostHog.

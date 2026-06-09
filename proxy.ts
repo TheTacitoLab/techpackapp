@@ -14,6 +14,12 @@ export async function proxy(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
 
+  // The auth callback (email confirmation / recovery) must always run so it can
+  // exchange the code for a session — never gate or redirect it.
+  if (pathname.startsWith("/auth/")) {
+    return supabaseResponse;
+  }
+
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
 
   if (!user && !isAuthRoute) {
