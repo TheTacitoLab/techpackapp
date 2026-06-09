@@ -1,0 +1,182 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { MoreHorizontal } from "lucide-react";
+import { toast } from "sonner";
+
+import {
+  archiveProduct,
+  duplicateProduct,
+  unarchiveProduct,
+} from "@/app/(app)/dashboard/actions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { Product, SectionStatus } from "@/types";
+
+const STATUS_LABELS: Record<Product["status"], string> = {
+  draft: "Draft",
+  in_review: "In Review",
+  sent_to_factory: "Sent to Factory",
+  sample_received: "Sample Received",
+  approved: "Approved",
+  in_production: "In Production",
+};
+
+const STATUS_VARIANT: Record<
+  Product["status"],
+  "default" | "secondary" | "outline" | "destructive"
+> = {
+  draft: "secondary",
+  in_review: "outline",
+  sent_to_factory: "outline",
+  sample_received: "outline",
+  approved: "default",
+  in_production: "default",
+};
+
+function CompactProgress({
+  statuses,
+}: {
+  statuses: SectionStatus[];
+}) {
+  const total = statuses.length;
+  const done = statuses.filter((s) => s === "complete").length;
+  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
+        <div
+          className="bg-primary h-full rounded-full transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-muted-foreground text-xs whitespace-nowrap">
+        {done}/{total}
+      </span>
+    </div>
+  );
+}
+
+export function ProductCard({
+  product,
+  brandName,
+  sectionStatuses,
+}: {
+  product: Product;
+  brandName: string | null;
+  sectionStatuses: SectionStatus[];
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isArchived = product.archived_at !== null;
+
+  function handleDuplicate() {
+    startTransition(async () => {
+      try {
+        const { id } = await duplicateProduct(product.id);
+        toast.success("Product duplicated.");
+        router.push(`/products/${id}`);
+      } catch {
+        toast.error("Could not duplicate product.");
+      }
+    });
+  }
+
+  function handleArchiveToggle() {
+    startTransition(async () => {
+      try {
+        if (isArchived) {
+          await unarchiveProduct(product.id);
+          toast.success("Product unarchived.");
+        } else {
+          await archiveProduct(product.id);
+          toast.success("Product archived.");
+        }
+        router.refresh();
+      } catch {
+        toast.error("Could not update product.");
+      }
+    });
+  }
+
+  return (
+    <div className="bg-card group relative flex flex-col overflow-hidden rounded-xl border transition-shadow hover:shadow-md">
+      {/* Thumbnail placeholder */}
+      <div className="bg-muted/40 flex h-36 items-center justify-center border-b">
+        <span className="text-muted-foreground/30 text-4xl font-bold select-none">
+          {product.name.slice(0, 2).toUpperCase()}
+        </span>
+      </div>
+
+      {/* Card body */}
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <Link
+              href={`/products/${product.id}`}
+              className="hover:text-primary line-clamp-1 font-medium transition-colors"
+            >
+              {product.name}
+            </Link>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {product.style_number ? (
+                <span>#{product.style_number}</span>
+              ) : (
+                <span className="italic">No style #</span>
+              )}
+            </p>
+          </div>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                disabled={isPending}
+                aria-label="Product actions"
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <Link href={`/products/${product.id}`}>Open</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDuplicate}>
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleArchiveToggle}
+                className={isArchived ? "" : "text-destructive focus:text-destructive"}
+              >
+                {isArchived ? "Unarchive" : "Archive"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted-foreground text-xs">
+            {brandName ?? <span className="italic">Unassigned</span>}
+          </span>
+          <Badge variant={STATUS_VARIANT[product.status]} className="text-xs">
+            {STATUS_LABELS[product.status]}
+          </Badge>
+        </div>
+
+        <CompactProgress statuses={sectionStatuses} />
+      </div>
+    </div>
+  );
+}

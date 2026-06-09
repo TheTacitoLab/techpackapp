@@ -4,22 +4,21 @@ import type { User } from "@supabase/supabase-js";
 import { AppNav } from "@/components/app-nav";
 import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/user-menu";
-import type { Profile, Workspace } from "@/types";
+import type { Brand, Collection, Profile, Workspace } from "@/types";
 
-/**
- * The authenticated frame: ~280px left sidebar (logo, nav, workspace name at
- * the bottom) + top bar + main content area. Server-rendered; only the user
- * menu and nav highlighting are client islands.
- */
 export function AppShell({
   user,
   profile,
   workspace,
+  brands,
+  collections,
   children,
 }: {
   user: User;
   profile: Profile;
   workspace: Workspace | null;
+  brands?: Brand[];
+  collections?: Collection[];
   children: React.ReactNode;
 }) {
   return (
@@ -32,8 +31,8 @@ export function AppShell({
           <span className="text-lg font-semibold tracking-tight">TechPack</span>
         </div>
         <Separator />
-        <nav className="flex-1 px-3 py-4">
-          <AppNav />
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          <AppNav brands={brands} collections={collections} />
         </nav>
         <Separator />
         <div className="px-6 py-4">
