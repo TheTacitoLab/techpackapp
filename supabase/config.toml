@@ -1,0 +1,8 @@
+# Minimal Supabase CLI config. Run `supabase init` to regenerate a full file if
+# your CLI version wants more sections — the CLI fills sensible defaults for any
+# omitted ones. The important bit here is the seed path used by `db reset`.
+project_id = "techpackapp"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
