@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0002 — Functions and triggers
+-- 0002 — Functions and triggers (idempotent / safe to re-run)
 -- ============================================================================
 
 -- ---- Caller's workspace_id (RLS-safe; never recurses) ------------------------
@@ -33,6 +33,7 @@ begin
 end;
 $$;
 
+drop trigger if exists trg_products_updated_at on public.products;
 create trigger trg_products_updated_at
   before update on public.products
   for each row execute function public.set_updated_at();
@@ -74,6 +75,7 @@ begin
 end;
 $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
