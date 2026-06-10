@@ -9,6 +9,8 @@ export type Collection = Tables<"collections">;
 export type Product = Tables<"products">;
 export type SectionTemplate = Tables<"section_templates">;
 export type ProductSection = Tables<"product_sections">;
+export type Label = Tables<"labels">;
+export type ProductLabel = Tables<"product_labels">;
 
 // Enum aliases
 export type UserRole = Enums<"user_role">;

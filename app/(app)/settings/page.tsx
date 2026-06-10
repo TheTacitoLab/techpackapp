@@ -1,6 +1,7 @@
-import { CreditCard, Download, Palette, RefreshCw, Users } from "lucide-react";
+import { CreditCard, Download, Palette, RefreshCw, Tag, Users } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { LabelsManager } from "@/components/labels-manager";
 import { SectionCard } from "@/components/section-card";
 import { SettingsBrandsClient } from "@/components/settings-brands-client";
 import { SettingsBrandSwitcher } from "@/components/settings-brand-switcher";
@@ -18,6 +19,8 @@ export default async function SettingsPage() {
     { data: brands },
     { data: seasons },
     { data: products },
+    { data: labels },
+    { data: productLabels },
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -30,7 +33,18 @@ export default async function SettingsPage() {
       .select("brand_id")
       .eq("workspace_id", wsId)
       .not("brand_id", "is", null),
+    supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
+    supabase.from("product_labels").select("label_id"),
   ]);
+
+  const labelUsage = new Map<string, number>();
+  for (const pl of productLabels ?? []) {
+    labelUsage.set(pl.label_id, (labelUsage.get(pl.label_id) ?? 0) + 1);
+  }
+  const labelsWithUsage = (labels ?? []).map((l) => ({
+    ...l,
+    usageCount: labelUsage.get(l.id) ?? 0,
+  }));
 
   const productCountByBrand = new Map<string, number>();
   for (const p of products ?? []) {
@@ -65,6 +79,10 @@ export default async function SettingsPage() {
 
       <SectionCard title="Switch Active Brand" icon={<RefreshCw />}>
         <SettingsBrandSwitcher brands={brandsWithCounts} />
+      </SectionCard>
+
+      <SectionCard title="Labels" icon={<Tag />}>
+        <LabelsManager labels={labelsWithUsage} />
       </SectionCard>
 
       <SectionCard title="Team Members" icon={<Users />}>

@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Product, SectionStatus } from "@/types";
 
+type CardLabel = { id: string; name: string; color: string };
+
 const STATUS_LABELS: Record<Product["status"], string> = {
   draft: "Draft",
   in_review: "In Review",
@@ -70,10 +72,12 @@ export function ProductCard({
   product,
   brandName,
   sectionStatuses,
+  labels = [],
 }: {
   product: Product;
   brandName: string | null;
   sectionStatuses: SectionStatus[];
+  labels?: CardLabel[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -124,7 +128,7 @@ export function ProductCard({
           <div className="min-w-0 flex-1">
             <Link
               href={`/products/${product.id}`}
-              className="hover:text-primary line-clamp-1 font-medium transition-colors"
+              className="hover:text-primary line-clamp-1 cursor-pointer font-medium transition-colors"
             >
               {product.name}
             </Link>
@@ -174,6 +178,28 @@ export function ProductCard({
             {STATUS_LABELS[product.status]}
           </Badge>
         </div>
+
+        {labels.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {labels.slice(0, 3).map((label) => (
+              <span
+                key={label.id}
+                className="bg-muted/60 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+              >
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: label.color }}
+                />
+                <span className="max-w-[8rem] truncate">{label.name}</span>
+              </span>
+            ))}
+            {labels.length > 3 && (
+              <span className="text-muted-foreground text-xs">
+                +{labels.length - 3} more
+              </span>
+            )}
+          </div>
+        )}
 
         <CompactProgress statuses={sectionStatuses} />
       </div>

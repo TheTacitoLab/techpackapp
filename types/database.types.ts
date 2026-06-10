@@ -243,6 +243,51 @@ export type Database = {
         };
         Relationships: [];
       };
+      labels: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          name: string;
+          color: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          name: string;
+          color: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          name?: string;
+          color?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      product_labels: {
+        Row: {
+          id: string;
+          product_id: string;
+          label_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          label_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          product_id?: string;
+          label_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -254,7 +299,7 @@ export type Database = {
       };
     };
     Enums: {
-      user_role: "owner" | "editor" | "viewer" | "factory";
+      user_role: "admin" | "designer" | "approver" | "viewer" | "factory";
       product_status:
         | "draft"
         | "in_review"

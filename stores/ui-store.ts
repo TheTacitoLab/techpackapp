@@ -37,3 +37,7 @@ export const useUiStore = create<UiState>()(
     { name: "techpack-ui" },
   ),
 );
+
+// Convenience selectors for the active-brand context.
+export const useActiveBrand = () => useUiStore((s) => s.activeBrandId);
+export const useSetActiveBrand = () => useUiStore((s) => s.setActiveBrandId);

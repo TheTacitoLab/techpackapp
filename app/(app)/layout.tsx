@@ -32,7 +32,6 @@ export default async function AppLayout({
         user={ctx.user}
         profile={ctx.profile}
         workspace={ctx.workspace}
-        brands={brands ?? []}
         collections={collections ?? []}
       >
         {children}

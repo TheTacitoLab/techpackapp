@@ -7,7 +7,6 @@ import { CreateCollectionDialogSimple } from "@/components/hierarchy-dialogs";
 import { CreateProductDialog } from "@/components/create-product-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { ProductCard } from "@/components/product-card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,9 +17,18 @@ import {
 } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useUiStore } from "@/stores/ui-store";
-import type { Brand, Collection, Product, Season, SectionStatus } from "@/types";
+import type {
+  Brand,
+  Collection,
+  Label,
+  Product,
+  Season,
+  SectionStatus,
+} from "@/types";
 
 type SectionSummary = { product_id: string; status: SectionStatus };
+type ProductLabelLink = { product_id: string; label_id: string };
+type CardLabel = { id: string; name: string; color: string };
 
 const PRODUCT_STATUSES = [
   { value: "draft", label: "Draft" },
@@ -38,6 +46,8 @@ export function DashboardClient({
   collections,
   products,
   sections,
+  labels,
+  productLabels,
 }: {
   workspaceName: string | null;
   brands: Brand[];
@@ -45,13 +55,15 @@ export function DashboardClient({
   collections: Collection[];
   products: Product[];
   sections: SectionSummary[];
+  labels: Label[];
+  productLabels: ProductLabelLink[];
 }) {
-  const { activeCollectionId, setActiveCollectionId, showArchived, setShowArchived } = useUiStore();
+  const { activeBrandId, activeCollectionId, setActiveCollectionId, showArchived, setShowArchived } =
+    useUiStore();
 
   const [searchInput, setSearchInput] = useState("");
-  const [selectedBrand, setSelectedBrand] = useState("all");
-  const [selectedSeason, setSelectedSeason] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [labelFilter, setLabelFilter] = useState<string>("all");
 
   const search = useDebounce(searchInput);
 
@@ -60,11 +72,12 @@ export function DashboardClient({
     [brands],
   );
 
-  const collectionById = useMemo(
-    () => new Map(collections.map((c) => [c.id, c])),
-    [collections],
+  const labelById = useMemo(
+    () => new Map(labels.map((l) => [l.id, l])),
+    [labels],
   );
 
+  // product_id → completion statuses
   const sectionStatusMap = useMemo(() => {
     const map = new Map<string, SectionStatus[]>();
     for (const s of sections) {
@@ -75,33 +88,56 @@ export function DashboardClient({
     return map;
   }, [sections]);
 
-  const filteredCollections =
-    selectedBrand !== "all"
-      ? collections.filter((c) => c.brand_id === selectedBrand)
-      : collections;
+  // product_id → resolved labels
+  const labelsByProduct = useMemo(() => {
+    const map = new Map<string, CardLabel[]>();
+    for (const pl of productLabels) {
+      const label = labelById.get(pl.label_id);
+      if (!label) continue;
+      const arr = map.get(pl.product_id) ?? [];
+      arr.push({ id: label.id, name: label.name, color: label.color });
+      map.set(pl.product_id, arr);
+    }
+    return map;
+  }, [productLabels, labelById]);
+
+  // product_id → set of label ids (for filtering)
+  const labelIdsByProduct = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const pl of productLabels) {
+      const set = map.get(pl.product_id) ?? new Set<string>();
+      set.add(pl.label_id);
+      map.set(pl.product_id, set);
+    }
+    return map;
+  }, [productLabels]);
+
+  const brandCollections = activeBrandId
+    ? collections.filter((c) => c.brand_id === activeBrandId)
+    : collections;
 
   const filtered = useMemo(() => {
     let result = products.filter((p) =>
       showArchived ? p.archived_at !== null : p.archived_at === null,
     );
 
+    // Brand context comes from the Zustand store (set in Settings only).
+    if (activeBrandId) {
+      result = result.filter((p) => p.brand_id === activeBrandId);
+    }
+
     if (activeCollectionId) {
       result = result.filter((p) => p.collection_id === activeCollectionId);
-    } else {
-      if (selectedBrand !== "all") {
-        result = result.filter((p) => p.brand_id === selectedBrand);
-      }
-      if (selectedSeason !== "all") {
-        result = result.filter((p) => {
-          if (!p.collection_id) return false;
-          const col = collectionById.get(p.collection_id);
-          return col?.season_id === selectedSeason;
-        });
-      }
     }
 
     if (selectedStatus !== "all") {
       result = result.filter((p) => p.status === selectedStatus);
+    }
+
+    if (labelFilter !== "all") {
+      result = result.filter((p) =>
+        labelIdsByProduct.get(p.id)?.has(labelFilter),
+      );
     }
 
     if (search) {
@@ -109,15 +145,7 @@ export function DashboardClient({
       result = result.filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
-          (p.style_number ?? "").toLowerCase().includes(q) ||
-          (p.brand_id
-            ? (brandById.get(p.brand_id) ?? "").toLowerCase().includes(q)
-            : false) ||
-          (p.collection_id
-            ? (collectionById.get(p.collection_id)?.name ?? "")
-                .toLowerCase()
-                .includes(q)
-            : false),
+          (p.style_number ?? "").toLowerCase().includes(q),
       );
     }
 
@@ -125,13 +153,12 @@ export function DashboardClient({
   }, [
     products,
     showArchived,
+    activeBrandId,
     activeCollectionId,
-    selectedBrand,
-    selectedSeason,
     selectedStatus,
+    labelFilter,
+    labelIdsByProduct,
     search,
-    brandById,
-    collectionById,
   ]);
 
   const hasAnyProducts = products.length > 0;
@@ -149,7 +176,7 @@ export function DashboardClient({
         </div>
         <div className="flex items-center gap-2">
           <CreateCollectionDialogSimple seasons={seasons} />
-          <CreateProductDialog collections={collections} />
+          <CreateProductDialog collections={brandCollections} />
         </div>
       </div>
 
@@ -166,65 +193,21 @@ export function DashboardClient({
             />
           </div>
 
-          {brands.length > 0 && (
-            <Select value={selectedBrand} onValueChange={setSelectedBrand}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="All brands" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All brands</SelectItem>
-                {brands.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          {filteredCollections.length > 0 && !activeCollectionId && (
+          {brandCollections.length > 0 && (
             <Select
-              value="all"
-              onValueChange={(v) => {
-                if (v !== "all") setActiveCollectionId(v);
-              }}
+              value={activeCollectionId ?? "all"}
+              onValueChange={(v) =>
+                setActiveCollectionId(v === "all" ? null : v)
+              }
             >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="All collections" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All collections</SelectItem>
-                {filteredCollections.map((c) => (
+                {brandCollections.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          {activeCollectionId && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setActiveCollectionId(null)}
-              className="gap-1.5"
-            >
-              {collectionById.get(activeCollectionId)?.name ?? "Collection"}
-              <span className="text-muted-foreground">×</span>
-            </Button>
-          )}
-
-          {seasons.length > 0 && (
-            <Select value={selectedSeason} onValueChange={setSelectedSeason}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="All seasons" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All seasons</SelectItem>
-                {seasons.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name} {s.year}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -244,6 +227,28 @@ export function DashboardClient({
               ))}
             </SelectContent>
           </Select>
+
+          {labels.length > 0 && (
+            <Select value={labelFilter} onValueChange={setLabelFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="All labels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All labels</SelectItem>
+                {labels.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{ backgroundColor: l.color }}
+                      />
+                      {l.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       )}
 
@@ -252,7 +257,7 @@ export function DashboardClient({
         <div className="flex">
           <button
             onClick={() => setShowArchived(!showArchived)}
-            className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-sm transition-colors"
+            className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-1.5 text-sm transition-colors"
           >
             <Archive className="size-3.5" />
             {showArchived ? "Hide archived" : "Show archived"}
@@ -266,7 +271,7 @@ export function DashboardClient({
           icon={PackagePlus}
           title="No products yet"
           description="Create your first tech pack to start building modular, factory-ready sections."
-          action={<CreateProductDialog collections={collections} />}
+          action={<CreateProductDialog collections={brandCollections} />}
         />
       )}
 
@@ -274,7 +279,9 @@ export function DashboardClient({
         <EmptyState
           icon={PackagePlus}
           title={
-            showArchived ? "No archived products" : "No products match your filters"
+            showArchived
+              ? "No archived products"
+              : "No products match your filters"
           }
           description={
             showArchived
@@ -297,6 +304,7 @@ export function DashboardClient({
                   : null
               }
               sectionStatuses={sectionStatusMap.get(product.id) ?? []}
+              labels={labelsByProduct.get(product.id) ?? []}
             />
           ))}
         </div>

@@ -62,6 +62,7 @@ export async function createProduct(input: CreateProductInput) {
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/products");
   return { id: product.id };
 }
 
@@ -90,6 +91,7 @@ export async function createBrand(input: z.input<typeof brandSchema>) {
     .single();
   if (error || !data) throw new Error(error?.message ?? "Could not create brand.");
   revalidatePath("/dashboard");
+  revalidatePath("/products");
   return { id: data.id };
 }
 
@@ -104,6 +106,7 @@ export async function renameBrand(id: string, name: string) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 export async function deleteBrand(id: string) {
@@ -117,6 +120,7 @@ export async function deleteBrand(id: string) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 export async function createSeason(input: z.input<typeof seasonSchema>) {
@@ -131,6 +135,7 @@ export async function createSeason(input: z.input<typeof seasonSchema>) {
     .single();
   if (error || !data) throw new Error(error?.message ?? "Could not create season.");
   revalidatePath("/dashboard");
+  revalidatePath("/products");
   return { id: data.id };
 }
 
@@ -145,6 +150,7 @@ export async function renameSeason(id: string, name: string, year: number) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 export async function deleteSeason(id: string) {
@@ -158,6 +164,7 @@ export async function deleteSeason(id: string) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 export async function createCollection(
@@ -180,6 +187,7 @@ export async function createCollection(
   if (error || !data)
     throw new Error(error?.message ?? "Could not create collection.");
   revalidatePath("/dashboard");
+  revalidatePath("/products");
   return { id: data.id };
 }
 
@@ -194,6 +202,7 @@ export async function renameCollection(id: string, name: string) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 export async function deleteCollection(id: string) {
@@ -207,6 +216,7 @@ export async function deleteCollection(id: string) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 // ---- Product quick-actions ---------------------------------------------------
@@ -259,6 +269,7 @@ export async function duplicateProduct(id: string) {
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/products");
   return { id: copy.id };
 }
 
@@ -273,6 +284,7 @@ export async function archiveProduct(id: string) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 export async function unarchiveProduct(id: string) {
@@ -286,6 +298,7 @@ export async function unarchiveProduct(id: string) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
 }
 
 export async function updateProductStatus(id: string, status: ProductStatus) {
@@ -299,5 +312,6 @@ export async function updateProductStatus(id: string, status: ProductStatus) {
     .eq("workspace_id", ctx.profile.workspace_id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
+  revalidatePath("/products");
   revalidatePath(`/products/${id}`);
 }

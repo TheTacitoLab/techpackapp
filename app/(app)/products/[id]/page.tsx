@@ -3,12 +3,13 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { CollapsibleSection } from "@/components/collapsible-section";
+import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
 import { ProgressTracker } from "@/components/progress-tracker";
 import { SectionIcon } from "@/components/section-icon";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { ResolvedSection, SectionStatus } from "@/types";
+import type { Label, ResolvedSection, SectionStatus } from "@/types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -35,6 +36,8 @@ export default async function ProductDetailPage({ params }: PageProps) {
     { data: templates },
     brandResult,
     collectionResult,
+    { data: workspaceLabels },
+    { data: assignedRows },
   ] = await Promise.all([
     supabase
       .from("product_sections")
@@ -53,10 +56,21 @@ export default async function ProductDetailPage({ params }: PageProps) {
           .eq("id", product.collection_id)
           .single()
       : Promise.resolve({ data: null }),
+    supabase
+      .from("labels")
+      .select("*")
+      .eq("workspace_id", ctx.profile.workspace_id)
+      .order("name"),
+    supabase
+      .from("product_labels")
+      .select("label_id")
+      .eq("product_id", product.id),
   ]);
 
   const brand = brandResult.data;
   const collection = collectionResult.data;
+  const labels: Label[] = workspaceLabels ?? [];
+  const assignedIds = (assignedRows ?? []).map((r) => r.label_id);
 
   const templateByKey = new Map((templates ?? []).map((t) => [t.key, t]));
   const resolved: ResolvedSection[] = (sections ?? []).map((section) => {
@@ -66,28 +80,23 @@ export default async function ProductDetailPage({ params }: PageProps) {
   const statuses: SectionStatus[] = resolved.map((s) => s.status);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6 px-6 py-6">
       {/* Breadcrumb */}
       <nav className="text-muted-foreground flex items-center gap-1 text-sm">
-        <Link href="/dashboard" className="hover:text-foreground transition-colors">
+        <Link href="/products" className="hover:text-foreground transition-colors">
           Products
         </Link>
         {brand && (
           <>
             <ChevronRight className="size-3.5" />
-            <Link
-              href={`/dashboard?brand=${brand.id}`}
-              className="hover:text-foreground transition-colors"
-            >
-              {brand.name}
-            </Link>
+            <span>{brand.name}</span>
           </>
         )}
         {collection && (
           <>
             <ChevronRight className="size-3.5" />
             <Link
-              href={`/dashboard?collection=${collection.id}`}
+              href="/products"
               className="hover:text-foreground transition-colors"
             >
               {collection.name}
@@ -108,6 +117,12 @@ export default async function ProductDetailPage({ params }: PageProps) {
         </div>
         <ProductStatusControl productId={product.id} currentStatus={product.status} />
       </div>
+
+      <ProductLabels
+        productId={product.id}
+        labels={labels}
+        assignedIds={assignedIds}
+      />
 
       <ProgressTracker statuses={statuses} />
 
