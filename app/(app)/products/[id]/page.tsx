@@ -83,7 +83,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
       {/* Sticky workspace header: compact breadcrumb bar + slim progress row.
           Stays pinned so the product name, labels, status, and progress remain
           visible while scrolling through long tech-pack sections. */}
-      <div className="bg-background sticky top-0 z-10 border-b">
+      <div className="bg-background sticky top-0 z-10">
         {/* Compact header bar — single line on desktop */}
         <div className="flex h-14 items-center justify-between gap-4 px-6">
           <nav className="text-muted-foreground flex min-w-0 items-center gap-1.5 overflow-hidden text-sm whitespace-nowrap">
