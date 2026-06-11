@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Plus, Tag, X } from "lucide-react";
+import { Check, Plus, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -41,6 +41,13 @@ export function ProductLabels({
   const assigned = new Set(assignedIds);
   const assignedLabels = labels.filter((l) => assigned.has(l.id));
 
+  // Compact display: at most three chips inline, the rest collapsed into a
+  // "+N" counter. Removal lives in the popover (toggling an assigned label),
+  // so the header chips stay dense and read-only.
+  const MAX_VISIBLE = 3;
+  const visibleLabels = assignedLabels.slice(0, MAX_VISIBLE);
+  const overflowCount = assignedLabels.length - visibleLabels.length;
+
   function toggle(labelId: string) {
     const isAssigned = assigned.has(labelId);
     startTransition(async () => {
@@ -58,43 +65,38 @@ export function ProductLabels({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {assignedLabels.map((label) => (
+    <div className="flex items-center gap-1.5">
+      {visibleLabels.map((label) => (
         <span
           key={label.id}
-          className="bg-muted/60 inline-flex items-center gap-1.5 rounded-full py-1 pr-1 pl-2.5 text-xs"
+          className="bg-muted/60 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
         >
           <span
-            className="size-2.5 shrink-0 rounded-full"
+            className="size-2 shrink-0 rounded-full"
             style={{ backgroundColor: label.color }}
           />
-          <span className="max-w-[10rem] truncate">{label.name}</span>
-          <button
-            type="button"
-            onClick={() => toggle(label.id)}
-            disabled={isPending}
-            aria-label={`Remove ${label.name}`}
-            className="text-muted-foreground hover:text-foreground flex size-4 cursor-pointer items-center justify-center rounded-full transition-colors"
-          >
-            <X className="size-3" />
-          </button>
+          <span className="max-w-[7rem] truncate">{label.name}</span>
         </span>
       ))}
 
+      {overflowCount > 0 && (
+        <span className="text-muted-foreground text-xs">+{overflowCount}</span>
+      )}
+
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-1.5">
+          <Button variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs">
             {assignedLabels.length === 0 ? (
               <>
                 <Tag className="size-3.5" />
-                Add labels
+                Label
               </>
             ) : (
               <Plus className="size-3.5" />
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-64 p-0" align="start">
+        <PopoverContent className="w-64 p-0" align="end">
           <Command>
             <CommandInput placeholder="Search labels…" />
             <CommandList>

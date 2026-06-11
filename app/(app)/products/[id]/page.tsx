@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
 
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { ProductLabels } from "@/components/product-labels";
@@ -80,53 +79,67 @@ export default async function ProductDetailPage({ params }: PageProps) {
   const statuses: SectionStatus[] = resolved.map((s) => s.status);
 
   return (
-    <div className="space-y-6 px-6 py-6">
-      {/* Breadcrumb */}
-      <nav className="text-muted-foreground flex items-center gap-1 text-sm">
-        <Link href="/products" className="hover:text-foreground transition-colors">
-          Products
-        </Link>
-        {brand && (
-          <>
-            <ChevronRight className="size-3.5" />
-            <span>{brand.name}</span>
-          </>
-        )}
-        {collection && (
-          <>
-            <ChevronRight className="size-3.5" />
+    <div className="flex flex-col">
+      {/* Sticky workspace header: compact breadcrumb bar + slim progress row.
+          Stays pinned so the product name, labels, status, and progress remain
+          visible while scrolling through long tech-pack sections. */}
+      <div className="bg-background sticky top-0 z-10 border-b">
+        {/* Compact header bar — single line on desktop */}
+        <div className="flex h-14 items-center justify-between gap-4 px-6">
+          <nav className="text-muted-foreground flex min-w-0 items-center gap-1.5 overflow-hidden text-sm whitespace-nowrap">
             <Link
               href="/products"
-              className="hover:text-foreground transition-colors"
+              className="hover:text-foreground shrink-0 transition-colors"
             >
-              {collection.name}
+              Products
             </Link>
-          </>
-        )}
-        <ChevronRight className="size-3.5" />
-        <span className="text-foreground font-medium">{product.name}</span>
-      </nav>
+            {brand && (
+              <>
+                <span className="shrink-0">/</span>
+                <span className="shrink-0">{brand.name}</span>
+              </>
+            )}
+            {collection && (
+              <>
+                <span className="shrink-0">/</span>
+                <Link
+                  href="/products"
+                  className="hover:text-foreground shrink-0 transition-colors"
+                >
+                  {collection.name}
+                </Link>
+              </>
+            )}
+            <span className="shrink-0">/</span>
+            <span className="text-foreground truncate font-semibold">
+              {product.name}
+            </span>
+            <span className="text-muted-foreground shrink-0">
+              {product.style_number ? `· ${product.style_number}` : "· No style #"}
+            </span>
+          </nav>
 
-      {/* Product header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{product.name}</h1>
-          <p className="text-muted-foreground text-sm">
-            {product.style_number ? `Style #${product.style_number}` : "No style number"}
-          </p>
+          <div className="flex shrink-0 items-center gap-3">
+            <ProductLabels
+              productId={product.id}
+              labels={labels}
+              assignedIds={assignedIds}
+            />
+            <ProductStatusControl
+              productId={product.id}
+              currentStatus={product.status}
+            />
+          </div>
         </div>
-        <ProductStatusControl productId={product.id} currentStatus={product.status} />
+
+        {/* Slim progress row */}
+        <div className="flex h-8 items-center px-6 pb-1.5">
+          <ProgressTracker statuses={statuses} className="w-full" />
+        </div>
       </div>
 
-      <ProductLabels
-        productId={product.id}
-        labels={labels}
-        assignedIds={assignedIds}
-      />
-
-      <ProgressTracker statuses={statuses} />
-
-      <div className="space-y-3">
+      {/* Tech-pack sections — given the maximum remaining vertical space */}
+      <div className="space-y-4 px-6 py-4">
         {resolved.map((section, index) => (
           <CollapsibleSection
             key={section.id}
