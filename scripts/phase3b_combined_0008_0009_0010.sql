@@ -1,4 +1,210 @@
 -- ============================================================================
+-- COMBINED Phase 3b migrations: 0008 + 0009 + 0010 (apply in one paste)
+-- Pure ASCII. Idempotent. Requires migrations 0001-0007 already applied.
+-- Wrapped in a single transaction: if anything fails, nothing is committed.
+-- ============================================================================
+begin;
+
+-- >>>>>>>>>> 0008_library_schema.sql >>>>>>>>>>
+-- ============================================================================
+-- 0008 - Master Library schema (idempotent / safe to re-run)
+-- The two-layer reusable component library: a GLOBAL catalogue maintained by
+-- TechPackApp platform admins (fabrics, trims, fasteners, stitch types, ...) plus
+-- a per-WORKSPACE custom layer. Workspaces can hide individual global items via
+-- workspace_library_toggles but can never edit/delete them. RLS lives in 0009;
+-- global seed data (incl. stitch SVGs) lands in 0010.
+-- ============================================================================
+
+-- ---- Enum types --------------------------------------------------------------
+do $$ begin
+  create type public.library_category as enum (
+    'fabric', 'trim', 'fastener', 'elastic', 'stitch_type',
+    'thread', 'label_type', 'print_type', 'packaging', 'interlining'
+  );
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type public.library_source as enum ('global', 'workspace');
+exception when duplicate_object then null;
+end $$;
+
+-- ---- platform_admins ---------------------------------------------------------
+-- TechPackApp staff who may write GLOBAL library rows. Populated manually in
+-- Supabase (service role bypasses RLS); there is no in-app admin route in 3b.
+create table if not exists public.platform_admins (
+  user_id    uuid primary key references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+-- ---- library_items -----------------------------------------------------------
+-- One row per reusable component. `source` discriminates global vs workspace;
+-- the CHECK ties workspace_id to that choice. `properties` holds the
+-- category-specific fields (composition/gsm for fabrics, brand/gauge for zips...)
+-- so categories stay flexible without per-category schemas. `image_url` carries
+-- the stitch-diagram SVG (stored inline as a data URI) for stitch_type rows.
+create table if not exists public.library_items (
+  id           uuid primary key default gen_random_uuid(),
+  category     public.library_category not null,
+  source       public.library_source not null,
+  workspace_id uuid references public.workspaces (id) on delete cascade,
+  name         text not null,
+  description  text,
+  properties   jsonb not null default '{}'::jsonb,
+  image_url    text,
+  is_active    boolean not null default true,
+  created_by   uuid references auth.users (id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  constraint library_items_source_workspace_ck check (
+    (source = 'global'    and workspace_id is null) or
+    (source = 'workspace' and workspace_id is not null)
+  )
+);
+
+-- ---- workspace_library_toggles ----------------------------------------------
+-- Per-workspace hide flag for GLOBAL items. A row with hidden = true removes the
+-- referenced global item from that workspace's resolved library. Absence of a
+-- row means the global item is visible (visible-by-default).
+create table if not exists public.workspace_library_toggles (
+  id              uuid primary key default gen_random_uuid(),
+  workspace_id    uuid not null references public.workspaces (id) on delete cascade,
+  library_item_id uuid not null references public.library_items (id) on delete cascade,
+  hidden          boolean not null default true,
+  created_at      timestamptz not null default now(),
+  unique (workspace_id, library_item_id)
+);
+
+-- ---- Indexes -----------------------------------------------------------------
+create index if not exists idx_library_items_category  on public.library_items (category);
+create index if not exists idx_library_items_workspace on public.library_items (workspace_id);
+create index if not exists idx_library_items_source    on public.library_items (source);
+create index if not exists idx_wl_toggles_workspace    on public.workspace_library_toggles (workspace_id);
+create index if not exists idx_wl_toggles_item         on public.workspace_library_toggles (library_item_id);
+
+-- ---- updated_at maintenance (reuse public.set_updated_at from 0002) ----------
+drop trigger if exists trg_library_items_updated_at on public.library_items;
+create trigger trg_library_items_updated_at
+  before update on public.library_items
+  for each row execute function public.set_updated_at();
+
+-- >>>>>>>>>> 0009_library_rls.sql >>>>>>>>>>
+-- ============================================================================
+-- 0009 - Master Library Row Level Security (idempotent / safe to re-run)
+-- Rules:
+--   library_items
+--     - SELECT: any authenticated user sees ACTIVE global items + their own
+--       workspace's items.
+--     - Workspace items: full CRUD only within the caller's workspace.
+--     - Global items: write (insert/update/delete) only for platform admins.
+--       Written as SEPARATE policies so a normal workspace user can NEVER touch
+--       a global row - neither the workspace policies (they require
+--       source='workspace') nor the global policies (they require
+--       is_platform_admin()) admit a global write by a non-admin.
+--   workspace_library_toggles: full CRUD scoped to the caller's workspace.
+--   platform_admins: members may read their own row (and admins read all);
+--       no authenticated write path - rows are added manually via service role.
+-- All membership checks route through public.auth_workspace_id() (0002) and the
+-- new public.is_platform_admin() so no policy re-queries a table under its own
+-- RLS (no recursion).
+-- ============================================================================
+
+alter table public.platform_admins            enable row level security;
+alter table public.library_items              enable row level security;
+alter table public.workspace_library_toggles  enable row level security;
+
+-- ---- Caller is a platform admin? (RLS-safe; never recurses) ------------------
+-- SECURITY DEFINER + empty search_path so reading platform_admins here bypasses
+-- that table's own RLS, mirroring auth_workspace_id().
+create or replace function public.is_platform_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.platform_admins pa
+    where pa.user_id = (select auth.uid())
+  )
+$$;
+
+grant execute on function public.is_platform_admin() to authenticated;
+
+-- ---- platform_admins ---------------------------------------------------------
+-- Read your own membership; platform admins can read the full roster. No
+-- INSERT/UPDATE/DELETE policies: writes happen via service role in Supabase.
+drop policy if exists "platform_admins_select_self_or_admin" on public.platform_admins;
+create policy "platform_admins_select_self_or_admin"
+  on public.platform_admins for select to authenticated
+  using (user_id = (select auth.uid()) or public.is_platform_admin());
+
+-- ---- library_items: SELECT ---------------------------------------------------
+-- Active global items are visible to everyone; workspace items only to members.
+drop policy if exists "library_items_select_visible" on public.library_items;
+create policy "library_items_select_visible"
+  on public.library_items for select to authenticated
+  using (
+    (source = 'global' and is_active = true)
+    or workspace_id = public.auth_workspace_id()
+  );
+
+-- ---- library_items: workspace writes -----------------------------------------
+-- A member may create/update/delete only their OWN workspace's items. The
+-- source='workspace' guard means these policies can never admit a global row.
+drop policy if exists "library_items_insert_workspace" on public.library_items;
+create policy "library_items_insert_workspace"
+  on public.library_items for insert to authenticated
+  with check (
+    source = 'workspace' and workspace_id = public.auth_workspace_id()
+  );
+
+drop policy if exists "library_items_update_workspace" on public.library_items;
+create policy "library_items_update_workspace"
+  on public.library_items for update to authenticated
+  using (
+    source = 'workspace' and workspace_id = public.auth_workspace_id()
+  )
+  with check (
+    source = 'workspace' and workspace_id = public.auth_workspace_id()
+  );
+
+drop policy if exists "library_items_delete_workspace" on public.library_items;
+create policy "library_items_delete_workspace"
+  on public.library_items for delete to authenticated
+  using (
+    source = 'workspace' and workspace_id = public.auth_workspace_id()
+  );
+
+-- ---- library_items: global writes (platform admins only) ---------------------
+-- Separate policies gated on is_platform_admin(). Combined with the
+-- source='global' guard, only platform admins can write global rows.
+drop policy if exists "library_items_insert_global_admin" on public.library_items;
+create policy "library_items_insert_global_admin"
+  on public.library_items for insert to authenticated
+  with check (source = 'global' and public.is_platform_admin());
+
+drop policy if exists "library_items_update_global_admin" on public.library_items;
+create policy "library_items_update_global_admin"
+  on public.library_items for update to authenticated
+  using (source = 'global' and public.is_platform_admin())
+  with check (source = 'global' and public.is_platform_admin());
+
+drop policy if exists "library_items_delete_global_admin" on public.library_items;
+create policy "library_items_delete_global_admin"
+  on public.library_items for delete to authenticated
+  using (source = 'global' and public.is_platform_admin());
+
+-- ---- workspace_library_toggles ----------------------------------------------
+-- Full CRUD within your workspace; can't toggle on another workspace's behalf.
+drop policy if exists "wl_toggles_all_member" on public.workspace_library_toggles;
+create policy "wl_toggles_all_member"
+  on public.workspace_library_toggles for all to authenticated
+  using (workspace_id = public.auth_workspace_id())
+  with check (workspace_id = public.auth_workspace_id());
+
+-- >>>>>>>>>> 0010_library_seed.sql >>>>>>>>>>
+-- ============================================================================
 -- 0010 - Master Library global seed (idempotent / safe to re-run)
 -- Seeds the activewear default catalogue: every row is source='global',
 -- workspace_id=null, is_active=true, created_by=null. Each insert is guarded by
@@ -342,3 +548,5 @@ where not exists (
   select 1 from public.library_items li
   where li.source = 'global' and li.category = 'interlining'::public.library_category and li.name = v.name
 );
+
+commit;

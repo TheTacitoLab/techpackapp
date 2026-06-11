@@ -1,18 +1,18 @@
 -- ============================================================================
--- 0009 — Master Library Row Level Security (idempotent / safe to re-run)
+-- 0009 - Master Library Row Level Security (idempotent / safe to re-run)
 -- Rules:
 --   library_items
---     • SELECT: any authenticated user sees ACTIVE global items + their own
+--     - SELECT: any authenticated user sees ACTIVE global items + their own
 --       workspace's items.
---     • Workspace items: full CRUD only within the caller's workspace.
---     • Global items: write (insert/update/delete) only for platform admins.
+--     - Workspace items: full CRUD only within the caller's workspace.
+--     - Global items: write (insert/update/delete) only for platform admins.
 --       Written as SEPARATE policies so a normal workspace user can NEVER touch
---       a global row — neither the workspace policies (they require
+--       a global row - neither the workspace policies (they require
 --       source='workspace') nor the global policies (they require
 --       is_platform_admin()) admit a global write by a non-admin.
 --   workspace_library_toggles: full CRUD scoped to the caller's workspace.
 --   platform_admins: members may read their own row (and admins read all);
---       no authenticated write path — rows are added manually via service role.
+--       no authenticated write path - rows are added manually via service role.
 -- All membership checks route through public.auth_workspace_id() (0002) and the
 -- new public.is_platform_admin() so no policy re-queries a table under its own
 -- RLS (no recursion).

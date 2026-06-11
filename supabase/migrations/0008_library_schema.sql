@@ -1,7 +1,7 @@
 -- ============================================================================
--- 0008 — Master Library schema (idempotent / safe to re-run)
+-- 0008 - Master Library schema (idempotent / safe to re-run)
 -- The two-layer reusable component library: a GLOBAL catalogue maintained by
--- TechPackApp platform admins (fabrics, trims, fasteners, stitch types, …) plus
+-- TechPackApp platform admins (fabrics, trims, fasteners, stitch types, ...) plus
 -- a per-WORKSPACE custom layer. Workspaces can hide individual global items via
 -- workspace_library_toggles but can never edit/delete them. RLS lives in 0009;
 -- global seed data (incl. stitch SVGs) lands in 0010.
@@ -32,7 +32,7 @@ create table if not exists public.platform_admins (
 -- ---- library_items -----------------------------------------------------------
 -- One row per reusable component. `source` discriminates global vs workspace;
 -- the CHECK ties workspace_id to that choice. `properties` holds the
--- category-specific fields (composition/gsm for fabrics, brand/gauge for zips…)
+-- category-specific fields (composition/gsm for fabrics, brand/gauge for zips...)
 -- so categories stay flexible without per-category schemas. `image_url` carries
 -- the stitch-diagram SVG (stored inline as a data URI) for stitch_type rows.
 create table if not exists public.library_items (
