@@ -288,6 +288,90 @@ export type Database = {
         };
         Relationships: [];
       };
+      platform_admins: {
+        Row: {
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      library_items: {
+        Row: {
+          id: string;
+          category: Database["public"]["Enums"]["library_category"];
+          source: Database["public"]["Enums"]["library_source"];
+          workspace_id: string | null;
+          name: string;
+          description: string | null;
+          properties: Json;
+          image_url: string | null;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          category: Database["public"]["Enums"]["library_category"];
+          source: Database["public"]["Enums"]["library_source"];
+          workspace_id?: string | null;
+          name: string;
+          description?: string | null;
+          properties?: Json;
+          image_url?: string | null;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          category?: Database["public"]["Enums"]["library_category"];
+          source?: Database["public"]["Enums"]["library_source"];
+          workspace_id?: string | null;
+          name?: string;
+          description?: string | null;
+          properties?: Json;
+          image_url?: string | null;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      workspace_library_toggles: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          library_item_id: string;
+          hidden: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          library_item_id: string;
+          hidden?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          library_item_id?: string;
+          hidden?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -296,6 +380,10 @@ export type Database = {
       auth_workspace_id: {
         Args: Record<PropertyKey, never>;
         Returns: string;
+      };
+      is_platform_admin: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
       };
     };
     Enums: {
@@ -308,6 +396,18 @@ export type Database = {
         | "approved"
         | "in_production";
       section_status: "not_started" | "in_progress" | "complete";
+      library_category:
+        | "fabric"
+        | "trim"
+        | "fastener"
+        | "elastic"
+        | "stitch_type"
+        | "thread"
+        | "label_type"
+        | "print_type"
+        | "packaging"
+        | "interlining";
+      library_source: "global" | "workspace";
     };
     CompositeTypes: {
       [_ in never]: never;

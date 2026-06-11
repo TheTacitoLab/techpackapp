@@ -1,10 +1,20 @@
-import { CreditCard, Download, Palette, RefreshCw, Tag, Users } from "lucide-react";
+import {
+  CreditCard,
+  Download,
+  Library,
+  Palette,
+  RefreshCw,
+  Tag,
+  Users,
+} from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { LabelsManager } from "@/components/labels-manager";
+import { LibraryManager } from "@/components/library-manager";
 import { SectionCard } from "@/components/section-card";
 import { SettingsBrandsClient } from "@/components/settings-brands-client";
 import { SettingsBrandSwitcher } from "@/components/settings-brand-switcher";
+import { getWorkspaceLibrary } from "@/lib/library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -36,6 +46,12 @@ export default async function SettingsPage() {
     supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
     supabase.from("product_labels").select("label_id"),
   ]);
+
+  // Resolved Master Library for this workspace (incl. hidden globals so the
+  // manager can offer a "Hidden" view).
+  const libraryItems = await getWorkspaceLibrary(undefined, {
+    includeHidden: true,
+  });
 
   const labelUsage = new Map<string, number>();
   for (const pl of productLabels ?? []) {
@@ -83,6 +99,10 @@ export default async function SettingsPage() {
 
       <SectionCard title="Labels" icon={<Tag />}>
         <LabelsManager labels={labelsWithUsage} />
+      </SectionCard>
+
+      <SectionCard title="Master Library" icon={<Library />}>
+        <LibraryManager items={libraryItems} />
       </SectionCard>
 
       <SectionCard title="Team Members" icon={<Users />}>
