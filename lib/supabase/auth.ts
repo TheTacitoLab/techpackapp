@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
@@ -14,8 +15,13 @@ export type CurrentUser = {
  * and workspace. Returns null when there is no valid session (or no profile,
  * which would indicate the sign-up trigger has not run). Use in the `(app)`
  * layout guard and to feed `AppShell`.
+ *
+ * Wrapped in React `cache()` so the layout and the page (which both need the
+ * user) share a single `getUser()` round-trip to the Supabase Auth server plus
+ * one profile/workspace query pair per request — instead of repeating those
+ * network calls in every server component that asks for the user.
  */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createClient();
 
   const {
@@ -37,4 +43,4 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     .single();
 
   return { user, profile, workspace: workspace ?? null };
-}
+});

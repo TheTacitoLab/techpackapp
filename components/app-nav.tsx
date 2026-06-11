@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -41,22 +42,32 @@ export function AppNav({
   const isArchivedActive = onProducts && showArchived;
   const isSettingsActive = pathname === "/settings";
 
+  // The products views are reached via buttons (they also set client-side
+  // filter state), so Next can't auto-prefetch them like a <Link>. Warm the
+  // route once on mount so the first click navigates against a cached payload
+  // instead of a cold server round-trip.
+  useEffect(() => {
+    router.prefetch("/products");
+  }, [router]);
+
+  // When already on /products these are pure client-state changes — pushing the
+  // same route would trigger a full server re-render for nothing.
   function goToAllProducts() {
     setActiveCollectionId(null);
     setShowArchived(false);
-    router.push("/products");
+    if (!onProducts) router.push("/products");
   }
 
   function goToArchived() {
     setShowArchived(true);
     setActiveCollectionId(null);
-    router.push("/products");
+    if (!onProducts) router.push("/products");
   }
 
   function goToCollection(id: string) {
     setActiveCollectionId(id);
     setShowArchived(false);
-    router.push("/products");
+    if (!onProducts) router.push("/products");
   }
 
   const itemBase =
