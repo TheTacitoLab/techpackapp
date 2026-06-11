@@ -13,8 +13,8 @@
 --
 -- Stitch types: the 14 stitch_type rows store a distinct 2-colour SVG diagram
 -- (fabric #6B7280, stitch path #C8F000, 120x80 viewBox) inline in image_url as a
--- base64 data URI, built in-SQL from a dollar-quoted SVG literal via
--- encode(convert_to(...,'UTF8'),'base64') with newlines stripped.
+-- pre-computed base64 data URI (data:image/svg+xml;base64,...) stored as a plain
+-- SQL string literal — no dollar-quoting, compatible with all SQL editors.
 -- ============================================================================
 
 -- ---- Category 1 — Fabrics (all carry colours) --------------------------------
@@ -138,59 +138,115 @@ where not exists (
 );
 
 -- ---- Category 5 — Stitch & Seam Types (distinct SVG diagrams in image_url) ----
--- Each image_url is built as: 'data:image/svg+xml;base64,' || <base64 of SVG>.
+-- image_url values are pre-computed base64 data URIs (data:image/svg+xml;base64,...)
+-- stored as plain SQL string literals to avoid dollar-quote tokeniser issues.
 insert into public.library_items (category, source, workspace_id, name, description, properties, image_url, is_active, created_by)
-select 'stitch_type'::public.library_category, 'global'::public.library_source, null,
-       v.name, v.description, v.props::jsonb,
-       'data:image/svg+xml;base64,' || replace(encode(convert_to(v.svg, 'UTF8'), 'base64'), E'\n', ''),
-       true, null
+select v.cat, v.src, v.ws, v.name, v.description, v.props, v.image_url, true, null
 from (values
-  ('Overlock (3-thread)','3-thread overlock for edge finishing and seams on knits.',
-   '{"spi_range":"10-12","thread_weight":120,"iso_code":"504","use_case":"Edge finishing, seams"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="8" y="33" width="74" height="14" rx="1" fill="#6B7280"/><g stroke="#C8F000" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M82 30 C100 30 100 50 82 50"/><path d="M64 30 L82 50 M64 50 L82 30"/></g></svg>$svg$),
-  ('Overlock (4-thread)','4-thread overlock with safety stitch for durable stretch seams.',
-   '{"spi_range":"10-12","thread_weight":120,"iso_code":"514","use_case":"Stretch seams"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="8" y="33" width="74" height="14" rx="1" fill="#6B7280"/><g stroke="#C8F000" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M82 30 C100 30 100 50 82 50"/><path d="M64 30 L82 50 M64 50 L82 30"/><path d="M14 40 L60 40" stroke-dasharray="5 4"/></g></svg>$svg$),
-  ('Flatlock (top)','Flatlock top stitch joining butted edges flat for athletic seams.',
-   '{"spi_range":"10-12","thread_weight":120,"iso_code":"607","use_case":"Flat seams, athletic"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="30" width="50" height="20" fill="#6B7280"/><rect x="64" y="30" width="50" height="20" fill="#6B7280"/><g stroke="#C8F000" stroke-width="2.5" fill="none" stroke-linecap="round"><path d="M46 36 L74 36 M46 44 L74 44 M50 36 L50 44 M58 36 L58 44 M62 36 L62 44 M70 36 L70 44"/></g></svg>$svg$),
-  ('Coverstitch (2-needle)','2-needle coverstitch with looper underside for hems and necklines.',
-   '{"spi_range":"10-12","thread_weight":120,"iso_code":"406","use_case":"Hems, necklines"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="28" width="108" height="24" fill="#6B7280"/><g stroke="#C8F000" fill="none" stroke-linecap="round"><line x1="12" y1="36" x2="108" y2="36" stroke-width="2.5"/><line x1="12" y1="44" x2="108" y2="44" stroke-width="2.5"/><path d="M12 44 L24 36 L36 44 L48 36 L60 44 L72 36 L84 44 L96 36 L108 44" stroke-width="1.5" stroke-opacity="0.5"/></g></svg>$svg$),
-  ('Coverstitch (3-needle)','3-needle coverstitch for wide hems and binding.',
-   '{"spi_range":"10-12","thread_weight":120,"iso_code":"407","use_case":"Wide hems, binding"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="26" width="108" height="28" fill="#6B7280"/><g stroke="#C8F000" fill="none" stroke-linecap="round"><line x1="12" y1="33" x2="108" y2="33" stroke-width="2.5"/><line x1="12" y1="40" x2="108" y2="40" stroke-width="2.5"/><line x1="12" y1="47" x2="108" y2="47" stroke-width="2.5"/><path d="M12 47 L24 33 L36 47 L48 33 L60 47 L72 33 L84 47 L96 33 L108 47" stroke-width="1.5" stroke-opacity="0.5"/></g></svg>$svg$),
-  ('Single Needle Lockstitch','Single-needle lockstitch for topstitching and general construction.',
-   '{"spi_range":"8-12","thread_weight":80,"iso_code":"301","use_case":"Topstitch, general"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="30" width="108" height="20" fill="#6B7280"/><line x1="12" y1="40" x2="108" y2="40" stroke="#C8F000" stroke-width="3" stroke-dasharray="8 5" stroke-linecap="round"/></svg>$svg$),
-  ('Double Needle Lockstitch','Twin-needle lockstitch producing two parallel topstitch rows.',
-   '{"spi_range":"8-12","thread_weight":80,"iso_code":"301x2","use_case":"Parallel topstitch"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="28" width="108" height="24" fill="#6B7280"/><g stroke="#C8F000" stroke-width="3" stroke-dasharray="8 5" stroke-linecap="round"><line x1="12" y1="35" x2="108" y2="35"/><line x1="12" y1="45" x2="108" y2="45"/></g></svg>$svg$),
-  ('Bartack','Dense bartack reinforcement at stress points such as pocket corners.',
-   '{"spi_range":"42 stitches","thread_weight":80,"iso_code":"304","use_case":"Stress points"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="30" width="108" height="20" fill="#6B7280"/><g stroke="#C8F000" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M40 35 L80 35 M40 45 L80 45" stroke-width="2.5"/><path d="M42 35 L46 45 L50 35 L54 45 L58 35 L62 45 L66 35 L70 45 L74 35 L78 45" stroke-width="2.5"/></g></svg>$svg$),
-  ('Chainstitch','Single-thread chainstitch loop chain for seams and decorative rows.',
-   '{"spi_range":"8-10","thread_weight":80,"iso_code":"401","use_case":"Seams, decorative"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="30" width="108" height="20" fill="#6B7280"/><path d="M14 40 c4 -7 14 -7 18 0 c4 7 14 7 18 0 c4 -7 14 -7 18 0 c4 7 14 7 18 0 c4 -7 14 -7 18 0" fill="none" stroke="#C8F000" stroke-width="2.5" stroke-linecap="round"/></svg>$svg$),
-  ('Zigzag','Zigzag stitch used to attach elastic and for stretch seams.',
-   '{"spi_range":"6-8","thread_weight":80,"iso_code":"304","use_case":"Elastic attach"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="6" y="28" width="108" height="24" fill="#6B7280"/><path d="M12 48 L24 32 L36 48 L48 32 L60 48 L72 32 L84 48 L96 32 L108 48" fill="none" stroke="#C8F000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>$svg$),
-  ('French Seam','Enclosed French seam hiding raw edges inside a folded bundle.',
-   '{"spi_range":"10-12","thread_weight":80,"iso_code":null,"use_case":"Enclosed seam"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><path d="M10 36 H74 a14 14 0 0 1 14 14 a14 14 0 0 1 -14 14 H44" fill="none" stroke="#6B7280" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><line x1="78" y1="34" x2="64" y2="66" stroke="#C8F000" stroke-width="2.5" stroke-dasharray="6 4" stroke-linecap="round"/></svg>$svg$),
-  ('Flat Felled Seam','Durable flat felled seam with two parallel topstitch rows.',
-   '{"spi_range":"8-10","thread_weight":80,"iso_code":null,"use_case":"Durable, denim/outerwear"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="8" y="34" width="84" height="7" fill="#6B7280"/><rect x="28" y="43" width="84" height="7" fill="#6B7280"/><g stroke="#C8F000" stroke-width="2.5" stroke-linecap="round"><line x1="42" y1="30" x2="42" y2="54"/><line x1="62" y1="30" x2="62" y2="54"/></g></svg>$svg$),
-  ('Bound Seam','Bound seam with binding wrapping the raw edge for a clean interior.',
-   '{"spi_range":"10-12","thread_weight":80,"iso_code":null,"use_case":"Clean interior finish"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="8" y="36" width="62" height="10" fill="#6B7280"/><path d="M70 30 H84 a6 6 0 0 1 6 6 V44 a6 6 0 0 1 -6 6 H70" fill="none" stroke="#C8F000" stroke-width="3" stroke-linejoin="round"/><line x1="74" y1="30" x2="74" y2="50" stroke="#C8F000" stroke-width="2.5" stroke-dasharray="5 4" stroke-linecap="round"/></svg>$svg$),
-  ('Blind Hem','Blind hem with a zigzag that periodically bites the garment fold.',
-   '{"spi_range":"6-8","thread_weight":80,"iso_code":"103","use_case":"Invisible hem"}',
-   $svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80"><rect x="8" y="32" width="100" height="6" fill="#6B7280"/><rect x="20" y="46" width="88" height="6" fill="#6B7280"/><path d="M24 49 L36 49 L44 35 L52 49 L64 49 L72 35 L80 49 L92 49 L100 35" fill="none" stroke="#C8F000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>$svg$)
-) as v(name, description, props, svg)
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Overlock (3-thread)',
+   '3-thread overlock for edge finishing and seams on knits.',
+   '{"spi_range":"10-12","thread_weight":120,"iso_code":"504","use_case":"Edge finishing, seams"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjgiIHk9IjMzIiB3aWR0aD0iNzQiIGhlaWdodD0iMTQiIHJ4PSIxIiBmaWxsPSIjNkI3MjgwIi8+PGcgc3Ryb2tlPSIjQzhGMDAwIiBzdHJva2Utd2lkdGg9IjIuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNODIgMzAgQzEwMCAzMCAxMDAgNTAgODIgNTAiLz48cGF0aCBkPSJNNjQgMzAgTDgyIDUwIE02NCA1MCBMODIgMzAiLz48L2c+PC9zdmc+'),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Overlock (4-thread)',
+   '4-thread overlock with safety stitch for durable stretch seams.',
+   '{"spi_range":"10-12","thread_weight":120,"iso_code":"514","use_case":"Stretch seams"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjgiIHk9IjMzIiB3aWR0aD0iNzQiIGhlaWdodD0iMTQiIHJ4PSIxIiBmaWxsPSIjNkI3MjgwIi8+PGcgc3Ryb2tlPSIjQzhGMDAwIiBzdHJva2Utd2lkdGg9IjIuNSIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNODIgMzAgQzEwMCAzMCAxMDAgNTAgODIgNTAiLz48cGF0aCBkPSJNNjQgMzAgTDgyIDUwIE02NCA1MCBMODIgMzAiLz48cGF0aCBkPSJNMTQgNDAgTDYwIDQwIiBzdHJva2UtZGFzaGFycmF5PSI1IDQiLz48L2c+PC9zdmc+'),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Flatlock (top)',
+   'Flatlock top stitch joining butted edges flat for athletic seams.',
+   '{"spi_range":"10-12","thread_weight":120,"iso_code":"607","use_case":"Flat seams, athletic"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjMwIiB3aWR0aD0iNTAiIGhlaWdodD0iMjAiIGZpbGw9IiM2QjcyODAiLz48cmVjdCB4PSI2NCIgeT0iMzAiIHdpZHRoPSI1MCIgaGVpZ2h0PSIyMCIgZmlsbD0iIzZCNzI4MCIvPjxnIHN0cm9rZT0iI0M4RjAwMCIgc3Ryb2tlLXdpZHRoPSIyLjUiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PHBhdGggZD0iTTQ2IDM2IEw3NCAzNiBNNDYgNDQgTDc0IDQ0IE01MCAzNiBMNTAgNDQgTTU4IDM2IEw1OCA0NCBNNjIgMzYgTDYyIDQ0IE03MCAzNiBMNzAgNDQiLz48L2c+PC9zdmc+'),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Coverstitch (2-needle)',
+   '2-needle coverstitch with looper underside for hems and necklines.',
+   '{"spi_range":"10-12","thread_weight":120,"iso_code":"406","use_case":"Hems, necklines"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjI4IiB3aWR0aD0iMTA4IiBoZWlnaHQ9IjI0IiBmaWxsPSIjNkI3MjgwIi8+PGcgc3Ryb2tlPSIjQzhGMDAwIiBmaWxsPSJub25lIiBzdHJva2UtbGluZWNhcD0icm91bmQiPjxsaW5lIHgxPSIxMiIgeTE9IjM2IiB4Mj0iMTA4IiB5Mj0iMzYiIHN0cm9rZS13aWR0aD0iMi41Ii8+PGxpbmUgeDE9IjEyIiB5MT0iNDQiIHgyPSIxMDgiIHkyPSI0NCIgc3Ryb2tlLXdpZHRoPSIyLjUiLz48cGF0aCBkPSJNMTIgNDQgTDI0IDM2IEwzNiA0NCBMNDggMzYgTDYwIDQ0IEw3MiAzNiBMODQgNDQgTDk2IDM2IEwxMDggNDQiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2Utb3BhY2l0eT0iMC41Ii8+PC9nPjwvc3ZnPg=='),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Coverstitch (3-needle)',
+   '3-needle coverstitch for wide hems and binding.',
+   '{"spi_range":"10-12","thread_weight":120,"iso_code":"407","use_case":"Wide hems, binding"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjI2IiB3aWR0aD0iMTA4IiBoZWlnaHQ9IjI4IiBmaWxsPSIjNkI3MjgwIi8+PGcgc3Ryb2tlPSIjQzhGMDAwIiBmaWxsPSJub25lIiBzdHJva2UtbGluZWNhcD0icm91bmQiPjxsaW5lIHgxPSIxMiIgeTE9IjMzIiB4Mj0iMTA4IiB5Mj0iMzMiIHN0cm9rZS13aWR0aD0iMi41Ii8+PGxpbmUgeDE9IjEyIiB5MT0iNDAiIHgyPSIxMDgiIHkyPSI0MCIgc3Ryb2tlLXdpZHRoPSIyLjUiLz48bGluZSB4MT0iMTIiIHkxPSI0NyIgeDI9IjEwOCIgeTI9IjQ3IiBzdHJva2Utd2lkdGg9IjIuNSIvPjxwYXRoIGQ9Ik0xMiA0NyBMMjQgMzMgTDM2IDQ3IEw0OCAzMyBMNjAgNDcgTDcyIDMzIEw4NCA0NyBMOTYgMzMgTDEwOCA0NyIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1vcGFjaXR5PSIwLjUiLz48L2c+PC9zdmc+'),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Single Needle Lockstitch',
+   'Single-needle lockstitch for topstitching and general construction.',
+   '{"spi_range":"8-12","thread_weight":80,"iso_code":"301","use_case":"Topstitch, general"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjMwIiB3aWR0aD0iMTA4IiBoZWlnaHQ9IjIwIiBmaWxsPSIjNkI3MjgwIi8+PGxpbmUgeDE9IjEyIiB5MT0iNDAiIHgyPSIxMDgiIHkyPSI0MCIgc3Ryb2tlPSIjQzhGMDAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1kYXNoYXJyYXk9IjggNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+'),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Double Needle Lockstitch',
+   'Twin-needle lockstitch producing two parallel topstitch rows.',
+   '{"spi_range":"8-12","thread_weight":80,"iso_code":"301x2","use_case":"Parallel topstitch"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjI4IiB3aWR0aD0iMTA4IiBoZWlnaHQ9IjI0IiBmaWxsPSIjNkI3MjgwIi8+PGcgc3Ryb2tlPSIjQzhGMDAwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1kYXNoYXJyYXk9IjggNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48bGluZSB4MT0iMTIiIHkxPSIzNSIgeDI9IjEwOCIgeTI9IjM1Ii8+PGxpbmUgeDE9IjEyIiB5MT0iNDUiIHgyPSIxMDgiIHkyPSI0NSIvPjwvZz48L3N2Zz4='),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Bartack',
+   'Dense bartack reinforcement at stress points such as pocket corners.',
+   '{"spi_range":"42 stitches","thread_weight":80,"iso_code":"304","use_case":"Stress points"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjMwIiB3aWR0aD0iMTA4IiBoZWlnaHQ9IjIwIiBmaWxsPSIjNkI3MjgwIi8+PGcgc3Ryb2tlPSIjQzhGMDAwIiBmaWxsPSJub25lIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik00MCAzNSBMODAgMzUgTTQwIDQ1IEw4MCA0NSIgc3Ryb2tlLXdpZHRoPSIyLjUiLz48cGF0aCBkPSJNNDIgMzUgTDQ2IDQ1IEw1MCAzNSBMNTQgNDUgTDU4IDM1IEw2MiA0NSBMNjYgMzUgTDcwIDQ1IEw3NCAzNSBMNzggNDUiIHN0cm9rZS13aWR0aD0iMi41Ii8+PC9nPjwvc3ZnPg=='),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Chainstitch',
+   'Single-thread chainstitch loop chain for seams and decorative rows.',
+   '{"spi_range":"8-10","thread_weight":80,"iso_code":"401","use_case":"Seams, decorative"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjMwIiB3aWR0aD0iMTA4IiBoZWlnaHQ9IjIwIiBmaWxsPSIjNkI3MjgwIi8+PHBhdGggZD0iTTE0IDQwIGM0IC03IDE0IC03IDE4IDAgYzQgNyAxNCA3IDE4IDAgYzQgLTcgMTQgLTcgMTggMCBjNCA3IDE0IDcgMTggMCBjNCAtNyAxNCAtNyAxOCAwIiBmaWxsPSJub25lIiBzdHJva2U9IiNDOEYwMDAiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4='),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Zigzag',
+   'Zigzag stitch used to attach elastic and for stretch seams.',
+   '{"spi_range":"6-8","thread_weight":80,"iso_code":"304","use_case":"Elastic attach"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjYiIHk9IjI4IiB3aWR0aD0iMTA4IiBoZWlnaHQ9IjI0IiBmaWxsPSIjNkI3MjgwIi8+PHBhdGggZD0iTTEyIDQ4IEwyNCAzMiBMMzYgNDggTDQ4IDMyIEw2MCA0OCBMNzIgMzIgTDg0IDQ4IEw5NiAzMiBMMTA4IDQ4IiBmaWxsPSJub25lIiBzdHJva2U9IiNDOEYwMDAiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+'),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'French Seam',
+   'Enclosed French seam hiding raw edges inside a folded bundle.',
+   '{"spi_range":"10-12","thread_weight":80,"iso_code":null,"use_case":"Enclosed seam"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxwYXRoIGQ9Ik0xMCAzNiBINzQgYTE0IDE0IDAgMCAxIDE0IDE0IGExNCAxNCAwIDAgMSAtMTQgMTQgSDQ0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2QjcyODAiIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGxpbmUgeDE9Ijc4IiB5MT0iMzQiIHgyPSI2NCIgeTI9IjY2IiBzdHJva2U9IiNDOEYwMDAiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtZGFzaGFycmF5PSI2IDQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg=='),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Flat Felled Seam',
+   'Durable flat felled seam with two parallel topstitch rows.',
+   '{"spi_range":"8-10","thread_weight":80,"iso_code":null,"use_case":"Durable, denim/outerwear"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjgiIHk9IjM0IiB3aWR0aD0iODQiIGhlaWdodD0iNyIgZmlsbD0iIzZCNzI4MCIvPjxyZWN0IHg9IjI4IiB5PSI0MyIgd2lkdGg9Ijg0IiBoZWlnaHQ9IjciIGZpbGw9IiM2QjcyODAiLz48ZyBzdHJva2U9IiNDOEYwMDAiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiPjxsaW5lIHgxPSI0MiIgeTE9IjMwIiB4Mj0iNDIiIHkyPSI1NCIvPjxsaW5lIHgxPSI2MiIgeTE9IjMwIiB4Mj0iNjIiIHkyPSI1NCIvPjwvZz48L3N2Zz4='),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Bound Seam',
+   'Bound seam with binding wrapping the raw edge for a clean interior.',
+   '{"spi_range":"10-12","thread_weight":80,"iso_code":null,"use_case":"Clean interior finish"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjgiIHk9IjM2IiB3aWR0aD0iNjIiIGhlaWdodD0iMTAiIGZpbGw9IiM2QjcyODAiLz48cGF0aCBkPSJNNzAgMzAgSDg0IGE2IDYgMCAwIDEgNiA2IFY0NCBhNiA2IDAgMCAxIC02IDYgSDcwIiBmaWxsPSJub25lIiBzdHJva2U9IiNDOEYwMDAiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjxsaW5lIHgxPSI3NCIgeTE9IjMwIiB4Mj0iNzQiIHkyPSI1MCIgc3Ryb2tlPSIjQzhGMDAwIiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWRhc2hhcnJheT0iNSA0IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4='),
+  ('stitch_type'::public.library_category,
+   'global'::public.library_source,
+   null::uuid,
+   'Blind Hem',
+   'Blind hem with a zigzag that periodically bites the garment fold.',
+   '{"spi_range":"6-8","thread_weight":80,"iso_code":"103","use_case":"Invisible hem"}'::jsonb,
+   'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgODAiIHdpZHRoPSIxMjAiIGhlaWdodD0iODAiPjxyZWN0IHg9IjgiIHk9IjMyIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjYiIGZpbGw9IiM2QjcyODAiLz48cmVjdCB4PSIyMCIgeT0iNDYiIHdpZHRoPSI4OCIgaGVpZ2h0PSI2IiBmaWxsPSIjNkI3MjgwIi8+PHBhdGggZD0iTTI0IDQ5IEwzNiA0OSBMNDQgMzUgTDUyIDQ5IEw2NCA0OSBMNzIgMzUgTDgwIDQ5IEw5MiA0OSBMMTAwIDM1IiBmaWxsPSJub25lIiBzdHJva2U9IiNDOEYwMDAiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4=')
+) as v(cat, src, ws, name, description, props, image_url)
 where not exists (
   select 1 from public.library_items li
-  where li.source = 'global' and li.category = 'stitch_type'::public.library_category and li.name = v.name
+  where li.source = 'global'
+    and li.category = 'stitch_type'::public.library_category
+    and li.name = v.name
 );
 
 -- ---- Category 6 — Thread (all carry colours) ---------------------------------
