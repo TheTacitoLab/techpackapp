@@ -2,13 +2,22 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import { CollapsibleSection } from "@/components/collapsible-section";
+import { IdentitySection } from "@/components/identity-section";
 import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
 import { ProgressTracker } from "@/components/progress-tracker";
 import { SectionIcon } from "@/components/section-icon";
+import { getWorkspaceLibrary } from "@/lib/library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { Label, ResolvedSection, SectionStatus } from "@/types";
+import type {
+  Collection,
+  IdentitySectionData,
+  Label,
+  ResolvedSection,
+  Season,
+  SectionStatus,
+} from "@/types";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -37,6 +46,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
     collectionResult,
     { data: workspaceLabels },
     { data: assignedRows },
+    fabricOptions,
+    { data: workspaceSeasons },
+    { data: workspaceCollections },
   ] = await Promise.all([
     supabase
       .from("product_sections")
@@ -64,12 +76,31 @@ export default async function ProductDetailPage({ params }: PageProps) {
       .from("product_labels")
       .select("label_id")
       .eq("product_id", product.id),
+    getWorkspaceLibrary("fabric"),
+    supabase
+      .from("seasons")
+      .select("*")
+      .eq("workspace_id", ctx.profile.workspace_id)
+      .order("year", { ascending: false })
+      .order("name"),
+    supabase
+      .from("collections")
+      .select("*")
+      .eq("workspace_id", ctx.profile.workspace_id)
+      .order("name"),
   ]);
 
   const brand = brandResult.data;
   const collection = collectionResult.data;
   const labels: Label[] = workspaceLabels ?? [];
   const assignedIds = (assignedRows ?? []).map((r) => r.label_id);
+  const seasons: Season[] = workspaceSeasons ?? [];
+  const collections: Collection[] = workspaceCollections ?? [];
+
+  // The identity section's saved JSON, pulled from the sections already loaded.
+  const identitySectionData =
+    ((sections ?? []).find((s) => s.section_key === "identity")
+      ?.data as IdentitySectionData | null) ?? null;
 
   const templateByKey = new Map((templates ?? []).map((t) => [t.key, t]));
   const resolved: ResolvedSection[] = (sections ?? []).map((section) => {
@@ -149,9 +180,20 @@ export default async function ProductDetailPage({ params }: PageProps) {
             status={section.status}
             defaultOpen={index === 0}
           >
-            <p className="text-muted-foreground text-sm">
-              This section will be built in a later phase.
-            </p>
+            {section.section_key === "identity" ? (
+              <IdentitySection
+                product={product}
+                sectionData={identitySectionData}
+                fabrics={fabricOptions}
+                seasons={seasons}
+                collections={collections}
+                brandName={brand?.name ?? null}
+              />
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                This section will be built in a later phase.
+              </p>
+            )}
           </CollapsibleSection>
         ))}
       </div>

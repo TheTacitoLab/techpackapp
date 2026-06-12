@@ -41,3 +41,34 @@ export type ResolvedLibraryItem = LibraryItem & {
   isGlobal: boolean;
   isHidden: boolean;
 };
+
+/** A single colourway row in the Identity section's material summary. */
+export type Colourway = {
+  name: string;
+  pantone: string;
+  hex: string;
+};
+
+/**
+ * Shape of the `identity` section's `product_sections.data` jsonb. Holds only
+ * the fields that don't warrant top-level `products` columns — material
+ * summary, classification, and internal notes. Everything structural (name,
+ * style number, dates, prices, designer, factory, season…) lives on the
+ * `products` row directly and is NOT duplicated here.
+ */
+export type IdentitySectionData = {
+  // Group 3 — Material Summary
+  main_fabric_id: string | null;
+  main_fabric_name: string | null;
+  main_fabric_composition: string | null;
+  colourways: Colourway[];
+  lining_description: string | null;
+  // Group 5 — Product Classification
+  end_use: string | null;
+  fit_type: string | null;
+  construction_method: string | null;
+  // Group 6 — Internal
+  internal_notes: string | null;
+  // Meta — versioning is a later phase; this is just the last write timestamp.
+  last_saved: string | null;
+};
