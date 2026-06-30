@@ -76,3 +76,53 @@ export type IdentitySectionData = {
   // Meta — versioning is a later phase; this is just the last write timestamp.
   last_saved: string | null;
 };
+
+// ---- Canvas (Phase 4a) ------------------------------------------------------
+// The shared canvas system behind Design & Colourways, Measurements & Fit, and
+// Construction Details: product image assets → pages → slots → annotation pins.
+
+// Row aliases
+export type ProductAsset = Tables<"product_assets">;
+export type CanvasPage = Tables<"canvas_pages">;
+export type CanvasSlot = Tables<"canvas_slots">;
+export type CanvasAnnotation = Tables<"canvas_annotations">;
+
+// Enum aliases
+export type CanvasTemplate = Enums<"canvas_template">;
+export type CanvasLayerType = Enums<"canvas_layer_type">;
+
+/**
+ * A slot resolved for rendering: the chosen asset (null when the slot is empty)
+ * and the annotation pins placed on it. Assembled server-side from canvas_slots
+ * + product_assets + canvas_annotations and handed to the canvas UI.
+ */
+export type ResolvedSlot = CanvasSlot & {
+  asset: ProductAsset | null;
+  annotations: CanvasAnnotation[];
+};
+
+/** A canvas page with its slots resolved (assets + annotations attached). */
+export type ResolvedCanvasPage = CanvasPage & {
+  slots: ResolvedSlot[];
+};
+
+/**
+ * Reference-code prefix per annotation layer. `createAnnotation` counts existing
+ * pins of a layer for the product and appends the next number (F1, T2, M1…).
+ * Exported so the canvas UI and the generated BOM render the same codes — the
+ * single source of truth for both the zod enum and the prefixes.
+ */
+export const LAYER_PREFIX: Record<CanvasLayerType, string> = {
+  fabric: "F",
+  trim: "T",
+  hardware: "H",
+  elastic: "E",
+  label_component: "L",
+  print: "P",
+  stitch: "S",
+  thread: "Th",
+  packaging: "Pk",
+  measurement: "M",
+  construction_note: "CN",
+  detail_callout: "DC",
+};

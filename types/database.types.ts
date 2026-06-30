@@ -399,6 +399,165 @@ export type Database = {
         };
         Relationships: [];
       };
+      product_assets: {
+        Row: {
+          id: string;
+          product_id: string;
+          workspace_id: string;
+          name: string;
+          file_path: string;
+          file_url: string;
+          width: number | null;
+          height: number | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          workspace_id: string;
+          name: string;
+          file_path: string;
+          file_url: string;
+          width?: number | null;
+          height?: number | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          product_id?: string;
+          workspace_id?: string;
+          name?: string;
+          file_path?: string;
+          file_url?: string;
+          width?: number | null;
+          height?: number | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      canvas_pages: {
+        Row: {
+          id: string;
+          product_id: string;
+          workspace_id: string;
+          template: Database["public"]["Enums"]["canvas_template"];
+          label: string | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          workspace_id: string;
+          template: Database["public"]["Enums"]["canvas_template"];
+          label?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          product_id?: string;
+          workspace_id?: string;
+          template?: Database["public"]["Enums"]["canvas_template"];
+          label?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      canvas_slots: {
+        Row: {
+          id: string;
+          page_id: string;
+          slot_index: number;
+          asset_id: string | null;
+          crop_x: number;
+          crop_y: number;
+          zoom: number;
+          is_locked: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          page_id: string;
+          slot_index: number;
+          asset_id?: string | null;
+          crop_x?: number;
+          crop_y?: number;
+          zoom?: number;
+          is_locked?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          page_id?: string;
+          slot_index?: number;
+          asset_id?: string | null;
+          crop_x?: number;
+          crop_y?: number;
+          zoom?: number;
+          is_locked?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      canvas_annotations: {
+        Row: {
+          id: string;
+          slot_id: string;
+          workspace_id: string;
+          layer_type: Database["public"]["Enums"]["canvas_layer_type"];
+          reference_code: string;
+          x: number;
+          y: number;
+          pin_type: string;
+          end_x: number | null;
+          end_y: number | null;
+          data: Json;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          slot_id: string;
+          workspace_id: string;
+          layer_type: Database["public"]["Enums"]["canvas_layer_type"];
+          reference_code: string;
+          x: number;
+          y: number;
+          pin_type?: string;
+          end_x?: number | null;
+          end_y?: number | null;
+          data?: Json;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          slot_id?: string;
+          workspace_id?: string;
+          layer_type?: Database["public"]["Enums"]["canvas_layer_type"];
+          reference_code?: string;
+          x?: number;
+          y?: number;
+          pin_type?: string;
+          end_x?: number | null;
+          end_y?: number | null;
+          data?: Json;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -435,6 +594,20 @@ export type Database = {
         | "packaging"
         | "interlining";
       library_source: "global" | "workspace";
+      canvas_template: "single" | "split" | "quad";
+      canvas_layer_type:
+        | "fabric"
+        | "trim"
+        | "hardware"
+        | "elastic"
+        | "label_component"
+        | "print"
+        | "stitch"
+        | "thread"
+        | "packaging"
+        | "measurement"
+        | "construction_note"
+        | "detail_callout";
     };
     CompositeTypes: {
       [_ in never]: never;
