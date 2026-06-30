@@ -7,7 +7,6 @@ import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
 import { ProgressTracker } from "@/components/progress-tracker";
 import { SectionIcon } from "@/components/section-icon";
-import { getWorkspaceLibrary } from "@/lib/library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -46,7 +45,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
     collectionResult,
     { data: workspaceLabels },
     { data: assignedRows },
-    fabricOptions,
     { data: workspaceSeasons },
     { data: workspaceCollections },
   ] = await Promise.all([
@@ -76,7 +74,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
       .from("product_labels")
       .select("label_id")
       .eq("product_id", product.id),
-    getWorkspaceLibrary("fabric"),
     supabase
       .from("seasons")
       .select("*")
@@ -184,7 +181,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
               <IdentitySection
                 product={product}
                 sectionData={identitySectionData}
-                fabrics={fabricOptions}
                 seasons={seasons}
                 collections={collections}
                 brandName={brand?.name ?? null}

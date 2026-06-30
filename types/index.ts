@@ -50,24 +50,28 @@ export type Colourway = {
 };
 
 /**
- * Shape of the `identity` section's `product_sections.data` jsonb. Holds only
- * the fields that don't warrant top-level `products` columns — material
- * summary, classification, and internal notes. Everything structural (name,
- * style number, dates, prices, designer, factory, season…) lives on the
- * `products` row directly and is NOT duplicated here.
+ * Shape of the `identity` (Product Setup) section's `product_sections.data`
+ * jsonb. Holds only the fields that don't warrant top-level `products` columns —
+ * the guided "about this product" description, use & fit, and internal notes.
+ * Everything structural (name, style number, dates, prices, designer, factory,
+ * season…) lives on the `products` row directly and is NOT duplicated here.
+ *
+ * Note: earlier (Phase 3c) material-summary keys — `main_fabric_id`,
+ * `main_fabric_name`, `main_fabric_composition`, `colourways`,
+ * `lining_description` — plus `construction_method` are no longer written or
+ * read by the form. Any values saved under those keys remain untouched in the
+ * jsonb and will be migrated forward by the future Materials & Components and
+ * Construction Details sections.
  */
 export type IdentitySectionData = {
-  // Group 3 — Material Summary
-  main_fabric_id: string | null;
-  main_fabric_name: string | null;
-  main_fabric_composition: string | null;
-  colourways: Colourway[];
-  lining_description: string | null;
-  // Group 5 — Product Classification
+  // Group 1 — About this product (guided description)
+  product_description: string | null;
+  key_features: string | null;
+  fit_description: string | null;
+  // Use & Fit
   end_use: string | null;
   fit_type: string | null;
-  construction_method: string | null;
-  // Group 6 — Internal
+  // Internal
   internal_notes: string | null;
   // Meta — versioning is a later phase; this is just the last write timestamp.
   last_saved: string | null;

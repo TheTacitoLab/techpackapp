@@ -41,23 +41,7 @@ export const FIT_TYPE_OPTIONS = [
   "Athletic",
 ] as const;
 
-export const CONSTRUCTION_OPTIONS = [
-  "Cut & Sew",
-  "Fully Fashioned",
-  "Seamless",
-  "Woven",
-  "Knitted",
-  "Other",
-] as const;
-
-const HEX = /^#[0-9A-Fa-f]{6}$/;
 const PRICE = /^\d+(\.\d{1,2})?$/;
-
-export const colourwaySchema = z.object({
-  name: z.string().trim().max(60),
-  pantone: z.string().trim().max(40),
-  hex: z.string().regex(HEX, "Choose a valid hex colour."),
-});
 
 /**
  * The Identity form's single source of truth, used by both the client form
@@ -77,6 +61,10 @@ export const identityFormSchema = z.object({
   gender: z.string().trim().max(40),
   size_range: z.string().trim().max(60),
   season_id: z.string().nullable(),
+  // Group 1 — About this product (guided description, all optional)
+  product_description: z.string().trim().max(300),
+  key_features: z.string().trim().max(300),
+  fit_description: z.string().trim().max(300),
   // Group 2 — Brand & Ownership
   designer_name: z.string().trim().max(120),
   designer_email: z
@@ -86,13 +74,7 @@ export const identityFormSchema = z.object({
     .refine((v) => v === "" || z.email().safeParse(v).success, {
       message: "Enter a valid email address.",
     }),
-  // Group 3 — Material Summary
-  main_fabric_id: z.string().nullable(),
-  main_fabric_name: z.string().nullable(),
-  main_fabric_composition: z.string().nullable(),
-  colourways: z.array(colourwaySchema).min(1, "Add at least one colourway."),
-  lining_description: z.string().trim().max(200),
-  // Group 4 — Factory & Production
+  // Group 3 — Production Tracking
   factory_name: z.string().trim().max(120),
   factory_country: z.string().trim().max(80),
   sample_due_date: z.string(),
@@ -103,11 +85,10 @@ export const identityFormSchema = z.object({
   retail_price: z
     .string()
     .refine((v) => v === "" || PRICE.test(v), { message: "Enter a valid amount." }),
-  // Group 5 — Product Classification
+  // Group 4 — Use & Fit
   end_use: z.string(),
   fit_type: z.string(),
-  construction_method: z.string(),
-  // Group 6 — Admin & Metadata
+  // Group 5 — Admin & Metadata
   internal_notes: z.string().trim().max(2000),
 });
 

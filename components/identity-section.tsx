@@ -2,22 +2,20 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import { saveIdentitySection } from "@/app/(app)/products/[id]/actions";
 import {
   CATEGORY_OPTIONS,
-  CONSTRUCTION_OPTIONS,
   END_USE_OPTIONS,
   FIT_TYPE_OPTIONS,
   GENDER_OPTIONS,
   identityFormSchema,
   type IdentityFormValues,
 } from "@/app/(app)/products/[id]/identity-schema";
-import { FabricPicker } from "@/components/fabric-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,11 +47,9 @@ import type {
   IdentitySectionData,
   Product,
   ProductStatus,
-  ResolvedLibraryItem,
   Season,
 } from "@/types";
 
-const HEX = /^#[0-9A-Fa-f]{6}$/;
 const NONE = "__none__";
 
 const STATUS_LABELS: Record<ProductStatus, string> = {
@@ -76,16 +72,11 @@ function toDefaults(
     gender: product.gender ?? "",
     size_range: product.size_range ?? "",
     season_id: product.season_id ?? "",
+    product_description: sectionData?.product_description ?? "",
+    key_features: sectionData?.key_features ?? "",
+    fit_description: sectionData?.fit_description ?? "",
     designer_name: product.designer_name ?? "",
     designer_email: product.designer_email ?? "",
-    main_fabric_id: sectionData?.main_fabric_id ?? null,
-    main_fabric_name: sectionData?.main_fabric_name ?? null,
-    main_fabric_composition: sectionData?.main_fabric_composition ?? null,
-    colourways:
-      sectionData?.colourways && sectionData.colourways.length > 0
-        ? sectionData.colourways
-        : [{ name: "", pantone: "", hex: "#000000" }],
-    lining_description: sectionData?.lining_description ?? "",
     factory_name: product.factory_name ?? "",
     factory_country: product.factory_country ?? "",
     sample_due_date: product.sample_due_date ?? "",
@@ -96,7 +87,6 @@ function toDefaults(
       product.retail_price != null ? String(product.retail_price) : "",
     end_use: sectionData?.end_use ?? "",
     fit_type: sectionData?.fit_type ?? "",
-    construction_method: sectionData?.construction_method ?? "",
     internal_notes: sectionData?.internal_notes ?? "",
   };
 }
@@ -152,21 +142,21 @@ function ReadOnlyField({
 }
 
 /**
- * The Identity / Cover section form — page one of the exported tech pack.
- * Six grouped field sets backed by a single RHF + Zod form. Product-level
- * fields persist to `products`; the rest to the section JSON.
+ * The Product Setup section form — page one of the exported tech pack, a lean
+ * "what are we making?" overview. Five grouped field sets backed by a single
+ * RHF + Zod form: Core Identity (with a guided "about this product" block),
+ * Brand & Ownership, Production Tracking, Use & Fit, and Admin & Metadata.
+ * Product-level fields persist to `products`; the rest to the section JSON.
  */
 export function IdentitySection({
   product,
   sectionData,
-  fabrics,
   seasons,
   collections,
   brandName,
 }: {
   product: Product;
   sectionData: IdentitySectionData | null;
-  fabrics: ResolvedLibraryItem[];
   seasons: Season[];
   collections: Collection[];
   brandName: string | null;
@@ -180,8 +170,6 @@ export function IdentitySection({
     resolver: zodResolver(identityFormSchema),
     defaultValues: toDefaults(product, sectionData),
   });
-
-  const colourways = useFieldArray({ control: form.control, name: "colourways" });
 
   const collectionName = useMemo(
     () =>
@@ -346,6 +334,63 @@ export function IdentitySection({
               )}
             />
           </div>
+
+          {/* About this product — guided, optional description prompts. */}
+          <div className="space-y-4 rounded-md border border-dashed p-4">
+            <div className="space-y-1">
+              <h4 className="text-sm font-medium">About this product</h4>
+              <p className="text-muted-foreground text-xs">
+                A quick plain-language overview. Optional, but it helps everyone
+                picture what you&apos;re making.
+              </p>
+            </div>
+            <FormField
+              control={form.control}
+              name="product_description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>What is this product?</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g. A relaxed hybrid hoodie for training and travel"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="key_features"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Key features</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g. Hood, kangaroo pocket, contrast panels, rib cuff and hem"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="fit_description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fit description</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. Relaxed athletic fit" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
           <ReadOnlyField label="Tech Pack Version">
             <span className="flex items-center gap-2">
               <Badge variant="secondary">Draft</Badge>
@@ -395,166 +440,21 @@ export function IdentitySection({
           </div>
         </section>
 
-        {/* ---- Group 3 — Material Summary --------------------------------- */}
-        <section className="space-y-4">
-          <GroupHeading>Material Summary</GroupHeading>
-          <FormField
-            control={form.control}
-            name="main_fabric_id"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Main Shell Fabric</FormLabel>
-                <FormControl>
-                  <FabricPicker
-                    fabrics={fabrics}
-                    value={field.value}
-                    onChange={(id, item) => {
-                      const props = item.properties as Record<
-                        string,
-                        unknown
-                      > | null;
-                      const comp = props?.composition;
-                      field.onChange(id);
-                      form.setValue("main_fabric_name", item.name);
-                      form.setValue(
-                        "main_fabric_composition",
-                        comp == null ? null : String(comp),
-                      );
-                    }}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {/* Colourways builder */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Colourways</span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  colourways.append({ name: "", pantone: "", hex: "#000000" })
-                }
-              >
-                <Plus className="size-3.5" />
-                Add colourway
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {colourways.fields.map((row, index) => (
-                <div
-                  key={row.id}
-                  className="flex items-end gap-2 rounded-md border p-3"
-                >
-                  <FormField
-                    control={form.control}
-                    name={`colourways.${index}.name`}
-                    render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <FormLabel className="text-xs">Colour name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. Lime Punch" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`colourways.${index}.pantone`}
-                    render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <FormLabel className="text-xs">Pantone</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. 13-0550 TCX" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`colourways.${index}.hex`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs">Swatch</FormLabel>
-                        <FormControl>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="color"
-                              aria-label="Colour swatch"
-                              value={HEX.test(field.value) ? field.value : "#000000"}
-                              onChange={(e) =>
-                                field.onChange(e.target.value.toUpperCase())
-                              }
-                              className="size-9 shrink-0 cursor-pointer rounded border bg-transparent p-0.5"
-                            />
-                            <Input
-                              value={field.value}
-                              onChange={(e) => field.onChange(e.target.value)}
-                              placeholder="#C8F000"
-                              className="w-28 font-mono uppercase"
-                              maxLength={7}
-                            />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Remove colourway"
-                    disabled={colourways.fields.length === 1}
-                    onClick={() => colourways.remove(index)}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            {form.formState.errors.colourways?.root && (
-              <p className="text-destructive text-sm">
-                {form.formState.errors.colourways.root.message}
-              </p>
-            )}
-          </div>
-
-          <FormField
-            control={form.control}
-            name="lining_description"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Lining Description</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="e.g. 100% Polyester mesh lining"
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </section>
-
-        {/* ---- Group 4 — Factory & Production (collapsed) ----------------- */}
+        {/* ---- Group 3 — Production Tracking (collapsed) ------------------ */}
         <Collapsible
           open={factoryOpen}
           onOpenChange={setFactoryOpen}
           className="space-y-4"
         >
           <CollapsibleTrigger className="group flex w-full items-center gap-2 text-left">
-            <h3 className="text-foreground flex-1 text-sm font-semibold tracking-tight">
-              Factory &amp; Production
-            </h3>
+            <div className="flex-1">
+              <h3 className="text-foreground text-sm font-semibold tracking-tight">
+                Production Tracking
+              </h3>
+              <p className="text-muted-foreground text-xs font-normal">
+                Optional — fill in once you&apos;re working with a factory
+              </p>
+            </div>
             <ChevronDown className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
           <Separator />
@@ -662,7 +562,7 @@ export function IdentitySection({
           </CollapsibleContent>
         </Collapsible>
 
-        {/* ---- Group 5 — Product Classification (collapsed) --------------- */}
+        {/* ---- Group 4 — Use & Fit (collapsed) ---------------------------- */}
         <Collapsible
           open={classificationOpen}
           onOpenChange={setClassificationOpen}
@@ -670,7 +570,7 @@ export function IdentitySection({
         >
           <CollapsibleTrigger className="group flex w-full items-center gap-2 text-left">
             <h3 className="text-foreground flex-1 text-sm font-semibold tracking-tight">
-              Product Classification
+              Use &amp; Fit
             </h3>
             <ChevronDown className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
@@ -731,38 +631,11 @@ export function IdentitySection({
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="construction_method"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Construction Method</FormLabel>
-                    <Select
-                      value={field.value || undefined}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a method" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {CONSTRUCTION_OPTIONS.map((opt) => (
-                          <SelectItem key={opt} value={opt}>
-                            {opt}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
           </CollapsibleContent>
         </Collapsible>
 
-        {/* ---- Group 6 — Admin & Metadata (read-only) --------------------- */}
+        {/* ---- Group 5 — Admin & Metadata (read-only) --------------------- */}
         <section className="space-y-4">
           <GroupHeading>Admin &amp; Metadata</GroupHeading>
           <div className="grid grid-cols-2 gap-6">

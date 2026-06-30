@@ -44,13 +44,23 @@ export async function saveIdentitySection(
   const supabase = await createClient();
   const workspaceId = ctx.profile.workspace_id;
 
-  // ---- Workspace guard: confirm the product lives in the caller's workspace.
-  const { data: owned } = await supabase
-    .from("products")
-    .select("id")
-    .eq("id", productId)
-    .eq("workspace_id", workspaceId)
-    .single();
+  // ---- Workspace guard (confirm the product lives in the caller's workspace)
+  // plus a read of the section's current jsonb, fetched in parallel. The
+  // existing data is needed so we MERGE rather than overwrite — see below.
+  const [{ data: owned }, { data: existingSection }] = await Promise.all([
+    supabase
+      .from("products")
+      .select("id")
+      .eq("id", productId)
+      .eq("workspace_id", workspaceId)
+      .single(),
+    supabase
+      .from("product_sections")
+      .select("data")
+      .eq("product_id", productId)
+      .eq("section_key", "identity")
+      .single(),
+  ]);
   if (!owned) throw new Error("Not found in your workspace.");
 
   // ---- Section completion: the five core identity fields decide it. Because a
@@ -84,23 +94,30 @@ export async function saveIdentitySection(
   };
 
   const sectionData: IdentitySectionData = {
-    main_fabric_id: data.main_fabric_id,
-    main_fabric_name: data.main_fabric_name,
-    main_fabric_composition: data.main_fabric_composition,
-    colourways: data.colourways,
-    lining_description: nullify(data.lining_description),
+    product_description: nullify(data.product_description),
+    key_features: nullify(data.key_features),
+    fit_description: nullify(data.fit_description),
     end_use: nullify(data.end_use),
     fit_type: nullify(data.fit_type),
-    construction_method: nullify(data.construction_method),
     internal_notes: nullify(data.internal_notes),
     last_saved: new Date().toISOString(),
   };
+
+  // Merge onto the existing jsonb rather than overwrite it. Legacy keys this
+  // form no longer owns — Phase 3c's `main_fabric_id`, `main_fabric_name`,
+  // `main_fabric_composition`, `colourways`, `lining_description`, and
+  // `construction_method` — are preserved so they survive a save and can be
+  // migrated forward by the future Materials & Components / Construction
+  // Details sections. The keys this form owns are overlaid on top.
+  const existingData =
+    (existingSection?.data as Record<string, unknown> | null) ?? {};
+  const mergedData = { ...existingData, ...sectionData };
 
   const [productResult, sectionResult] = await Promise.all([
     supabase.from("products").update(productUpdate).eq("id", productId),
     supabase
       .from("product_sections")
-      .update({ data: sectionData as never, status })
+      .update({ data: mergedData as never, status })
       .eq("product_id", productId)
       .eq("section_key", "identity"),
   ]);
