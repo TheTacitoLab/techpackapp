@@ -19,8 +19,10 @@ import type { Collection } from "@/types";
 
 export function AppNav({
   collections = [],
+  collapsed = false,
 }: {
   collections?: Collection[];
+  collapsed?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -42,16 +44,13 @@ export function AppNav({
   const isArchivedActive = onProducts && showArchived;
   const isSettingsActive = pathname === "/settings";
 
-  // The products views are reached via buttons (they also set client-side
-  // filter state), so Next can't auto-prefetch them like a <Link>. Warm the
-  // route once on mount so the first click navigates against a cached payload
-  // instead of a cold server round-trip.
+  // Warm the route once on mount so the first click navigates against a cached
+  // payload instead of a cold server round-trip.
   useEffect(() => {
     router.prefetch("/products");
   }, [router]);
 
-  // When already on /products these are pure client-state changes — pushing the
-  // same route would trigger a full server re-render for nothing.
+  // When already on /products these are pure client-state changes.
   function goToAllProducts() {
     setActiveCollectionId(null);
     setShowArchived(false);
@@ -70,13 +69,15 @@ export function AppNav({
     if (!onProducts) router.push("/products");
   }
 
-  const itemBase =
-    "relative flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors";
-
   // The lime indicator bar shown at the left edge of the active nav item.
   const indicator = (
     <span className="bg-sidebar-accent absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r-full" />
   );
+
+  // Item base classes — full-width row when expanded, centered icon when collapsed.
+  const itemBase = collapsed
+    ? "relative flex w-full cursor-pointer items-center justify-center rounded-lg p-2 transition-colors"
+    : "relative flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors";
 
   return (
     <div className="flex h-full flex-col gap-1">
@@ -92,8 +93,8 @@ export function AppNav({
             )}
           >
             {isAllProductsActive && indicator}
-            <LayoutDashboard className="size-4" />
-            All Products
+            <LayoutDashboard className="size-4 shrink-0" />
+            {!collapsed && "All Products"}
           </button>
         </li>
         <li>
@@ -107,15 +108,16 @@ export function AppNav({
             )}
           >
             {isArchivedActive && indicator}
-            <Archive className="size-4" />
-            Archived
+            <Archive className="size-4 shrink-0" />
+            {!collapsed && "Archived"}
           </button>
         </li>
       </ul>
 
       <Separator className="bg-sidebar-border my-2" />
 
-      {activeBrandId !== null ? (
+      {/* Collections — hidden when collapsed */}
+      {!collapsed && activeBrandId !== null ? (
         <>
           <div className="mb-1 px-3">
             <p className="text-sidebar-muted text-xs font-semibold uppercase tracking-wider">
@@ -126,8 +128,7 @@ export function AppNav({
           {activeCollections.length > 0 && (
             <ul className="flex flex-col gap-0.5">
               {activeCollections.map((col) => {
-                const isActive =
-                  onProducts && activeCollectionId === col.id;
+                const isActive = onProducts && activeCollectionId === col.id;
                 return (
                   <li key={col.id}>
                     <button
@@ -160,11 +161,11 @@ export function AppNav({
             />
           </div>
         </>
-      ) : (
+      ) : !collapsed ? (
         <p className="text-sidebar-muted px-3 text-xs">
           No active brand. Visit Settings to set one.
         </p>
-      )}
+      ) : null}
 
       <div className="mt-auto">
         <Separator className="bg-sidebar-border my-2" />
@@ -178,8 +179,8 @@ export function AppNav({
           )}
         >
           {isSettingsActive && indicator}
-          <Settings className="size-4" />
-          Settings
+          <Settings className="size-4 shrink-0" />
+          {!collapsed && "Settings"}
         </Link>
       </div>
     </div>
