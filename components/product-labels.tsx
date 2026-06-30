@@ -69,7 +69,7 @@ export function ProductLabels({
       {visibleLabels.map((label) => (
         <span
           key={label.id}
-          className="bg-muted/60 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+          className="bg-muted text-foreground inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs"
         >
           <span
             className="size-2 shrink-0 rounded-full"

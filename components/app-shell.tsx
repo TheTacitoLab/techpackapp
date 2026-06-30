@@ -22,23 +22,23 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-screen min-w-[1280px]">
-      <aside className="bg-card flex w-[280px] shrink-0 flex-col border-r">
+      <aside className="bg-sidebar text-sidebar-foreground border-sidebar-border flex w-[280px] shrink-0 flex-col border-r">
         <Link
           href="/dashboard"
           className="flex h-16 cursor-pointer items-center gap-2 px-6"
         >
-          <span className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg">
+          <span className="bg-white/10 text-sidebar-foreground flex size-8 items-center justify-center rounded-lg">
             <Shirt className="size-5" />
           </span>
           <span className="text-lg font-semibold tracking-tight">TechPack</span>
         </Link>
-        <Separator />
+        <Separator className="bg-sidebar-border" />
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <AppNav collections={collections} />
         </nav>
-        <Separator />
+        <Separator className="bg-sidebar-border" />
         <div className="px-6 py-4">
-          <p className="text-muted-foreground text-xs">Workspace</p>
+          <p className="text-sidebar-muted text-xs">Workspace</p>
           <p className="truncate text-sm font-medium">
             {workspace?.name ?? "—"}
           </p>
@@ -46,10 +46,10 @@ export function AppShell({
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="flex h-16 items-center justify-end border-b px-8">
+        <header className="border-border flex h-16 items-center justify-end border-b px-6">
           <UserMenu name={profile.full_name} email={user.email ?? ""} />
         </header>
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 p-6">{children}</main>
       </div>
     </div>
   );

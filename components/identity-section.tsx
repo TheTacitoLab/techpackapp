@@ -16,7 +16,7 @@ import {
   identityFormSchema,
   type IdentityFormValues,
 } from "@/app/(app)/products/[id]/identity-schema";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -46,20 +46,10 @@ import type {
   Collection,
   IdentitySectionData,
   Product,
-  ProductStatus,
   Season,
 } from "@/types";
 
 const NONE = "__none__";
-
-const STATUS_LABELS: Record<ProductStatus, string> = {
-  draft: "Draft",
-  in_review: "In review",
-  sent_to_factory: "Sent to factory",
-  sample_received: "Sample received",
-  approved: "Approved",
-  in_production: "In production",
-};
 
 function toDefaults(
   product: Product,
@@ -112,18 +102,23 @@ function formatRelative(iso: string | null): string | null {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-/** A subtle group heading with a divider, mirroring the PDF page sections. */
+/**
+ * Small uppercase eyebrow that labels a field group. The key hierarchy device —
+ * visually very different from the 16px section title in the accordion header.
+ */
 function GroupHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
-      <h3 className="text-foreground text-sm font-semibold tracking-tight">
-        {children}
-      </h3>
-      <Separator />
-    </div>
+    <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.06em] uppercase">
+      {children}
+    </p>
   );
 }
 
+/**
+ * Read-only / generated content (version, brand, collection, dates). Presented
+ * as a flat muted strip with no input styling — instantly distinguishable from
+ * the editable bordered wells.
+ */
 function ReadOnlyField({
   label,
   children,
@@ -132,9 +127,9 @@ function ReadOnlyField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid gap-2">
-      <span className="text-sm font-medium">{label}</span>
-      <div className="text-muted-foreground border-input flex h-9 items-center rounded-md border border-dashed px-3 text-sm">
+    <div className="grid gap-1.5">
+      <span className="text-label text-[13px] font-medium">{label}</span>
+      <div className="text-foreground bg-muted/60 flex min-h-9 items-center rounded-md px-3 py-2 text-sm">
         {children}
       </div>
     </div>
@@ -193,11 +188,11 @@ export function IdentitySection({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         {/* ---- Group 1 — Core Identity ------------------------------------ */}
         <section className="space-y-4">
           <GroupHeading>Core Identity</GroupHeading>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="name"
@@ -335,10 +330,13 @@ export function IdentitySection({
             />
           </div>
 
-          {/* About this product — guided, optional description prompts. */}
-          <div className="space-y-4 rounded-md border border-dashed p-4">
+          {/* About this product — nested muted fill panel (no border), signalling
+              a grouped, optional helper block. */}
+          <div className="bg-muted space-y-4 rounded-lg p-4">
             <div className="space-y-1">
-              <h4 className="text-sm font-medium">About this product</h4>
+              <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.06em] uppercase">
+                About this product
+              </p>
               <p className="text-muted-foreground text-xs">
                 A quick plain-language overview. Optional, but it helps everyone
                 picture what you&apos;re making.
@@ -352,6 +350,7 @@ export function IdentitySection({
                   <FormLabel>What is this product?</FormLabel>
                   <FormControl>
                     <Input
+                      className="bg-card"
                       placeholder="e.g. A relaxed hybrid hoodie for training and travel"
                       {...field}
                     />
@@ -368,6 +367,7 @@ export function IdentitySection({
                   <FormLabel>Key features</FormLabel>
                   <FormControl>
                     <Input
+                      className="bg-card"
                       placeholder="e.g. Hood, kangaroo pocket, contrast panels, rib cuff and hem"
                       {...field}
                     />
@@ -383,7 +383,11 @@ export function IdentitySection({
                 <FormItem>
                   <FormLabel>Fit description</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Relaxed athletic fit" {...field} />
+                    <Input
+                      className="bg-card"
+                      placeholder="e.g. Relaxed athletic fit"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -393,7 +397,7 @@ export function IdentitySection({
 
           <ReadOnlyField label="Tech Pack Version">
             <span className="flex items-center gap-2">
-              <Badge variant="secondary">Draft</Badge>
+              <StatusPill status="draft" />
               <span className="text-xs">
                 Versioning begins once the tech pack is approved.
               </span>
@@ -403,8 +407,9 @@ export function IdentitySection({
 
         {/* ---- Group 2 — Brand & Ownership -------------------------------- */}
         <section className="space-y-4">
+          <Separator />
           <GroupHeading>Brand &amp; Ownership</GroupHeading>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-4">
             <ReadOnlyField label="Brand Name">{brandName ?? "—"}</ReadOnlyField>
             <ReadOnlyField label="Collection">{collectionName}</ReadOnlyField>
             <FormField
@@ -448,10 +453,10 @@ export function IdentitySection({
         >
           <CollapsibleTrigger className="group flex w-full items-center gap-2 text-left">
             <div className="flex-1">
-              <h3 className="text-foreground text-sm font-semibold tracking-tight">
+              <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.06em] uppercase">
                 Production Tracking
-              </h3>
-              <p className="text-muted-foreground text-xs font-normal">
+              </p>
+              <p className="text-muted-foreground/80 text-xs font-normal normal-case">
                 Optional — fill in once you&apos;re working with a factory
               </p>
             </div>
@@ -459,7 +464,7 @@ export function IdentitySection({
           </CollapsibleTrigger>
           <Separator />
           <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
-            <div className="grid grid-cols-2 gap-6 pt-1">
+            <div className="grid grid-cols-2 gap-4 pt-1">
               <FormField
                 control={form.control}
                 name="factory_name"
@@ -569,14 +574,14 @@ export function IdentitySection({
           className="space-y-4"
         >
           <CollapsibleTrigger className="group flex w-full items-center gap-2 text-left">
-            <h3 className="text-foreground flex-1 text-sm font-semibold tracking-tight">
+            <p className="text-muted-foreground flex-1 text-[11px] font-semibold tracking-[0.06em] uppercase">
               Use &amp; Fit
-            </h3>
+            </p>
             <ChevronDown className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
           <Separator />
           <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
-            <div className="grid grid-cols-2 gap-6 pt-1">
+            <div className="grid grid-cols-2 gap-4 pt-1">
               <FormField
                 control={form.control}
                 name="end_use"
@@ -637,13 +642,14 @@ export function IdentitySection({
 
         {/* ---- Group 5 — Admin & Metadata (read-only) --------------------- */}
         <section className="space-y-4">
+          <Separator />
           <GroupHeading>Admin &amp; Metadata</GroupHeading>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-4">
             <ReadOnlyField label="Status">
-              <Badge variant="outline">{STATUS_LABELS[product.status]}</Badge>
+              <StatusPill status={product.status} />
             </ReadOnlyField>
             <ReadOnlyField label="Tech Pack Version">
-              <Badge variant="secondary">Draft</Badge>
+              <StatusPill status="draft" />
             </ReadOnlyField>
             <ReadOnlyField label="Date Created">
               {formatDate(product.created_at)}
@@ -676,15 +682,15 @@ export function IdentitySection({
           />
         </section>
 
-        {/* ---- Save row --------------------------------------------------- */}
-        <div className="flex items-center justify-end gap-4 border-t pt-5">
+        {/* ---- Section footer: single primary action, right-aligned ------- */}
+        <div className="border-border flex items-center justify-end gap-4 border-t pt-5">
           {lastSaved && (
-            <span className="text-muted-foreground text-sm">
+            <span className="text-muted-foreground text-xs">
               Last saved {lastSaved}
             </span>
           )}
           <Button type="submit" disabled={isPending} className={cn("min-w-48")}>
-            {isPending ? "Saving…" : "Save Identity Section"}
+            {isPending ? "Saving…" : "Save Product Setup"}
           </Button>
         </div>
       </form>

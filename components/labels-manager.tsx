@@ -72,12 +72,12 @@ function ColorPicker({
             className={cn(
               "relative size-7 cursor-pointer rounded-full border transition-transform hover:scale-110",
               value.toLowerCase() === color.toLowerCase() &&
-                "ring-foreground ring-2 ring-offset-2 ring-offset-[var(--color-background)]",
+                "ring-foreground ring-offset-background ring-2 ring-offset-2",
             )}
             style={{ backgroundColor: color }}
           >
             {value.toLowerCase() === color.toLowerCase() && (
-              <Check className="absolute inset-0 m-auto size-3.5 text-black/70" />
+              <Check className="absolute inset-0 m-auto size-3.5 text-foreground/70" />
             )}
           </button>
         ))}

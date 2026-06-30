@@ -59,7 +59,7 @@ export function FabricPicker({
 
   if (fabrics.length === 0) {
     return (
-      <div className="border-input text-muted-foreground rounded-md border border-dashed px-3 py-2.5 text-sm">
+      <div className="bg-muted text-muted-foreground rounded-md px-3 py-2.5 text-sm">
         No fabrics yet. Add fabrics in{" "}
         <span className="text-foreground font-medium">
           Settings → Master Library

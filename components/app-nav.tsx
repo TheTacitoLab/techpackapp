@@ -71,7 +71,12 @@ export function AppNav({
   }
 
   const itemBase =
-    "flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors";
+    "relative flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors";
+
+  // The lime indicator bar shown at the left edge of the active nav item.
+  const indicator = (
+    <span className="bg-sidebar-accent absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r-full" />
+  );
 
   return (
     <div className="flex h-full flex-col gap-1">
@@ -82,10 +87,11 @@ export function AppNav({
             className={cn(
               itemBase,
               isAllProductsActive
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                ? "bg-sidebar-accent-bg text-sidebar-accent"
+                : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
             )}
           >
+            {isAllProductsActive && indicator}
             <LayoutDashboard className="size-4" />
             All Products
           </button>
@@ -96,51 +102,57 @@ export function AppNav({
             className={cn(
               itemBase,
               isArchivedActive
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                ? "bg-sidebar-accent-bg text-sidebar-accent"
+                : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
             )}
           >
+            {isArchivedActive && indicator}
             <Archive className="size-4" />
             Archived
           </button>
         </li>
       </ul>
 
-      <Separator className="my-2" />
+      <Separator className="bg-sidebar-border my-2" />
 
       {activeBrandId !== null ? (
         <>
           <div className="mb-1 px-3">
-            <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+            <p className="text-sidebar-muted text-xs font-semibold uppercase tracking-wider">
               Collections
             </p>
           </div>
 
           {activeCollections.length > 0 && (
             <ul className="flex flex-col gap-0.5">
-              {activeCollections.map((col) => (
-                <li key={col.id}>
-                  <button
-                    onClick={() => goToCollection(col.id)}
-                    className={cn(
-                      "flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
-                      onProducts && activeCollectionId === col.id
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    )}
-                  >
-                    <FolderOpen className="size-3.5 shrink-0" />
-                    <span className="truncate">{col.name}</span>
-                  </button>
-                </li>
-              ))}
+              {activeCollections.map((col) => {
+                const isActive =
+                  onProducts && activeCollectionId === col.id;
+                return (
+                  <li key={col.id}>
+                    <button
+                      onClick={() => goToCollection(col.id)}
+                      className={cn(
+                        "relative flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
+                        isActive
+                          ? "bg-sidebar-accent-bg text-sidebar-accent"
+                          : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                      )}
+                    >
+                      {isActive && indicator}
+                      <FolderOpen className="size-3.5 shrink-0" />
+                      <span className="truncate">{col.name}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
 
           <div className="mt-1 px-1">
             <CreateCollectionDialogSimple
               trigger={
-                <button className="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors">
+                <button className="text-sidebar-muted hover:text-sidebar-foreground flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors">
                   <Plus className="size-3.5" />
                   New collection
                 </button>
@@ -149,22 +161,23 @@ export function AppNav({
           </div>
         </>
       ) : (
-        <p className="text-muted-foreground px-3 text-xs">
+        <p className="text-sidebar-muted px-3 text-xs">
           No active brand. Visit Settings to set one.
         </p>
       )}
 
       <div className="mt-auto">
-        <Separator className="my-2" />
+        <Separator className="bg-sidebar-border my-2" />
         <Link
           href="/settings"
           className={cn(
             itemBase,
             isSettingsActive
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              ? "bg-sidebar-accent-bg text-sidebar-accent"
+              : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
           )}
         >
+          {isSettingsActive && indicator}
           <Settings className="size-4" />
           Settings
         </Link>

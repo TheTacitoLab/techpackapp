@@ -11,7 +11,7 @@ import {
   duplicateProduct,
   unarchiveProduct,
 } from "@/app/(app)/dashboard/actions";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,27 +23,6 @@ import {
 import type { Product, SectionStatus } from "@/types";
 
 type CardLabel = { id: string; name: string; color: string };
-
-const STATUS_LABELS: Record<Product["status"], string> = {
-  draft: "Draft",
-  in_review: "In Review",
-  sent_to_factory: "Sent to Factory",
-  sample_received: "Sample Received",
-  approved: "Approved",
-  in_production: "In Production",
-};
-
-const STATUS_VARIANT: Record<
-  Product["status"],
-  "default" | "secondary" | "outline" | "destructive"
-> = {
-  draft: "secondary",
-  in_review: "outline",
-  sent_to_factory: "outline",
-  sample_received: "outline",
-  approved: "default",
-  in_production: "default",
-};
 
 function CompactProgress({
   statuses,
@@ -57,7 +36,7 @@ function CompactProgress({
     <div className="flex items-center gap-2">
       <div className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
         <div
-          className="bg-primary h-full rounded-full transition-all"
+          className="bg-brand h-full rounded-full transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -114,9 +93,9 @@ export function ProductCard({
   }
 
   return (
-    <div className="bg-card group relative flex flex-col overflow-hidden rounded-xl border transition-shadow hover:shadow-md">
+    <div className="bg-card shadow-card hover:shadow-card-hover group relative flex flex-col overflow-hidden rounded-xl transition-shadow">
       {/* Thumbnail placeholder */}
-      <div className="bg-muted/40 flex h-36 items-center justify-center border-b">
+      <div className="bg-muted/40 border-border flex h-36 items-center justify-center border-b">
         <span className="text-muted-foreground/30 text-4xl font-bold select-none">
           {product.name.slice(0, 2).toUpperCase()}
         </span>
@@ -174,9 +153,7 @@ export function ProductCard({
           <span className="text-muted-foreground text-xs">
             {brandName ?? <span className="italic">Unassigned</span>}
           </span>
-          <Badge variant={STATUS_VARIANT[product.status]} className="text-xs">
-            {STATUS_LABELS[product.status]}
-          </Badge>
+          <StatusPill status={product.status} />
         </div>
 
         {labels.length > 0 && (
@@ -184,7 +161,7 @@ export function ProductCard({
             {labels.slice(0, 3).map((label) => (
               <span
                 key={label.id}
-                className="bg-muted/60 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+                className="bg-muted text-foreground inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs"
               >
                 <span
                   className="size-2 shrink-0 rounded-full"

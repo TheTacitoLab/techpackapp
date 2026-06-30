@@ -15,6 +15,7 @@ import { CreateCollectionDialogSimple } from "@/components/hierarchy-dialogs";
 import { CreateProductDialog } from "@/components/create-product-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { ProgressTracker } from "@/components/progress-tracker";
+import { StatusPill } from "@/components/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/section-card";
@@ -41,24 +42,12 @@ const STATUS_LABELS: Record<ProductStatus, string> = {
 };
 
 const STATUS_DOT: Record<ProductStatus, string> = {
-  draft: "bg-muted-foreground",
-  in_review: "bg-primary",
-  sent_to_factory: "bg-sky-500",
-  sample_received: "bg-amber-500",
-  approved: "bg-green-500",
-  in_production: "bg-foreground",
-};
-
-const STATUS_VARIANT: Record<
-  ProductStatus,
-  "default" | "secondary" | "outline"
-> = {
-  draft: "secondary",
-  in_review: "outline",
-  sent_to_factory: "outline",
-  sample_received: "outline",
-  approved: "default",
-  in_production: "default",
+  draft: "bg-status-draft-fg",
+  in_review: "bg-status-review-fg",
+  sent_to_factory: "bg-status-factory-fg",
+  sample_received: "bg-status-sample-fg",
+  approved: "bg-status-approved-fg",
+  in_production: "bg-status-production-fg",
 };
 
 const DAY_MS = 1000 * 60 * 60 * 24;
@@ -85,14 +74,14 @@ function StatCard({
   return (
     <div
       className={cn(
-        "bg-card rounded-xl border p-5",
-        accent && "border-primary/60",
+        "bg-card shadow-card rounded-xl p-5",
+        accent && "shadow-card-hover",
       )}
     >
       <p
         className={cn(
           "text-4xl font-bold tracking-tight",
-          accent && "text-primary",
+          accent ? "text-primary" : "text-foreground",
         )}
       >
         {value}
@@ -300,7 +289,7 @@ export function LaunchpadClient({
                     <button
                       key={col.id}
                       onClick={() => openCollection(col.id)}
-                      className="bg-card hover:border-primary/50 w-full cursor-pointer space-y-3 rounded-xl border p-4 text-left transition-colors"
+                      className="bg-card shadow-card hover:shadow-card-hover w-full cursor-pointer space-y-3 rounded-xl p-4 text-left transition-shadow"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium">{col.name}</span>
@@ -346,12 +335,12 @@ export function LaunchpadClient({
               Needs Attention
             </h2>
             {needsAttention.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-xl border border-dashed p-4 text-sm text-green-500">
-                <CheckCircle2 className="size-4" />
+              <div className="bg-muted/50 text-muted-foreground flex items-center gap-2 rounded-xl p-4 text-sm">
+                <CheckCircle2 className="text-status-approved-fg size-4" />
                 All products on track
               </div>
             ) : (
-              <ul className="divide-y rounded-xl border">
+              <ul className="divide-border bg-card shadow-card divide-y rounded-xl">
                 {needsAttention.map(({ product, reason }) => (
                   <li key={product.id}>
                     <Link
@@ -359,7 +348,7 @@ export function LaunchpadClient({
                       className="hover:bg-accent flex cursor-pointer items-center justify-between gap-3 px-4 py-3 transition-colors"
                     >
                       <span className="flex min-w-0 items-center gap-2">
-                        <AlertTriangle className="text-amber-500 size-4 shrink-0" />
+                        <AlertTriangle className="text-status-progress-fg size-4 shrink-0" />
                         <span className="truncate text-sm font-medium">
                           {product.name}
                         </span>
@@ -422,12 +411,7 @@ export function LaunchpadClient({
                           · {relativeTime(product.updated_at, now)}
                         </p>
                       </div>
-                      <Badge
-                        variant={STATUS_VARIANT[product.status]}
-                        className="shrink-0 text-xs"
-                      >
-                        {STATUS_LABELS[product.status]}
-                      </Badge>
+                      <StatusPill status={product.status} className="shrink-0" />
                     </Link>
                   </li>
                 ))}

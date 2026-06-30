@@ -6,7 +6,7 @@ import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import { updateProductStatus } from "@/app/(app)/dashboard/actions";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/status-pill";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,26 +15,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ProductStatus } from "@/types";
 
-const STATUSES: { value: ProductStatus; label: string }[] = [
-  { value: "draft", label: "Draft" },
-  { value: "in_review", label: "In Review" },
-  { value: "sent_to_factory", label: "Sent to Factory" },
-  { value: "sample_received", label: "Sample Received" },
-  { value: "approved", label: "Approved" },
-  { value: "in_production", label: "In Production" },
+const STATUS_ORDER: ProductStatus[] = [
+  "draft",
+  "in_review",
+  "sent_to_factory",
+  "sample_received",
+  "approved",
+  "in_production",
 ];
-
-const BADGE_VARIANT: Record<
-  ProductStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
-  draft: "secondary",
-  in_review: "outline",
-  sent_to_factory: "outline",
-  sample_received: "outline",
-  approved: "default",
-  in_production: "default",
-};
 
 export function ProductStatusControl({
   productId,
@@ -59,28 +47,24 @@ export function ProductStatusControl({
     });
   }
 
-  const current = STATUSES.find((s) => s.value === currentStatus);
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={isPending}
-        className="flex items-center gap-1.5 outline-none"
+        className="flex cursor-pointer items-center gap-1.5 outline-none"
         aria-label="Change product status"
       >
-        <Badge variant={BADGE_VARIANT[currentStatus]} className="text-sm">
-          {current?.label}
-        </Badge>
+        <StatusPill status={currentStatus} />
         <ChevronDown className="text-muted-foreground size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {STATUSES.map((s) => (
+        {STATUS_ORDER.map((value) => (
           <DropdownMenuItem
-            key={s.value}
-            onClick={() => onChange(s.value)}
-            className={s.value === currentStatus ? "text-primary" : ""}
+            key={value}
+            onClick={() => onChange(value)}
+            className={value === currentStatus ? "font-medium" : ""}
           >
-            {s.label}
+            <StatusPill status={value} />
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

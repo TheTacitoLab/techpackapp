@@ -111,10 +111,10 @@ export default async function ProductDetailPage({ params }: PageProps) {
       {/* Sticky workspace header: compact breadcrumb bar + slim progress row.
           Stays pinned so the product name, labels, status, and progress remain
           visible while scrolling through long tech-pack sections. */}
-      <div className="bg-background sticky top-0 z-10">
+      <div className="bg-background border-border sticky top-0 z-10 -mx-6 -mt-6 border-b">
         {/* Compact header bar — single line on desktop */}
         <div className="flex h-14 items-center justify-between gap-4 px-6">
-          <nav className="text-muted-foreground flex min-w-0 items-center gap-1.5 overflow-hidden text-sm whitespace-nowrap">
+          <nav className="text-muted-foreground flex min-w-0 items-center gap-1.5 overflow-hidden text-[13px] whitespace-nowrap">
             <Link
               href="/products"
               className="hover:text-foreground shrink-0 transition-colors"
@@ -139,7 +139,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
               </>
             )}
             <span className="shrink-0">/</span>
-            <span className="text-foreground truncate font-semibold">
+            <span className="text-foreground truncate font-medium">
               {product.name}
             </span>
             <span className="text-muted-foreground shrink-0">
@@ -167,7 +167,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
       </div>
 
       {/* Tech-pack sections — given the maximum remaining vertical space */}
-      <div className="space-y-4 px-6 py-4">
+      <div className="-mx-6 space-y-3 px-6 py-4">
         {resolved.map((section, index) => (
           <CollapsibleSection
             key={section.id}

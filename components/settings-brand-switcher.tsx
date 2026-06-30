@@ -52,10 +52,10 @@ export function SettingsBrandSwitcher({
               key={brand.id}
               onClick={() => setPendingId(brand.id)}
               className={cn(
-                "relative flex flex-col gap-1 rounded-xl border p-4 text-left transition-colors",
+                "bg-card shadow-card relative flex flex-col gap-1 rounded-xl p-4 text-left transition-shadow",
                 isActive
-                  ? "border-[var(--color-primary)] bg-primary/5"
-                  : "hover:bg-accent",
+                  ? "ring-primary ring-1"
+                  : "hover:shadow-card-hover",
               )}
             >
               {isActive && (
