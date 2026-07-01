@@ -1,11 +1,12 @@
 "use client";
 
 // Phase 4b: renders the Asset Library panel.
-// Phase 4c (next session) adds the page strip and slot grids below it.
+// Phase 4c: adds the page strip, template grids and the slot lock mechanic below.
 
 import { useMemo } from "react";
 
 import { AssetLibrary } from "@/components/canvas/asset-library";
+import { CanvasPages } from "@/components/canvas/canvas-pages";
 import type { ProductAsset, ResolvedCanvasPage } from "@/types";
 
 export function CanvasSection({
@@ -41,10 +42,12 @@ export function CanvasSection({
         assets={assets}
         usedAssetIds={usedAssetIds}
       />
-      {/* Canvas pages go here in Phase 4c */}
-      <div className="text-muted-foreground p-4 text-center text-sm">
-        Canvas pages coming in next session.
-      </div>
+      <CanvasPages
+        productId={productId}
+        workspaceId={workspaceId}
+        pages={pages}
+        assets={assets}
+      />
     </div>
   );
 }
