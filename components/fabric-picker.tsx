@@ -38,33 +38,47 @@ function gsm(item: ResolvedLibraryItem): string | null {
 }
 
 /**
- * Searchable fabric picker over the resolved Master Library. Built as a
- * combobox (command + popover) so it can be reused by the BOM (Phase 6) and
- * canvas annotation (Phase 5). Searches both fabric name and composition, and
- * flags global TechPackApp catalogue items with a small chip.
+ * Searchable fabric/library-item picker over the resolved Master Library.
+ * Built as a combobox (command + popover) so it can be reused across sections —
+ * the canvas Fabrics & Trim pin editor passes a `summaryLine` to show a
+ * category-appropriate one-liner (composition for fabrics, brand+gauge for a
+ * zip, etc.) instead of the fabric-specific composition/GSM default. Searches
+ * both name and the summary line, and flags global TechPackApp catalogue items
+ * with a small chip.
  */
 export function FabricPicker({
   fabrics,
   value,
   onChange,
   placeholder = "Select a shell fabric…",
+  summaryLine,
+  emptyMessage,
 }: {
   fabrics: ResolvedLibraryItem[];
   value: string | null;
   onChange: (id: string, item: ResolvedLibraryItem) => void;
   placeholder?: string;
+  /** Overrides the default composition/GSM summary shown per row + trigger. */
+  summaryLine?: (item: ResolvedLibraryItem) => string | null;
+  /** Overrides the default "No fabrics yet…" empty-state copy. */
+  emptyMessage?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
   const selected = fabrics.find((f) => f.id === value) ?? null;
+  const summary = summaryLine ?? composition;
 
   if (fabrics.length === 0) {
     return (
       <div className="bg-muted text-muted-foreground rounded-md px-3 py-2.5 text-sm">
-        No fabrics yet. Add fabrics in{" "}
-        <span className="text-foreground font-medium">
-          Settings → Master Library
-        </span>
-        .
+        {emptyMessage ?? (
+          <>
+            No fabrics yet. Add fabrics in{" "}
+            <span className="text-foreground font-medium">
+              Settings → Master Library
+            </span>
+            .
+          </>
+        )}
       </div>
     );
   }
@@ -82,9 +96,9 @@ export function FabricPicker({
           {selected ? (
             <span className="flex min-w-0 flex-col items-start">
               <span className="truncate font-medium">{selected.name}</span>
-              {composition(selected) && (
+              {summary(selected) && (
                 <span className="text-muted-foreground truncate text-xs">
-                  {composition(selected)}
+                  {summary(selected)}
                 </span>
               )}
             </span>
@@ -101,14 +115,14 @@ export function FabricPicker({
         <Command>
           <CommandInput placeholder="Search by name or composition…" />
           <CommandList>
-            <CommandEmpty>No matching fabrics.</CommandEmpty>
+            <CommandEmpty>No matching items.</CommandEmpty>
             <CommandGroup>
               {fabrics.map((fabric) => {
-                const comp = composition(fabric);
+                const line = summary(fabric);
                 const weight = gsm(fabric);
-                // cmdk filters on this value — include composition so search
-                // matches both the fabric name and its make-up.
-                const searchValue = `${fabric.name} ${comp ?? ""}`;
+                // cmdk filters on this value — include the summary so search
+                // matches both the item name and its make-up.
+                const searchValue = `${fabric.name} ${line ?? ""}`;
                 return (
                   <CommandItem
                     key={fabric.id}
@@ -139,9 +153,9 @@ export function FabricPicker({
                           </Badge>
                         )}
                       </span>
-                      {comp && (
+                      {line && (
                         <span className="text-muted-foreground text-xs">
-                          {comp}
+                          {line}
                         </span>
                       )}
                     </span>

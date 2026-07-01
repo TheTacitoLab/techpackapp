@@ -15,7 +15,11 @@ import { useState } from "react";
 import { PageEditor } from "@/components/canvas/page-editor";
 import { PageOverview } from "@/components/canvas/page-overview";
 import type { LayerKey } from "@/components/canvas/layers";
-import type { ProductAsset, ResolvedCanvasPage } from "@/types";
+import type {
+  ProductAsset,
+  ResolvedCanvasPage,
+  ResolvedLibraryItem,
+} from "@/types";
 
 type Mode = { view: "overview" } | { view: "edit"; pageId: string };
 
@@ -24,11 +28,13 @@ export function TechnicalDetailsSection({
   workspaceId,
   assets,
   pages,
+  libraryItems,
 }: {
   productId: string;
   workspaceId: string;
   assets: ProductAsset[];
   pages: ResolvedCanvasPage[];
+  libraryItems: ResolvedLibraryItem[];
 }) {
   const [mode, setMode] = useState<Mode>({ view: "overview" });
   // Default to Fabrics & Trim — the most-used layer, and the one that builds the BOM.
@@ -65,6 +71,7 @@ export function TechnicalDetailsSection({
       pageId={mode.pageId}
       activeLayer={activeLayer}
       isFullscreen={isFullscreen}
+      libraryItems={libraryItems}
       onLayerChange={setActiveLayer}
       onSelectPage={(pageId) => setMode({ view: "edit", pageId })}
       onBackToOverview={backToOverview}

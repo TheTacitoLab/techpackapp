@@ -112,6 +112,33 @@ export type ResolvedCanvasPage = CanvasPage & {
  * Exported so the canvas UI and the generated BOM render the same codes — the
  * single source of truth for both the zod enum and the prefixes.
  */
+/**
+ * Structured `data` jsonb shape for Fabrics & Trim annotations (`layer_type` in
+ * fabric/trim/hardware/elastic). Fields auto-filled from the selected Master
+ * Library item at pick-time (`library_item_id`, `library_item_name`,
+ * `category`, `composition`, `colour`, `gsm`, `supplier_code`) are denormalised
+ * onto the annotation so the BOM and pin UI never need a join back to
+ * `library_items`; `placement`/`quantity`/`unit`/`notes` are per-instance and
+ * entered on this pin only. `gsm` is fabric-specific and null for trims/
+ * hardware/elastics. Annotations created before this session store only
+ * `{ label, notes }` — those legacy fields are read as a display fallback
+ * (never migrated) so old pins keep working; see `readFabricTrimData` in
+ * `components/canvas/fabric-trim-data.ts`.
+ */
+export type FabricTrimAnnotationData = {
+  library_item_id: string | null;
+  library_item_name: string | null;
+  category: LibraryCategory | null;
+  composition: string | null;
+  colour: string | null;
+  gsm: number | null;
+  placement: string | null;
+  quantity: number | null;
+  unit: "per_metre" | "per_unit" | "per_kg" | null;
+  supplier_code: string | null;
+  notes: string | null;
+};
+
 export const LAYER_PREFIX: Record<CanvasLayerType, string> = {
   fabric: "F",
   trim: "T",

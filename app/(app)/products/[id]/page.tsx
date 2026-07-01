@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
+import { BomTable } from "@/components/bom/bom-table";
 import { AssetUploadSection } from "@/components/canvas/asset-upload-section";
+import { isFabricFamilyType } from "@/components/canvas/fabric-trim-data";
 import { TechnicalDetailsSection } from "@/components/canvas/technical-details-section";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { IdentitySection } from "@/components/identity-section";
@@ -9,6 +11,7 @@ import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
 import { ProgressTracker } from "@/components/progress-tracker";
 import { SectionIcon } from "@/components/section-icon";
+import { getWorkspaceLibrary } from "@/lib/library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -55,6 +58,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
     { data: assignedRows },
     { data: workspaceSeasons },
     { data: workspaceCollections },
+    libraryItems,
   ] = await Promise.all([
     supabase
       .from("product_sections")
@@ -93,6 +97,10 @@ export default async function ProductDetailPage({ params }: PageProps) {
       .select("*")
       .eq("workspace_id", ctx.profile.workspace_id)
       .order("name"),
+    // Fabrics & Trim pin editor's library picker — fetched here (not per
+    // category) so the picker can filter Fabric/Trim/Fastener/Elastic
+    // client-side without four separate round-trips.
+    getWorkspaceLibrary(),
   ]);
 
   // Canvas data (Phase 4b): the product's image assets and its pages with slots
@@ -144,6 +152,15 @@ export default async function ProductDetailPage({ params }: PageProps) {
     });
     return { ...pageRest, slots };
   });
+
+  // Bill of Materials: every Fabrics & Trim annotation across the whole
+  // product, derived from `resolvedPages` — already fetched scoped to
+  // `product.id` (itself already confirmed in-workspace above) and further
+  // guarded by RLS on canvas_pages/canvas_slots/canvas_annotations, so this
+  // reuses an already-verified-safe data source rather than a new query.
+  const bomAnnotations: CanvasAnnotation[] = resolvedPages
+    .flatMap((p) => p.slots.flatMap((s) => s.annotations))
+    .filter((a) => isFabricFamilyType(a.layer_type));
 
   const brand = brandResult.data;
   const collection = collectionResult.data;
@@ -197,10 +214,12 @@ export default async function ProductDetailPage({ params }: PageProps) {
             workspaceId={activeProduct.workspace_id}
             assets={assets}
             pages={resolvedPages}
+            libraryItems={libraryItems}
           />
         );
-      case "branding":
       case "bom":
+        return <BomTable annotations={bomAnnotations} />;
+      case "branding":
       case "grading":
       case "documents":
       default:

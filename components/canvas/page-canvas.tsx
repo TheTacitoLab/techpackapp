@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { AnnotationPin } from "@/components/canvas/annotation-pin";
 import { AssetPicker } from "@/components/canvas/asset-picker";
 import { GRID_CLASS } from "@/components/canvas/canvas-templates";
+import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { layerByKey, layerForType, type LayerKey } from "@/components/canvas/layers";
 import {
   AlertDialog,
@@ -26,6 +27,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   createAnnotation,
   fillSlot,
   lockSlot,
@@ -34,7 +40,14 @@ import {
 } from "@/app/(app)/products/[id]/canvas-actions";
 import { cn } from "@/lib/utils";
 import type { Json } from "@/types/database.types";
-import type { ProductAsset, ResolvedCanvasPage, ResolvedSlot } from "@/types";
+import type {
+  CanvasAnnotation,
+  CanvasLayerType,
+  ProductAsset,
+  ResolvedCanvasPage,
+  ResolvedLibraryItem,
+  ResolvedSlot,
+} from "@/types";
 
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
@@ -62,12 +75,28 @@ function clampPan(
   return { x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
 }
 
+type AnnotationMutationHandlers = {
+  onAnnotationCreated: (slotId: string, annotation: CanvasAnnotation) => void;
+  onAnnotationUpdated: (
+    slotId: string,
+    id: string,
+    data: Record<string, unknown>,
+  ) => void;
+  onAnnotationDeleted: (slotId: string, id: string) => void;
+  onSelectAnnotation: (id: string) => void;
+};
+
 /**
  * The active page's template grid and its slots. This is the ONLY part of the
- * editor that renders images and pins — deliberately isolated so the next
+ * editor that renders images and pins — deliberately isolated so a future
  * session can swap the CSS image/HTML-pin internals for Konva without touching
  * navigation, layers, or fullscreen. Every slot is one of three states:
  * empty (asset picker) → framing (CSS pan/zoom + Lock) → annotation (pins).
+ *
+ * Annotation state itself is owned by `PageEditor` (lifted up so the
+ * right-hand list panel can show every page's annotations, not just the
+ * active one) — this component and its descendants only read `slot.annotations`
+ * and call the mutation callbacks, never keep their own copy.
  *
  * `stageZoom` is the inspect-the-page magnifier applied to the whole grid
  * (0.5–4.0); `activeLayerKey` decides which layer new pins get and which pins
@@ -81,6 +110,12 @@ export function PageCanvas({
   activeLayerKey,
   stageZoom,
   heightClassName,
+  libraryItems,
+  selectedAnnotationId,
+  onAnnotationCreated,
+  onAnnotationUpdated,
+  onAnnotationDeleted,
+  onSelectAnnotation,
 }: {
   page: ResolvedCanvasPage;
   assets: ProductAsset[];
@@ -89,7 +124,9 @@ export function PageCanvas({
   activeLayerKey: LayerKey;
   stageZoom: number;
   heightClassName: string;
-}) {
+  libraryItems: ResolvedLibraryItem[];
+  selectedAnnotationId: string | null;
+} & AnnotationMutationHandlers) {
   return (
     <div className="flex justify-center">
       <div
@@ -106,6 +143,12 @@ export function PageCanvas({
               productId={productId}
               workspaceId={workspaceId}
               activeLayerKey={activeLayerKey}
+              libraryItems={libraryItems}
+              selectedAnnotationId={selectedAnnotationId}
+              onAnnotationCreated={onAnnotationCreated}
+              onAnnotationUpdated={onAnnotationUpdated}
+              onAnnotationDeleted={onAnnotationDeleted}
+              onSelectAnnotation={onSelectAnnotation}
             />
           ))}
       </div>
@@ -121,13 +164,21 @@ function SlotView({
   productId,
   workspaceId,
   activeLayerKey,
+  libraryItems,
+  selectedAnnotationId,
+  onAnnotationCreated,
+  onAnnotationUpdated,
+  onAnnotationDeleted,
+  onSelectAnnotation,
 }: {
   slot: ResolvedSlot;
   assets: ProductAsset[];
   productId: string;
   workspaceId: string;
   activeLayerKey: LayerKey;
-}) {
+  libraryItems: ResolvedLibraryItem[];
+  selectedAnnotationId: string | null;
+} & AnnotationMutationHandlers) {
   if (!slot.asset) {
     return (
       <EmptySlot
@@ -144,6 +195,12 @@ function SlotView({
         slot={slot}
         activeLayerKey={activeLayerKey}
         workspaceId={workspaceId}
+        libraryItems={libraryItems}
+        selectedAnnotationId={selectedAnnotationId}
+        onAnnotationCreated={onAnnotationCreated}
+        onAnnotationUpdated={onAnnotationUpdated}
+        onAnnotationDeleted={onAnnotationDeleted}
+        onSelectAnnotation={onSelectAnnotation}
       />
     );
   }
@@ -459,39 +516,102 @@ function FramingSlot({
   );
 }
 
+// ---- Draft pin (Fabrics & Trim: pick sub-type + item BEFORE creating) -------
+
+/**
+ * A new Fabrics & Trim pin defers `createAnnotation` until the editor is
+ * saved — unlike other layers, which create immediately on click — because
+ * the sub-type chosen in the editor (Fabric/Trim/Fastener/Elastic) determines
+ * the annotation's actual `layer_type`, and that can't be changed after
+ * creation (it would invalidate the assigned reference code). This renders a
+ * small pulsing marker at the click point with the editor already open;
+ * dismissing without saving never calls the server, so no orphan row exists.
+ */
+function DraftFabricPin({
+  x,
+  y,
+  slotWidth,
+  slotHeight,
+  slotId,
+  libraryItems,
+  onCreated,
+  onCancel,
+}: {
+  x: number;
+  y: number;
+  slotWidth: number;
+  slotHeight: number;
+  slotId: string;
+  libraryItems: ResolvedLibraryItem[];
+  onCreated: (result: {
+    id: string;
+    referenceCode: string;
+    layerType: CanvasLayerType;
+    data: Record<string, unknown>;
+  }) => void;
+  onCancel: () => void;
+}) {
+  const color = layerByKey("fabric").color;
+  return (
+    <Popover open onOpenChange={(next) => !next && onCancel()}>
+      <PopoverTrigger asChild>
+        <span
+          aria-hidden
+          className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
+          style={{ left: x * slotWidth, top: y * slotHeight }}
+        >
+          <span
+            className="block size-1.5 rounded-full ring-2 ring-white"
+            style={{ backgroundColor: color }}
+          />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent align="center" className="w-80 space-y-3">
+        <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+          New Fabrics &amp; Trim pin
+        </div>
+        <FabricTrimPinEditor
+          mode="create"
+          slotId={slotId}
+          x={x}
+          y={y}
+          libraryItems={libraryItems}
+          onCreated={onCreated}
+          onCancel={onCancel}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ---- Annotation slot (filled, locked) ---------------------------------------
 
 function AnnotationSlot({
   slot,
   activeLayerKey,
   workspaceId,
+  libraryItems,
+  selectedAnnotationId,
+  onAnnotationCreated,
+  onAnnotationUpdated,
+  onAnnotationDeleted,
+  onSelectAnnotation,
 }: {
   slot: ResolvedSlot;
   activeLayerKey: LayerKey;
   workspaceId: string;
-}) {
+  libraryItems: ResolvedLibraryItem[];
+  selectedAnnotationId: string | null;
+} & AnnotationMutationHandlers) {
   const router = useRouter();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [unlockConfirm, setUnlockConfirm] = useState(false);
   const [, startCreate] = useTransition();
   const [isUnlocking, startUnlock] = useTransition();
-
-  // Local, optimistic annotation list — pin create/update/delete apply here
-  // directly instead of waiting on router.refresh() (which re-fetches the
-  // entire product page). This can drift from the server if the same product
-  // is open in two tabs at once; an acceptable V1 tradeoff until realtime
-  // sync lands.
-  const [localAnnotations, setLocalAnnotations] = useState(slot.annotations);
-  // Tracks the prop so we can detect legitimate upstream changes (e.g. a
-  // lock/unlock refresh reloading this slot) and resync during render, per
-  // React's recommended "adjust state during render" pattern — avoids the
-  // extra render pass a useEffect-based sync would cost.
-  const [syncedAnnotations, setSyncedAnnotations] = useState(slot.annotations);
-  if (slot.annotations !== syncedAnnotations) {
-    setSyncedAnnotations(slot.annotations);
-    setLocalAnnotations(slot.annotations);
-  }
+  const [draftPoint, setDraftPoint] = useState<{ x: number; y: number } | null>(
+    null,
+  );
 
   // Track the slot's rendered size so pins position from live fractions.
   useEffect(() => {
@@ -506,27 +626,33 @@ function AnnotationSlot({
   }, []);
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
-    // ── TEMPORARY client-side timing instrumentation (browser console) ────────
-    // Splits click-to-visible into three honest phases so we can see where the
-    // ~3s actually goes: T0→T2 pure client work before any network call,
-    // T2→T3 the real network+server round-trip, T3→T5 React re-render/paint.
-    // Logic is unchanged — remove this block once the numbers are captured.
-    const t0 = performance.now();
-    console.log("%c[TIMING] T0 - click registered", "color: #C8F000", t0);
-
     const rect = e.currentTarget.getBoundingClientRect();
     // 0–1 fractions of the slot — identical math to Konva's click next session.
     const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
     const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
-    // New pins get the active layer's primary type (colourway/fabric/…).
-    const layerType = layerByKey(activeLayerKey).primaryType;
 
+    // Fabrics & Trim: open the editor at this point BEFORE creating anything —
+    // the chosen sub-type decides the real layer_type (see DraftFabricPin).
+    if (activeLayerKey === "fabric") {
+      setDraftPoint({ x, y });
+      return;
+    }
+
+    // TEMPORARY client-side timing instrumentation (browser console) — splits
+    // click-to-visible into three honest phases: T0→T2 pure client work before
+    // any network call, T2→T3 the real network+server round-trip, T3→T5 React
+    // re-render/paint. Logic is unchanged. Only applies to this immediate-create
+    // path (other layers); the deferred Fabrics & Trim flow above isn't timed.
+    const t0 = performance.now();
+    console.log("%c[TIMING] T0 - click registered", "color: #C8F000", t0);
     const t1 = performance.now();
     console.log(
       `%c[TIMING] T1 - coords computed (+${(t1 - t0).toFixed(1)}ms)`,
       "color: #C8F000",
       t1,
     );
+    // New pins get the active layer's primary type (measurement/construction/…).
+    const layerType = layerByKey(activeLayerKey).primaryType;
 
     startCreate(async () => {
       const t2 = performance.now();
@@ -535,47 +661,33 @@ function AnnotationSlot({
         "color: #C8F000",
         t2,
       );
-
       try {
         const result = await createAnnotation(slot.id, layerType, x, y, "point");
         const t3 = performance.now();
         console.log(
-          `%c[TIMING] T3 - server responded (+${(t3 - t2).toFixed(1)}ms — THIS IS THE ACTUAL NETWORK+SERVER TIME)`,
+          `%c[TIMING] T3 - server responded (+${(t3 - t2).toFixed(1)}ms)`,
           "color: #FF6B6B",
           t3,
         );
-        // Sanity cross-check that the deployed code is the fixed fast version:
-        // confirm the response shape ({ id, referenceCode }). The internal
-        // round-trip count is logged server-side (Netlify function logs), not
-        // returned to the browser, so the reference code + T2→T3 timing are the
-        // browser-visible signals that the server ran the optimized path.
-        console.log(
-          "%c[TIMING] createAnnotation response (confirms deployed path):",
-          "color: #9B8CFF",
-          result,
-        );
 
-        const { id, referenceCode } = result;
-        // Add directly to local state — no router.refresh(), no full page re-fetch.
-        setLocalAnnotations((prev) => [
-          ...prev,
-          {
-            id,
-            slot_id: slot.id,
-            workspace_id: workspaceId,
-            layer_type: layerType,
-            reference_code: referenceCode,
-            x,
-            y,
-            pin_type: "point",
-            end_x: null,
-            end_y: null,
-            data: {},
-            created_by: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ]);
+        // Add directly to shared state (owned by PageEditor) — no
+        // router.refresh(), no full page re-fetch.
+        onAnnotationCreated(slot.id, {
+          id: result.id,
+          slot_id: slot.id,
+          workspace_id: workspaceId,
+          layer_type: layerType,
+          reference_code: result.referenceCode,
+          x,
+          y,
+          pin_type: "point",
+          end_x: null,
+          end_y: null,
+          data: {},
+          created_by: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
 
         const t4 = performance.now();
         console.log(
@@ -583,7 +695,6 @@ function AnnotationSlot({
           "color: #C8F000",
           t4,
         );
-
         requestAnimationFrame(() => {
           const t5 = performance.now();
           console.log(
@@ -604,24 +715,30 @@ function AnnotationSlot({
     });
   }
 
-  function handleAnnotationUpdated(id: string, data: Record<string, unknown>) {
-    setLocalAnnotations((prev) =>
-      prev.map((a) =>
-        a.id === id
-          ? {
-              ...a,
-              data: {
-                ...(a.data as Record<string, unknown>),
-                ...data,
-              } as Json,
-            }
-          : a,
-      ),
-    );
-  }
-
-  function handleAnnotationDeleted(id: string) {
-    setLocalAnnotations((prev) => prev.filter((a) => a.id !== id));
+  function handleDraftCreated(result: {
+    id: string;
+    referenceCode: string;
+    layerType: CanvasLayerType;
+    data: Record<string, unknown>;
+  }) {
+    if (!draftPoint) return;
+    onAnnotationCreated(slot.id, {
+      id: result.id,
+      slot_id: slot.id,
+      workspace_id: workspaceId,
+      layer_type: result.layerType,
+      reference_code: result.referenceCode,
+      x: draftPoint.x,
+      y: draftPoint.y,
+      pin_type: "point",
+      end_x: null,
+      end_y: null,
+      data: result.data as unknown as Json,
+      created_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    setDraftPoint(null);
   }
 
   function doUnlock() {
@@ -637,7 +754,7 @@ function AnnotationSlot({
   }
 
   function handleUnlock() {
-    if (localAnnotations.length > 0) setUnlockConfirm(true);
+    if (slot.annotations.length > 0) setUnlockConfirm(true);
     else doUnlock();
   }
 
@@ -668,7 +785,7 @@ function AnnotationSlot({
       />
 
       {/* Existing pins — active layer interactive, others dimmed for context */}
-      {localAnnotations.map((annotation) => (
+      {slot.annotations.map((annotation) => (
         <AnnotationPin
           key={annotation.id}
           annotation={annotation}
@@ -677,10 +794,26 @@ function AnnotationSlot({
           interactive={
             layerForType(annotation.layer_type)?.key === activeLayerKey
           }
-          onUpdated={handleAnnotationUpdated}
-          onDeleted={handleAnnotationDeleted}
+          isSelected={annotation.id === selectedAnnotationId}
+          libraryItems={libraryItems}
+          onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
+          onDeleted={(id) => onAnnotationDeleted(slot.id, id)}
+          onSelected={onSelectAnnotation}
         />
       ))}
+
+      {draftPoint && (
+        <DraftFabricPin
+          x={draftPoint.x}
+          y={draftPoint.y}
+          slotWidth={size.width}
+          slotHeight={size.height}
+          slotId={slot.id}
+          libraryItems={libraryItems}
+          onCreated={handleDraftCreated}
+          onCancel={() => setDraftPoint(null)}
+        />
+      )}
 
       {/* Toolbar */}
       <div className="absolute top-2 right-2 flex items-center gap-2">

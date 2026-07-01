@@ -68,6 +68,7 @@ export function CollapsibleSection({
 
   return (
     <Collapsible
+      id={`section-${sectionKey}`}
       open={open}
       onOpenChange={(next) => setSectionOpen(sectionKey, next)}
       className="bg-card shadow-card overflow-hidden rounded-xl"
