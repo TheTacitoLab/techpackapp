@@ -13,6 +13,7 @@ import {
 
 import { CreateCollectionDialogSimple } from "@/components/hierarchy-dialogs";
 import { Separator } from "@/components/ui/separator";
+import { UserMenu } from "@/components/user-menu";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type { Collection } from "@/types";
@@ -20,9 +21,13 @@ import type { Collection } from "@/types";
 export function AppNav({
   collections = [],
   collapsed = false,
+  userName,
+  userEmail,
 }: {
   collections?: Collection[];
   collapsed?: boolean;
+  userName: string | null;
+  userEmail: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -169,6 +174,7 @@ export function AppNav({
 
       <div className="mt-auto">
         <Separator className="bg-sidebar-border my-2" />
+        <UserMenu name={userName} email={userEmail} collapsed={collapsed} />
         <Link
           href="/settings"
           className={cn(

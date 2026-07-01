@@ -6,7 +6,6 @@ import { PanelLeftClose, PanelLeftOpen, Shirt } from "lucide-react";
 
 import { AppNav } from "@/components/app-nav";
 import { Separator } from "@/components/ui/separator";
-import { UserMenu } from "@/components/user-menu";
 import { cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/supabase/session-user";
 import { useUiStore } from "@/stores/ui-store";
@@ -62,7 +61,12 @@ export function AppShell({
             collapsed ? "px-2" : "px-3",
           )}
         >
-          <AppNav collections={collections} collapsed={collapsed} />
+          <AppNav
+            collections={collections}
+            collapsed={collapsed}
+            userName={profile.full_name}
+            userEmail={user.email ?? ""}
+          />
         </nav>
 
         <Separator className="bg-sidebar-border" />
@@ -98,9 +102,6 @@ export function AppShell({
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="border-border flex h-16 items-center justify-end border-b px-6">
-          <UserMenu name={profile.full_name} email={user.email ?? ""} />
-        </header>
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>
