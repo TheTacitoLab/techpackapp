@@ -492,28 +492,56 @@ function AnnotationSlot({
   }, []);
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+    // ── TEMPORARY client-side timing instrumentation (browser console) ────────
+    // Splits click-to-visible into three honest phases so we can see where the
+    // ~3s actually goes: T0→T2 pure client work before any network call,
+    // T2→T3 the real network+server round-trip, T3→T5 React re-render/paint.
+    // Logic is unchanged — remove this block once the numbers are captured.
+    const t0 = performance.now();
+    console.log("%c[TIMING] T0 - click registered", "color: #C8F000", t0);
+
     const rect = e.currentTarget.getBoundingClientRect();
     // 0–1 fractions of the slot — identical math to Konva's click next session.
     const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
     const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
     // New pins get the active layer's primary type (colourway/fabric/…).
     const layerType = layerByKey(activeLayerKey).primaryType;
-    console.time("[handleCanvasClick] TOTAL (click -> pin rendered)");
+
+    const t1 = performance.now();
+    console.log(
+      `%c[TIMING] T1 - coords computed (+${(t1 - t0).toFixed(1)}ms)`,
+      "color: #C8F000",
+      t1,
+    );
+
     startCreate(async () => {
+      const t2 = performance.now();
+      console.log(
+        `%c[TIMING] T2 - transition started, calling server (+${(t2 - t1).toFixed(1)}ms since T1)`,
+        "color: #C8F000",
+        t2,
+      );
+
       try {
-        console.time("[handleCanvasClick] server round-trip (createAnnotation)");
-        const { id, referenceCode } = await createAnnotation(
-          slot.id,
-          layerType,
-          x,
-          y,
-          "point",
+        const result = await createAnnotation(slot.id, layerType, x, y, "point");
+        const t3 = performance.now();
+        console.log(
+          `%c[TIMING] T3 - server responded (+${(t3 - t2).toFixed(1)}ms — THIS IS THE ACTUAL NETWORK+SERVER TIME)`,
+          "color: #FF6B6B",
+          t3,
         );
-        console.timeEnd(
-          "[handleCanvasClick] server round-trip (createAnnotation)",
+        // Sanity cross-check that the deployed code is the fixed fast version:
+        // confirm the response shape ({ id, referenceCode }). The internal
+        // round-trip count is logged server-side (Netlify function logs), not
+        // returned to the browser, so the reference code + T2→T3 timing are the
+        // browser-visible signals that the server ran the optimized path.
+        console.log(
+          "%c[TIMING] createAnnotation response (confirms deployed path):",
+          "color: #9B8CFF",
+          result,
         );
 
-        console.time("[handleCanvasClick] local state update");
+        const { id, referenceCode } = result;
         // Add directly to local state — no router.refresh(), no full page re-fetch.
         setLocalAnnotations((prev) => [
           ...prev,
@@ -534,10 +562,29 @@ function AnnotationSlot({
             updated_at: new Date().toISOString(),
           },
         ]);
-        console.timeEnd("[handleCanvasClick] local state update");
-        console.timeEnd("[handleCanvasClick] TOTAL (click -> pin rendered)");
-      } catch {
-        console.timeEnd("[handleCanvasClick] TOTAL (click -> pin rendered)");
+
+        const t4 = performance.now();
+        console.log(
+          `%c[TIMING] T4 - local state updated (+${(t4 - t3).toFixed(1)}ms)`,
+          "color: #C8F000",
+          t4,
+        );
+
+        requestAnimationFrame(() => {
+          const t5 = performance.now();
+          console.log(
+            `%c[TIMING] T5 - next paint after state update (+${(t5 - t4).toFixed(1)}ms)`,
+            "color: #60B4FF",
+            t5,
+          );
+          console.log(
+            `%c[TIMING] TOTAL click-to-visible: ${(t5 - t0).toFixed(1)}ms`,
+            "color: #FFB347; font-weight: bold",
+            "",
+          );
+        });
+      } catch (err) {
+        console.error("[TIMING] Error:", err);
         toast.error("Could not place the pin.");
       }
     });
