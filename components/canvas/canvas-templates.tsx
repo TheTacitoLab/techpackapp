@@ -105,7 +105,9 @@ export function TemplatePickerDialog({
         const { id } = await createCanvasPage(productId, selected);
         onOpenChange(false);
         onCreated(id);
-      } catch {
+      } catch (err) {
+        // TEMP diagnostic: surface the real error, not just the generic toast.
+        console.error("[DIAG] createCanvasPage failed:", err);
         toast.error("Could not create the page.");
       }
     });

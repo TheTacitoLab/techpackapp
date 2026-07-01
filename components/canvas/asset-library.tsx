@@ -363,6 +363,8 @@ export function AssetLibrary({
           // Success: drop the placeholder — the refresh will surface the real tile.
           setPending((prev) => prev.filter((u) => u.tempId !== tempId));
         } catch (err) {
+          // TEMP diagnostic: log the full error (message is redacted in prod).
+          console.error("[DIAG] uploadAsset (library) failed:", err);
           const message =
             err instanceof Error ? err.message : "Upload failed.";
           setPending((prev) =>

@@ -35,11 +35,11 @@ export async function updateSession(request: NextRequest) {
   );
 
   // getUser() revalidates the JWT with the Auth server — never trust
-  // getSession() for access decisions in server code. This is the SINGLE
-  // authoritative auth round-trip per request: it validates the token, drives
-  // the @supabase/ssr cookie refresh (rotating expired tokens), and gates
-  // access. Downstream page/action handlers therefore read the session locally
-  // (getSession) instead of repeating this network call.
+  // getSession() for access decisions in server code. This validates the
+  // token, drives the @supabase/ssr cookie refresh (rotating expired tokens),
+  // and gates access. Page/action handlers also call getUser() (via
+  // getCurrentUser / requireActionContext) as the authoritative check — the
+  // known-good pattern after a getSession()-based optimization was reverted.
   const t0 = performance.now();
   const {
     data: { user },

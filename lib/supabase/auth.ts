@@ -1,7 +1,7 @@
 import { cache } from "react";
 
 import { createClient } from "@/lib/supabase/server";
-import { decodeSessionUser, type SessionUser } from "@/lib/supabase/session-user";
+import type { SessionUser } from "@/lib/supabase/session-user";
 import type { Profile, Workspace } from "@/types";
 
 export type CurrentUser = {
@@ -16,29 +16,27 @@ export type CurrentUser = {
  * which would indicate the sign-up trigger has not run). Use in the `(app)`
  * layout guard and to feed `AppShell`.
  *
- * Reads the session LOCALLY (`getSession()`), not via a network `getUser()`.
- * The proxy (`lib/supabase/proxy.ts`) already validated + refreshed this
- * request's token with a single authoritative `getUser()` round-trip before
- * this handler ran, so re-validating here would be a redundant second
- * round-trip. `getSession()` only touches the network if the token still needs
- * a refresh; in the normal case it's a pure cookie read. See
- * `decodeSessionUser` for the safety argument.
+ * Uses `getUser()` — an authoritative round-trip to the Supabase Auth server —
+ * rather than a local `getSession()` read. `getSession()` on the server is a
+ * documented anti-pattern (Supabase: "getSession is insecure on the server"),
+ * and an earlier attempt to swap in `getSession()` + manual JWT decode here to
+ * shave a round-trip coincided with app-wide server-action failures, so we are
+ * back on the known-good `getUser()` path. That optimization made no
+ * measurable difference to felt latency, so nothing is lost by reverting.
  *
  * Wrapped in React `cache()` so the layout and the page (which both need the
- * user) share a single session read + profile/workspace query pair per request.
+ * user) share a single round-trip + profile/workspace query pair per request.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createClient();
 
   const t0 = performance.now();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
   console.log(
-    `[AUTH] getCurrentUser getSession (local): ${(performance.now() - t0).toFixed(1)}ms`,
+    `[AUTH] getCurrentUser getUser (network): ${(performance.now() - t0).toFixed(1)}ms`,
   );
-
-  const user = session ? decodeSessionUser(session.access_token) : null;
   if (!user) return null;
 
   const { data: profile } = await supabase
@@ -54,5 +52,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     .eq("id", profile.workspace_id)
     .single();
 
-  return { user, profile, workspace: workspace ?? null };
+  return {
+    user: { id: user.id, email: user.email ?? null },
+    profile,
+    workspace: workspace ?? null,
+  };
 });

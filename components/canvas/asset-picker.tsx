@@ -76,6 +76,8 @@ export function AssetPicker({
       router.refresh();
       if (firstUploaded) choose(firstUploaded);
     } catch (err) {
+      // TEMP diagnostic: log the full error (message is redacted in prod).
+      console.error("[DIAG] uploadAsset (picker) failed:", err);
       toast.error(err instanceof Error ? err.message : "Upload failed.");
     } finally {
       setIsUploading(false);

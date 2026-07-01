@@ -175,7 +175,11 @@ function EmptySlot({
   function handleSelect(asset: ProductAsset) {
     void fillSlot(slot.id, asset.id)
       .then(() => router.refresh())
-      .catch(() => toast.error("Could not add the image."));
+      .catch((err) => {
+        // TEMP diagnostic: surface the real error, not just the generic toast.
+        console.error("[DIAG] fillSlot (add image) failed:", err);
+        toast.error("Could not add the image.");
+      });
   }
 
   return (
@@ -235,8 +239,12 @@ function FramingSlot({
     (next: Framing) => {
       if (writeTimer.current) clearTimeout(writeTimer.current);
       writeTimer.current = setTimeout(() => {
-        void updateSlotFraming(slot.id, next.x, next.y, next.zoom).catch(() =>
-          toast.error("Could not save framing."),
+        void updateSlotFraming(slot.id, next.x, next.y, next.zoom).catch(
+          (err) => {
+            // TEMP diagnostic: surface the real error, not just the toast.
+            console.error("[DIAG] updateSlotFraming failed:", err);
+            toast.error("Could not save framing.");
+          },
         );
       }, 400);
     },
@@ -318,7 +326,9 @@ function FramingSlot({
         await lockSlot(slot.id);
         setLockConfirm(false);
         router.refresh();
-      } catch {
+      } catch (err) {
+        // TEMP diagnostic: surface the real error, not just the toast.
+        console.error("[DIAG] lock (updateSlotFraming/lockSlot) failed:", err);
         toast.error("Could not lock the slot.");
       }
     });
@@ -333,7 +343,11 @@ function FramingSlot({
   function handleChangeImage(asset: ProductAsset) {
     void fillSlot(slot.id, asset.id)
       .then(() => router.refresh())
-      .catch(() => toast.error("Could not change the image."));
+      .catch((err) => {
+        // TEMP diagnostic: surface the real error, not just the generic toast.
+        console.error("[DIAG] fillSlot (change image) failed:", err);
+        toast.error("Could not change the image.");
+      });
   }
 
   return (
