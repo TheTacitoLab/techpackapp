@@ -333,6 +333,36 @@ export async function deleteCanvasPage(id: string): Promise<void> {
   revalidatePath(`/products/${page.product_id}`);
 }
 
+const renamePageSchema = z.object({
+  id: z.uuid(),
+  label: z.string().trim().max(60),
+});
+
+/** Rename a canvas page. An empty label clears back to the "Page N" default. */
+export async function renameCanvasPage(
+  id: string,
+  label: string,
+): Promise<void> {
+  const input = renamePageSchema.parse({ id, label });
+  const { supabase, workspaceId } = await requireCtx();
+
+  const { data: page } = await supabase
+    .from("canvas_pages")
+    .select("id, product_id")
+    .eq("id", input.id)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (!page) throw new Error("Not found in your workspace.");
+
+  const { error } = await supabase
+    .from("canvas_pages")
+    .update({ label: input.label.length > 0 ? input.label : null })
+    .eq("id", input.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${page.product_id}`);
+}
+
 const reorderSchema = z.object({
   productId: z.uuid(),
   orderedIds: z.array(z.uuid()),

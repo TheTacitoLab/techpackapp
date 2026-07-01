@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  colourForLayerType,
+  readableTextOn,
+} from "@/components/canvas/layers";
+import {
   deleteAnnotation,
   updateAnnotation,
 } from "@/app/(app)/products/[id]/canvas-actions";
@@ -34,6 +38,11 @@ function readString(data: CanvasAnnotation["data"], key: string): string {
  * absolute-positioned HTML elements; Phase 4d moves the identical positioning
  * math (`x * slotWidth`, `y * slotHeight`) inside Konva.
  *
+ * The pin's circle and leader render in its layer family's colour (from the
+ * shared `layers` config). When `interactive` is false — the pin belongs to a
+ * layer other than the active one — it renders at 30% opacity with pointer
+ * events disabled: visible for context, not clickable.
+ *
  * Self-contained: the edit popover and delete both call server actions and
  * `router.refresh()` directly, so the parent slot never has to thread callbacks
  * for every pin.
@@ -42,10 +51,12 @@ export function AnnotationPin({
   annotation,
   slotWidth,
   slotHeight,
+  interactive = true,
 }: {
   annotation: CanvasAnnotation;
   slotWidth: number;
   slotHeight: number;
+  interactive?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -57,8 +68,33 @@ export function AnnotationPin({
   const left = annotation.x * slotWidth;
   const top = annotation.y * slotHeight;
 
+  const color = colourForLayerType(annotation.layer_type);
+  const textColor = readableTextOn(color);
+
   const [label, setLabel] = useState(() => readString(annotation.data, "label"));
   const [notes, setNotes] = useState(() => readString(annotation.data, "notes"));
+
+  // Inactive-layer pins are context only: dimmed and non-interactive (no popover).
+  if (!interactive) {
+    return (
+      <span
+        aria-hidden
+        className="absolute -translate-x-1/2 -translate-y-full"
+        style={{ left, top, opacity: 0.3, pointerEvents: "none" }}
+      >
+        <span
+          className="flex size-5 items-center justify-center rounded-full text-[10px] font-bold shadow-sm ring-1 ring-black/10"
+          style={{ backgroundColor: color, color: textColor }}
+        >
+          {annotation.reference_code}
+        </span>
+        <span
+          className="absolute top-5 left-1/2 h-5 w-1 -translate-x-1/2 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      </span>
+    );
+  }
 
   function handleSave() {
     startSave(async () => {
@@ -101,17 +137,26 @@ export function AnnotationPin({
           className="group/pin absolute -translate-x-1/2 -translate-y-full outline-none"
           style={{ left, top }}
         >
-          {/* Circle with the reference code */}
-          <span className="bg-brand text-brand-foreground ring-brand-foreground/10 group-focus-visible/pin:ring-brand-foreground/40 flex size-5 items-center justify-center rounded-full text-[10px] font-bold shadow-sm ring-1">
+          {/* Circle with the reference code — coloured by its layer family */}
+          <span
+            className="flex size-5 items-center justify-center rounded-full text-[10px] font-bold shadow-sm ring-1 ring-black/10 group-focus-visible/pin:ring-2"
+            style={{ backgroundColor: color, color: textColor }}
+          >
             {annotation.reference_code}
           </span>
           {/* Leader line dropping from the circle to the marked point */}
-          <span className="bg-brand absolute top-5 left-1/2 h-5 w-1 -translate-x-1/2 rounded-full" />
+          <span
+            className="absolute top-5 left-1/2 h-5 w-1 -translate-x-1/2 rounded-full"
+            style={{ backgroundColor: color }}
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent align="center" className="w-64 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="bg-brand text-brand-foreground rounded-md px-2 py-0.5 text-xs font-bold">
+          <span
+            className="rounded-md px-2 py-0.5 text-xs font-bold"
+            style={{ backgroundColor: color, color: textColor }}
+          >
             {annotation.reference_code}
           </span>
           <span className="text-muted-foreground text-xs capitalize">
