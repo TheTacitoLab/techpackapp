@@ -31,6 +31,18 @@ export function PageNameEditor({
   const [value, setValue] = useState(name ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Optimistic display value: `name` only reflects the rename once
+  // `router.refresh()` resolves and the parent passes fresh server data down,
+  // so without this the button would flash back to the stale prop the instant
+  // `editing` flips off. Resynced from the prop when it legitimately changes,
+  // via the same render-time state-adjustment pattern used for `localPages`.
+  const [displayName, setDisplayName] = useState(name);
+  const [syncedName, setSyncedName] = useState(name);
+  if (name !== syncedName) {
+    setSyncedName(name);
+    setDisplayName(name);
+  }
+
   useEffect(() => {
     if (editing) {
       inputRef.current?.focus();
@@ -41,12 +53,15 @@ export function PageNameEditor({
   function commit() {
     setEditing(false);
     const next = value.trim();
-    if (next === (name ?? "")) return;
+    if (next === (displayName ?? "")) return;
+    const previous = displayName;
+    setDisplayName(next);
     void renameCanvasPage(pageId, next)
       .then(() => router.refresh())
       .catch(() => {
         toast.error("Could not rename the page.");
-        setValue(name ?? "");
+        setValue(previous ?? "");
+        setDisplayName(previous);
       });
   }
 
@@ -64,7 +79,7 @@ export function PageNameEditor({
             commit();
           } else if (e.key === "Escape") {
             e.preventDefault();
-            setValue(name ?? "");
+            setValue(displayName ?? "");
             setEditing(false);
           }
         }}
@@ -83,14 +98,14 @@ export function PageNameEditor({
       type="button"
       onDoubleClick={(e) => {
         e.stopPropagation();
-        setValue(name ?? "");
+        setValue(displayName ?? "");
         setEditing(true);
       }}
       onClick={(e) => e.stopPropagation()}
       title="Double-click to rename"
       className={cn("truncate text-left", className)}
     >
-      {name && name.length > 0 ? name : fallback}
+      {displayName && displayName.length > 0 ? displayName : fallback}
     </button>
   );
 }
