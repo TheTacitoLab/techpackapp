@@ -3,12 +3,12 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { PanelLeftClose, PanelLeftOpen, Shirt } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
 
 import { AppNav } from "@/components/app-nav";
 import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/user-menu";
 import { cn } from "@/lib/utils";
+import type { SessionUser } from "@/lib/supabase/session-user";
 import { useUiStore } from "@/stores/ui-store";
 import type { Collection, Profile, Workspace } from "@/types";
 
@@ -19,7 +19,7 @@ export function AppShell({
   collections,
   children,
 }: {
-  user: User;
+  user: SessionUser;
   profile: Profile;
   workspace: Workspace | null;
   collections?: Collection[];

@@ -1,11 +1,11 @@
 import { cache } from "react";
-import type { User } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
+import { decodeSessionUser, type SessionUser } from "@/lib/supabase/session-user";
 import type { Profile, Workspace } from "@/types";
 
 export type CurrentUser = {
-  user: User;
+  user: SessionUser;
   profile: Profile;
   workspace: Workspace | null;
 };
@@ -16,45 +16,43 @@ export type CurrentUser = {
  * which would indicate the sign-up trigger has not run). Use in the `(app)`
  * layout guard and to feed `AppShell`.
  *
+ * Reads the session LOCALLY (`getSession()`), not via a network `getUser()`.
+ * The proxy (`lib/supabase/proxy.ts`) already validated + refreshed this
+ * request's token with a single authoritative `getUser()` round-trip before
+ * this handler ran, so re-validating here would be a redundant second
+ * round-trip. `getSession()` only touches the network if the token still needs
+ * a refresh; in the normal case it's a pure cookie read. See
+ * `decodeSessionUser` for the safety argument.
+ *
  * Wrapped in React `cache()` so the layout and the page (which both need the
- * user) share a single `getUser()` round-trip to the Supabase Auth server plus
- * one profile/workspace query pair per request — instead of repeating those
- * network calls in every server component that asks for the user.
+ * user) share a single session read + profile/workspace query pair per request.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
-  console.time("[getCurrentUser] TOTAL");
   const supabase = await createClient();
 
-  console.time("[getCurrentUser] auth.getUser()");
+  const t0 = performance.now();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  console.timeEnd("[getCurrentUser] auth.getUser()");
-  if (!user) {
-    console.timeEnd("[getCurrentUser] TOTAL");
-    return null;
-  }
+    data: { session },
+  } = await supabase.auth.getSession();
+  console.log(
+    `[AUTH] getCurrentUser getSession (local): ${(performance.now() - t0).toFixed(1)}ms`,
+  );
 
-  console.time("[getCurrentUser] profiles query");
+  const user = session ? decodeSessionUser(session.access_token) : null;
+  if (!user) return null;
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
     .single();
-  console.timeEnd("[getCurrentUser] profiles query");
-  if (!profile) {
-    console.timeEnd("[getCurrentUser] TOTAL");
-    return null;
-  }
+  if (!profile) return null;
 
-  console.time("[getCurrentUser] workspaces query");
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("*")
     .eq("id", profile.workspace_id)
     .single();
-  console.timeEnd("[getCurrentUser] workspaces query");
 
-  console.timeEnd("[getCurrentUser] TOTAL");
   return { user, profile, workspace: workspace ?? null };
 });
