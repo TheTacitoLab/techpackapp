@@ -15,18 +15,22 @@
  * `product_assets` row. Everything else here is small JSON and goes through these
  * actions normally.
  *
- * Every action follows the house pattern from `actions.ts`: zod-parse inputs →
- * `getCurrentUser()` (throw if null) → `createClient()` → workspace-ownership
+ * Every action follows the house pattern: zod-parse inputs →
+ * `requireActionContext()` (throw if unauthenticated) → workspace-ownership
  * check (the client-supplied id is never trusted) → mutate → throw on error →
  * `revalidatePath`. RLS (0014) is the real guard; the explicit checks are
  * defence in depth and let actions fail with clean messages.
+ *
+ * `requireActionContext()` (not `getCurrentUser()`) is the auth preamble here
+ * deliberately: these actions only ever scope queries by `workspaceId` (never
+ * read the full workspace row), so the lean 2-round-trip helper is a strict
+ * win over the 3-round-trip one pages use for rendering.
  */
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { getCurrentUser } from "@/lib/supabase/auth";
-import { createClient } from "@/lib/supabase/server";
+import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
 import { LAYER_PREFIX, type CanvasLayerType } from "@/types";
 
@@ -52,19 +56,7 @@ const SLOT_COUNT: Record<z.infer<typeof templateSchema>, number> = {
 
 // ---- Internal helpers (NOT exported — keeps the action surface minimal) ------
 
-type ActionCtx = {
-  supabase: Awaited<ReturnType<typeof createClient>>;
-  workspaceId: string;
-  userId: string;
-};
-
-/** House auth preamble: getCurrentUser() (throw if null) + a server client. */
-async function requireCtx(): Promise<ActionCtx> {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
-  return { supabase, workspaceId: ctx.profile.workspace_id, userId: ctx.user.id };
-}
+type ActionCtx = Awaited<ReturnType<typeof requireActionContext>>;
 
 /** Confirm a product lives in the caller's workspace, or throw. */
 async function assertProductInWorkspace(
@@ -82,31 +74,37 @@ async function assertProductInWorkspace(
 }
 
 /**
- * Resolve a slot to its page + product, verifying the page is in the caller's
+ * Resolve a slot to its product, verifying the page is in the caller's
  * workspace. Slots carry no workspace_id of their own — they inherit it via the
- * parent page (matching the RLS in 0014).
+ * parent page (matching the RLS in 0014). Single round-trip via PostgREST's
+ * embedded-resource filter (same pattern as the reference-code count query),
+ * replacing the old slot-id -> page-id sequence.
  */
 async function getSlotContext(
   supabase: ActionCtx["supabase"],
   slotId: string,
   workspaceId: string,
-): Promise<{ pageId: string; productId: string }> {
-  const { data: slot } = await supabase
+): Promise<{ productId: string }> {
+  // The generated Database type has no FK `Relationships` metadata for these
+  // tables (confirmed against types/database.types.ts — every table lists
+  // `Relationships: []`), so postgrest-js can't infer the embedded shape and
+  // types it as a SelectQueryError even though the join is valid at the DB
+  // level (FK confirmed in supabase/migrations/0013_canvas_schema.sql:
+  // canvas_slots.page_id -> canvas_pages.id). overrideTypes corrects the
+  // inferred shape without touching runtime behaviour.
+  const { data } = await supabase
     .from("canvas_slots")
-    .select("page_id")
+    .select("id, canvas_pages!inner(product_id, workspace_id)")
     .eq("id", slotId)
-    .single();
-  if (!slot) throw new Error("Slot not found in your workspace.");
+    .eq("canvas_pages.workspace_id", workspaceId)
+    .single()
+    .overrideTypes<
+      { id: string; canvas_pages: { product_id: string; workspace_id: string } },
+      { merge: false }
+    >();
+  if (!data) throw new Error("Not found in your workspace.");
 
-  const { data: page } = await supabase
-    .from("canvas_pages")
-    .select("id, product_id")
-    .eq("id", slot.page_id)
-    .eq("workspace_id", workspaceId)
-    .single();
-  if (!page) throw new Error("Not found in your workspace.");
-
-  return { pageId: page.id, productId: page.product_id };
+  return { productId: data.canvas_pages.product_id };
 }
 
 // ============================================================================
@@ -142,7 +140,7 @@ export async function uploadAssetMetadata(
     width,
     height,
   });
-  const { supabase, workspaceId, userId } = await requireCtx();
+  const { supabase, workspaceId, userId } = await requireActionContext();
   await assertProductInWorkspace(supabase, input.productId, workspaceId);
 
   const { data, error } = await supabase
@@ -172,7 +170,7 @@ const renameAssetSchema = z.object({
 
 export async function renameAsset(id: string, name: string): Promise<void> {
   const input = renameAssetSchema.parse({ id, name });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: asset } = await supabase
     .from("product_assets")
@@ -199,7 +197,7 @@ export async function renameAsset(id: string, name: string): Promise<void> {
  */
 export async function deleteAsset(id: string): Promise<{ warning?: string }> {
   const input = idSchema.parse({ id });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: asset } = await supabase
     .from("product_assets")
@@ -249,7 +247,7 @@ export async function createCanvasPage(
   template: "single" | "split" | "quad",
 ): Promise<{ id: string }> {
   const input = createPageSchema.parse({ productId, template });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
   await assertProductInWorkspace(supabase, input.productId, workspaceId);
 
   const { data: last } = await supabase
@@ -286,7 +284,7 @@ export async function createCanvasPage(
 
 export async function deleteCanvasPage(id: string): Promise<void> {
   const input = idSchema.parse({ id });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: page } = await supabase
     .from("canvas_pages")
@@ -317,7 +315,7 @@ export async function renameCanvasPage(
   label: string,
 ): Promise<void> {
   const input = renamePageSchema.parse({ id, label });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: page } = await supabase
     .from("canvas_pages")
@@ -351,7 +349,7 @@ export async function reorderCanvasPages(
   orderedIds: string[],
 ): Promise<void> {
   const input = reorderSchema.parse({ productId, orderedIds });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
   await assertProductInWorkspace(supabase, input.productId, workspaceId);
 
   const results = await Promise.all(
@@ -379,7 +377,7 @@ const fillSlotSchema = z.object({ slotId: z.uuid(), assetId: z.uuid() });
 /** Drop an asset into a slot, resetting framing and unlocking it. */
 export async function fillSlot(slotId: string, assetId: string): Promise<void> {
   const input = fillSlotSchema.parse({ slotId, assetId });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
   const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
 
   const { data: asset } = await supabase
@@ -414,7 +412,7 @@ export async function updateSlotFraming(
   zoom: number,
 ): Promise<void> {
   const input = framingSchema.parse({ slotId, cropX, cropY, zoom });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
   const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
 
   const { error } = await supabase
@@ -429,7 +427,7 @@ export async function updateSlotFraming(
 /** Lock/unlock shared by the two exported actions below. */
 async function setSlotLock(slotId: string, locked: boolean): Promise<void> {
   const { slotId: id } = z.object({ slotId: z.uuid() }).parse({ slotId });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
   const { productId } = await getSlotContext(supabase, id, workspaceId);
 
   const { error } = await supabase
@@ -495,13 +493,15 @@ export async function createAnnotation(
     data,
   });
 
-  console.time("[createAnnotation] requireCtx (auth)");
-  const { supabase, workspaceId, userId } = await requireCtx();
-  console.timeEnd("[createAnnotation] requireCtx (auth)");
+  // 2 round-trips: auth.getUser() + single-column profiles query.
+  console.time("[createAnnotation] requireActionContext (auth + profile)");
+  const { supabase, workspaceId, userId } = await requireActionContext();
+  console.timeEnd("[createAnnotation] requireActionContext (auth + profile)");
 
-  console.time("[createAnnotation] getSlotContext (slot->page lookup)");
+  // 1 round-trip: collapsed slot->page embedded-filter query.
+  console.time("[createAnnotation] getSlotContext (slot+page, 1 query)");
   const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
-  console.timeEnd("[createAnnotation] getSlotContext (slot->page lookup)");
+  console.timeEnd("[createAnnotation] getSlotContext (slot+page, 1 query)");
 
   // Single round-trip: join canvas_annotations -> canvas_slots -> canvas_pages
   // via PostgREST's embedded-resource filter syntax and count matches scoped to
@@ -545,6 +545,11 @@ export async function createAnnotation(
 
   revalidatePath(`/products/${productId}`);
   console.timeEnd("[createAnnotation] TOTAL");
+  // Best case: 2 (auth + profile) + 1 (slot+page) + 1 (reference-code count)
+  // + 1 (insert) = 5 round-trips, down from up to 7 before this fix.
+  console.log(
+    "[createAnnotation] round-trips: 2 (requireActionContext) + 1 (getSlotContext) + 1 (count) + 1 (insert) = 5",
+  );
   return { id: row.id, referenceCode };
 }
 
@@ -559,7 +564,7 @@ export async function updateAnnotation(
   data: Record<string, unknown>,
 ): Promise<void> {
   const input = updateAnnotationSchema.parse({ id, data });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: annotation } = await supabase
     .from("canvas_annotations")
@@ -604,7 +609,7 @@ export async function moveAnnotation(
   endY?: number | null,
 ): Promise<void> {
   const input = moveAnnotationSchema.parse({ id, x, y, endX, endY });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: annotation } = await supabase
     .from("canvas_annotations")
@@ -636,7 +641,7 @@ export async function moveAnnotation(
 
 export async function deleteAnnotation(id: string): Promise<void> {
   const input = idSchema.parse({ id });
-  const { supabase, workspaceId } = await requireCtx();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: annotation } = await supabase
     .from("canvas_annotations")

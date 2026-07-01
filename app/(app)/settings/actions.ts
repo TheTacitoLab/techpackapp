@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { getCurrentUser } from "@/lib/supabase/auth";
-import { createClient } from "@/lib/supabase/server";
+import { requireActionContext } from "@/lib/supabase/action-context";
 import type { LibraryCategory } from "@/types";
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
@@ -21,14 +20,11 @@ export async function createLabel(name: string, color: string) {
     name,
     color,
   });
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { data, error } = await supabase
     .from("labels")
     .insert({
-      workspace_id: ctx.profile.workspace_id,
+      workspace_id: workspaceId,
       name: cleanName,
       color: cleanColor,
     })
@@ -46,15 +42,12 @@ export async function updateLabel(id: string, name: string, color: string) {
     name,
     color,
   });
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("labels")
     .update({ name: cleanName, color: cleanColor })
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/settings");
@@ -62,16 +55,13 @@ export async function updateLabel(id: string, name: string, color: string) {
 }
 
 export async function deleteLabel(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   // product_labels rows cascade-delete via the FK on labels.
   const { error } = await supabase
     .from("labels")
     .delete()
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/settings");
@@ -82,7 +72,7 @@ export async function deleteLabel(id: string) {
 
 /** Confirms both the product and the label live in the caller's workspace. */
 async function assertOwnership(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: Awaited<ReturnType<typeof requireActionContext>>["supabase"],
   workspaceId: string,
   productId: string,
   labelId: string,
@@ -105,11 +95,8 @@ async function assertOwnership(
 }
 
 export async function addLabelToProduct(productId: string, labelId: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
-  await assertOwnership(supabase, ctx.profile.workspace_id, productId, labelId);
+  const { supabase, workspaceId } = await requireActionContext();
+  await assertOwnership(supabase, workspaceId, productId, labelId);
 
   const { error } = await supabase
     .from("product_labels")
@@ -125,11 +112,8 @@ export async function removeLabelFromProduct(
   productId: string,
   labelId: string,
 ) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
-  await assertOwnership(supabase, ctx.profile.workspace_id, productId, labelId);
+  const { supabase, workspaceId } = await requireActionContext();
+  await assertOwnership(supabase, workspaceId, productId, labelId);
 
   const { error } = await supabase
     .from("product_labels")
@@ -178,20 +162,17 @@ export async function createLibraryItem(
     description,
     properties,
   });
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId, userId } = await requireActionContext();
   const { data, error } = await supabase
     .from("library_items")
     .insert({
       category: parsed.category,
       source: "workspace",
-      workspace_id: ctx.profile.workspace_id,
+      workspace_id: workspaceId,
       name: parsed.name,
       description: parsed.description || null,
       properties: parsed.properties as never,
-      created_by: ctx.user.id,
+      created_by: userId,
     })
     .select("id")
     .single();
@@ -211,10 +192,7 @@ export async function updateLibraryItem(
   properties: Record<string, unknown>,
 ) {
   const parsed = libraryUpdateSchema.parse({ name, description, properties });
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   // The `source = 'workspace'` filter plus RLS guarantee global items are
   // untouchable here even if a global id is passed.
   const { error } = await supabase
@@ -226,23 +204,20 @@ export async function updateLibraryItem(
     })
     .eq("id", id)
     .eq("source", "workspace")
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/settings");
 }
 
 export async function deleteLibraryItem(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("library_items")
     .delete()
     .eq("id", id)
     .eq("source", "workspace")
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
 
   revalidatePath("/settings");
@@ -256,15 +231,12 @@ export async function deleteLibraryItem(id: string) {
  */
 export async function toggleGlobalItem(libraryItemId: string, hidden: boolean) {
   const id = z.string().min(1).parse(libraryItemId);
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("workspace_library_toggles")
     .upsert(
       {
-        workspace_id: ctx.profile.workspace_id,
+        workspace_id: workspaceId,
         library_item_id: id,
         hidden,
       },

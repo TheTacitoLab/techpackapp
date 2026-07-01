@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { getCurrentUser } from "@/lib/supabase/auth";
-import { createClient } from "@/lib/supabase/server";
+import { requireActionContext } from "@/lib/supabase/action-context";
 import type { ProductStatus } from "@/types";
 
 const createProductSchema = z.object({
@@ -20,16 +19,13 @@ export async function createProduct(input: CreateProductInput) {
   const { name, style_number, brand_id, collection_id } =
     createProductSchema.parse(input);
 
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const trimmedStyle = style_number?.trim();
   const { data: product, error } = await supabase
     .from("products")
     .insert({
-      workspace_id: ctx.profile.workspace_id,
+      workspace_id: workspaceId,
       name,
       style_number: trimmedStyle ? trimmedStyle : null,
       brand_id: brand_id ?? null,
@@ -81,12 +77,10 @@ const collectionSchema = z.object({
 
 export async function createBrand(input: z.input<typeof brandSchema>) {
   const { name } = brandSchema.parse(input);
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { data, error } = await supabase
     .from("brands")
-    .insert({ workspace_id: ctx.profile.workspace_id, name })
+    .insert({ workspace_id: workspaceId, name })
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "Could not create brand.");
@@ -96,28 +90,24 @@ export async function createBrand(input: z.input<typeof brandSchema>) {
 }
 
 export async function renameBrand(id: string, name: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("brands")
     .update({ name })
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
 }
 
 export async function deleteBrand(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("brands")
     .delete()
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
@@ -125,12 +115,10 @@ export async function deleteBrand(id: string) {
 
 export async function createSeason(input: z.input<typeof seasonSchema>) {
   const { name, year } = seasonSchema.parse(input);
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { data, error } = await supabase
     .from("seasons")
-    .insert({ workspace_id: ctx.profile.workspace_id, name, year })
+    .insert({ workspace_id: workspaceId, name, year })
     .select("id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "Could not create season.");
@@ -140,28 +128,24 @@ export async function createSeason(input: z.input<typeof seasonSchema>) {
 }
 
 export async function renameSeason(id: string, name: string, year: number) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("seasons")
     .update({ name, year })
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
 }
 
 export async function deleteSeason(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("seasons")
     .delete()
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
@@ -171,13 +155,11 @@ export async function createCollection(
   input: z.input<typeof collectionSchema>,
 ) {
   const { name, brand_id, season_id } = collectionSchema.parse(input);
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { data, error } = await supabase
     .from("collections")
     .insert({
-      workspace_id: ctx.profile.workspace_id,
+      workspace_id: workspaceId,
       name,
       brand_id,
       season_id: season_id ?? null,
@@ -192,28 +174,24 @@ export async function createCollection(
 }
 
 export async function renameCollection(id: string, name: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("collections")
     .update({ name })
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
 }
 
 export async function deleteCollection(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("collections")
     .delete()
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
@@ -222,15 +200,13 @@ export async function deleteCollection(id: string) {
 // ---- Product quick-actions ---------------------------------------------------
 
 export async function duplicateProduct(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
 
   const { data: src, error: fetchErr } = await supabase
     .from("products")
     .select("*")
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id)
+    .eq("workspace_id", workspaceId)
     .single();
   if (fetchErr || !src) throw new Error("Product not found.");
 
@@ -274,42 +250,36 @@ export async function duplicateProduct(id: string) {
 }
 
 export async function archiveProduct(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("products")
     .update({ archived_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
 }
 
 export async function unarchiveProduct(id: string) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("products")
     .update({ archived_at: null })
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
 }
 
 export async function updateProductStatus(id: string, status: ProductStatus) {
-  const ctx = await getCurrentUser();
-  if (!ctx) throw new Error("Not authenticated.");
-  const supabase = await createClient();
+  const { supabase, workspaceId } = await requireActionContext();
   const { error } = await supabase
     .from("products")
     .update({ status })
     .eq("id", id)
-    .eq("workspace_id", ctx.profile.workspace_id);
+    .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
