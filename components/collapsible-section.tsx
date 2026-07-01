@@ -14,20 +14,20 @@ import type { SectionStatus } from "@/types";
 function StatusIndicator({ status }: { status: SectionStatus }) {
   if (status === "complete") {
     return (
-      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full">
+      <span className="bg-brand text-brand-foreground flex size-5 items-center justify-center rounded-full">
         <Check className="size-3" />
       </span>
     );
   }
   if (status === "in_progress") {
     return (
-      <span className="border-primary flex size-5 items-center justify-center rounded-full border">
-        <span className="bg-primary size-2 rounded-full" />
+      <span className="border-input flex size-5 items-center justify-center rounded-full border">
+        <span className="bg-brand size-2 rounded-full" />
       </span>
     );
   }
   return (
-    <span className="border-muted-foreground/40 flex size-5 items-center justify-center rounded-full border">
+    <span className="border-input flex size-5 items-center justify-center rounded-full border">
       <Circle className="size-2 text-transparent" />
     </span>
   );
@@ -70,18 +70,18 @@ export function CollapsibleSection({
     <Collapsible
       open={open}
       onOpenChange={(next) => setSectionOpen(sectionKey, next)}
-      className="bg-card overflow-hidden rounded-xl border"
+      className="bg-card shadow-card overflow-hidden rounded-xl"
     >
-      <CollapsibleTrigger className="group focus-visible:ring-ring/50 flex w-full items-center gap-3 px-6 py-4 text-left outline-none focus-visible:ring-2">
+      <CollapsibleTrigger className="group hover:bg-accent/50 focus-visible:ring-ring flex h-14 w-full items-center gap-3 px-5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset">
         <StatusIndicator status={status} />
         <span className="text-muted-foreground flex size-5 items-center justify-center [&_svg]:size-4">
           {icon}
         </span>
-        <span className="flex-1 text-base font-medium">{title}</span>
+        <span className="flex-1 text-base font-semibold">{title}</span>
         <ChevronDown className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-180" />
       </CollapsibleTrigger>
       <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
-        <div className="border-t px-6 py-5">{children}</div>
+        <div className="border-border border-t px-5 py-5">{children}</div>
       </CollapsibleContent>
     </Collapsible>
   );

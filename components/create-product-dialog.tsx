@@ -28,31 +28,60 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useUiStore } from "@/stores/ui-store";
+import type { Collection } from "@/types";
 
 const schema = z.object({
   name: z.string().min(1, "Enter a product name."),
   style_number: z.string().optional(),
+  collection_id: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
 
-export function CreateProductDialog() {
+export function CreateProductDialog({
+  collections = [],
+}: {
+  collections?: Collection[];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const activeBrandId = useUiStore((s) => s.activeBrandId);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", style_number: "" },
+    defaultValues: {
+      name: "",
+      style_number: "",
+      collection_id: "",
+    },
   });
+
+  const activeCollections = activeBrandId
+    ? collections.filter((c) => c.brand_id === activeBrandId)
+    : collections;
 
   function onSubmit(values: FormValues) {
     startTransition(async () => {
       try {
-        await createProduct(values);
+        const result = await createProduct({
+          name: values.name,
+          style_number: values.style_number,
+          brand_id: activeBrandId ?? undefined,
+          collection_id: values.collection_id || undefined,
+        });
         toast.success("Product created.");
         setOpen(false);
         form.reset();
-        router.refresh();
+        router.push(`/products/${result.id}`);
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Could not create product.",
@@ -104,6 +133,35 @@ export function CreateProductDialog() {
                 </FormItem>
               )}
             />
+            {activeCollections.length > 0 && (
+              <FormField
+                control={form.control}
+                name="collection_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Collection (optional)</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value ?? ""}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {activeCollections.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <DialogFooter>
               <Button type="submit" disabled={isPending}>
                 {isPending ? "Creating…" : "Create product"}

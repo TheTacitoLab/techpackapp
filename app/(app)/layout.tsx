@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { BrandBootstrap } from "@/components/brand-bootstrap";
 import { getCurrentUser } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
   children,
@@ -11,9 +13,29 @@ export default async function AppLayout({
   const ctx = await getCurrentUser();
   if (!ctx) redirect("/login");
 
+  const supabase = await createClient();
+  const wsId = ctx.profile.workspace_id;
+
+  const [{ data: brands }, { data: collections }] = await Promise.all([
+    supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
+    supabase
+      .from("collections")
+      .select("*")
+      .eq("workspace_id", wsId)
+      .order("name"),
+  ]);
+
   return (
-    <AppShell user={ctx.user} profile={ctx.profile} workspace={ctx.workspace}>
-      {children}
-    </AppShell>
+    <>
+      <BrandBootstrap brands={brands ?? []} />
+      <AppShell
+        user={ctx.user}
+        profile={ctx.profile}
+        workspace={ctx.workspace}
+        collections={collections ?? []}
+      >
+        {children}
+      </AppShell>
+    </>
   );
 }

@@ -20,7 +20,7 @@ export function ProgressTracker({
   return (
     <div className={cn("flex items-center gap-4", className)}>
       <Progress value={percentage} className="max-w-xs" />
-      <span className="text-muted-foreground text-sm whitespace-nowrap">
+      <span className="text-muted-foreground text-xs whitespace-nowrap">
         {completed} of {total} sections complete
       </span>
     </div>

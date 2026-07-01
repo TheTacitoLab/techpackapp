@@ -37,44 +37,94 @@
 }
 
 /*
-  Dark-mode-only brand palette (v1). Values live in BOTH :root and .dark so the
-  app renders correctly whether or not the `dark` class is present on an ancestor
-  (Radix portals, etc.). Brand: background #1A1A2E navy, primary #C8F000 lime.
-  NOTE: `accent` is the subtle hover-surface token (used by ghost buttons, menu
-  items) — it is intentionally a muted navy, NOT the lime. Lime is `primary`.
+  Custom design-system tokens (Phase 3e). Defined directly so Tailwind v4
+  generates utilities: `bg-brand`, `text-sidebar-foreground`,
+  `bg-status-draft-bg`, `shadow-card`, etc. These are theme-stable (they do not
+  flip with light/dark) — the sidebar is intentionally dark in every theme.
 */
-:root {
-  --radius: 0.75rem;
+@theme {
+  /* Brand accent — lime, used ONLY for progress, completion, active, focus. */
+  --color-brand: #c8f000;
+  --color-brand-foreground: #1a1a2e; /* dark text on lime */
+  --color-brand-muted: #edf7c8; /* pale lime tint for subtle fills */
 
-  --background: oklch(0.2 0.03 275);
-  --foreground: oklch(0.97 0.01 270);
+  /* Field label — slightly muted warm grey (question vs. dark answer). */
+  --color-label: #4a4742;
 
-  --card: oklch(0.24 0.03 275);
-  --card-foreground: oklch(0.97 0.01 270);
+  /* Sidebar (stays dark navy against the light content area) */
+  --color-sidebar: #1a1a2e;
+  --color-sidebar-foreground: #e8e8ec;
+  --color-sidebar-muted: #9c9ca8;
+  --color-sidebar-accent: #c8f000; /* active item text / indicator */
+  --color-sidebar-accent-bg: rgba(200, 240, 0, 0.12);
+  --color-sidebar-border: rgba(255, 255, 255, 0.08);
+  --color-sidebar-hover: rgba(255, 255, 255, 0.06);
 
-  --popover: oklch(0.24 0.03 275);
-  --popover-foreground: oklch(0.97 0.01 270);
+  /* Status palette (soft, desaturated bg + readable fg) */
+  --color-status-draft-bg: #eceae6;
+  --color-status-draft-fg: #6b6862;
+  --color-status-progress-bg: #fbf0d9;
+  --color-status-progress-fg: #946200;
+  --color-status-review-bg: #e4edf7;
+  --color-status-review-fg: #2d5a8a;
+  --color-status-factory-bg: #eae6f7;
+  --color-status-factory-fg: #5340a0;
+  --color-status-sample-bg: #fcede3;
+  --color-status-sample-fg: #9a5a2a;
+  --color-status-approved-bg: #e6f2e3;
+  --color-status-approved-fg: #2e7d32;
+  --color-status-production-bg: #e0f0ee;
+  --color-status-production-fg: #1f7a6e;
 
-  --primary: oklch(0.93 0.21 124);
-  --primary-foreground: oklch(0.2 0.03 275);
-
-  --secondary: oklch(0.28 0.025 275);
-  --secondary-foreground: oklch(0.97 0.01 270);
-
-  --muted: oklch(0.28 0.025 275);
-  --muted-foreground: oklch(0.72 0.02 270);
-
-  --accent: oklch(0.3 0.03 275);
-  --accent-foreground: oklch(0.97 0.01 270);
-
-  --destructive: oklch(0.6 0.22 25);
-  --destructive-foreground: oklch(0.98 0.01 270);
-
-  --border: oklch(0.32 0.025 275);
-  --input: oklch(0.32 0.025 275);
-  --ring: oklch(0.93 0.21 124);
+  /* Soft, warm-tinted shadows — used to lift surfaces instead of borders. */
+  --shadow-card: 0 1px 2px rgba(20, 18, 15, 0.04), 0 2px 6px rgba(20, 18, 15, 0.05);
+  --shadow-card-hover: 0 2px 4px rgba(20, 18, 15, 0.06),
+    0 8px 20px rgba(20, 18, 15, 0.07);
+  --shadow-popover: 0 4px 16px rgba(20, 18, 15, 0.12);
 }
 
+/*
+  DEFAULT THEME — light, warm-neutral workspace. Hierarchy comes from surface
+  layering (warm canvas → white card → muted input wells) and typography, not
+  from large whitespace. Lime (#C8F000) is the focus ring only; everywhere else
+  it is reserved for progress / completion / active state via the brand tokens.
+*/
+:root {
+  --radius: 0.625rem; /* 10px base */
+
+  --background: #f6f5f3; /* warm off-white app canvas */
+  --foreground: #1f1d1a; /* warm near-black text */
+
+  --card: #ffffff; /* white card surface */
+  --card-foreground: #1f1d1a;
+
+  --popover: #ffffff;
+  --popover-foreground: #1f1d1a;
+
+  --primary: #1a1a2e; /* navy — primary buttons / chrome */
+  --primary-foreground: #ffffff;
+
+  --secondary: #eceae6; /* warm grey — secondary buttons */
+  --secondary-foreground: #1f1d1a;
+
+  --muted: #f2f1ee; /* input fill / muted surface */
+  --muted-foreground: #8a867f; /* helper / muted text (warm grey) */
+
+  --accent: #efede9; /* neutral hover background */
+  --accent-foreground: #1f1d1a;
+
+  --destructive: #d14343; /* warm red (softer than pure red) */
+  --destructive-foreground: #ffffff;
+
+  --border: #e8e6e2; /* warm hairline border */
+  --input: #dddad4; /* input border (slightly darker so wells read) */
+  --ring: #c8f000; /* lime focus ring */
+}
+
+/*
+  Dark theme (v1 brand palette) — preserved for future use but NOT applied by
+  default. Add `class="dark"` to an ancestor to opt in.
+*/
 .dark {
   --background: oklch(0.2 0.03 275);
   --foreground: oklch(0.97 0.01 270);
