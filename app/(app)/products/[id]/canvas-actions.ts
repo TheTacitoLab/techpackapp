@@ -109,33 +109,6 @@ async function getSlotContext(
   return { pageId: page.id, productId: page.product_id };
 }
 
-/**
- * Every slot id across every page of a product — the universe the per-product
- * reference-code counter ranges over (and a handy primitive for future
- * product-wide canvas queries). Two cheap round-trips: page ids, then slot ids.
- */
-async function getProductSlotIds(
-  supabase: ActionCtx["supabase"],
-  productId: string,
-  workspaceId: string,
-): Promise<string[]> {
-  const { data: pages } = await supabase
-    .from("canvas_pages")
-    .select("id")
-    .eq("product_id", productId)
-    .eq("workspace_id", workspaceId);
-
-  const pageIds = (pages ?? []).map((p) => p.id);
-  if (pageIds.length === 0) return [];
-
-  const { data: slots } = await supabase
-    .from("canvas_slots")
-    .select("id")
-    .in("page_id", pageIds);
-
-  return (slots ?? []).map((s) => s.id);
-}
-
 // ============================================================================
 // Assets
 // ============================================================================
@@ -523,13 +496,18 @@ export async function createAnnotation(
   const { supabase, workspaceId, userId } = await requireCtx();
   const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
 
-  const slotIds = await getProductSlotIds(supabase, productId, workspaceId);
+  // Single round-trip: join canvas_annotations -> canvas_slots -> canvas_pages
+  // via PostgREST's embedded-resource filter syntax and count matches scoped to
+  // this product, replacing the old page-ids -> slot-ids -> count sequence.
   const { count } = await supabase
     .from("canvas_annotations")
-    .select("id", { count: "exact", head: true })
+    .select("id, canvas_slots!inner(canvas_pages!inner(product_id))", {
+      count: "exact",
+      head: true,
+    })
     .eq("workspace_id", workspaceId)
     .eq("layer_type", input.layerType)
-    .in("slot_id", slotIds.length > 0 ? slotIds : [input.slotId]);
+    .eq("canvas_slots.canvas_pages.product_id", productId);
   const referenceCode = `${LAYER_PREFIX[input.layerType]}${(count ?? 0) + 1}`;
 
   const { data: row, error } = await supabase

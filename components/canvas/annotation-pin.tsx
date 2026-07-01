@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,22 +42,25 @@ function readString(data: CanvasAnnotation["data"], key: string): string {
  * layer other than the active one — it renders at 30% opacity with pointer
  * events disabled: visible for context, not clickable.
  *
- * Self-contained: the edit popover and delete both call server actions and
- * `router.refresh()` directly, so the parent slot never has to thread callbacks
- * for every pin.
+ * Edit popover and delete call server actions, then report the result up via
+ * `onUpdated`/`onDeleted` so the parent slot can update its local annotation
+ * list directly — no `router.refresh()` / full page re-fetch on every edit.
  */
 export function AnnotationPin({
   annotation,
   slotWidth,
   slotHeight,
   interactive = true,
+  onUpdated,
+  onDeleted,
 }: {
   annotation: CanvasAnnotation;
   slotWidth: number;
   slotHeight: number;
   interactive?: boolean;
+  onUpdated?: (id: string, data: Record<string, unknown>) => void;
+  onDeleted?: (id: string) => void;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isSaving, startSave] = useTransition();
@@ -79,7 +81,7 @@ export function AnnotationPin({
     return (
       <span
         aria-hidden
-        className="absolute -translate-x-1/2 -translate-y-full"
+        className="absolute -translate-x-1/2 -translate-y-1/2"
         style={{ left, top, opacity: 0.3, pointerEvents: "none" }}
       >
         <span
@@ -89,7 +91,7 @@ export function AnnotationPin({
           {annotation.reference_code}
         </span>
         <span
-          className="absolute top-5 left-1/2 h-5 w-1 -translate-x-1/2 rounded-full"
+          className="absolute top-full left-1/2 h-5 w-1 -translate-x-1/2 rounded-full"
           style={{ backgroundColor: color }}
         />
       </span>
@@ -99,10 +101,11 @@ export function AnnotationPin({
   function handleSave() {
     startSave(async () => {
       try {
-        await updateAnnotation(annotation.id, { label, notes });
+        const data = { label, notes };
+        await updateAnnotation(annotation.id, data);
         toast.success("Annotation saved.");
         setOpen(false);
-        router.refresh();
+        onUpdated?.(annotation.id, data);
       } catch {
         toast.error("Could not save the annotation.");
       }
@@ -115,7 +118,7 @@ export function AnnotationPin({
         await deleteAnnotation(annotation.id);
         toast.success("Annotation deleted.");
         setOpen(false);
-        router.refresh();
+        onDeleted?.(annotation.id);
       } catch {
         toast.error("Could not delete the annotation.");
       }
@@ -134,7 +137,7 @@ export function AnnotationPin({
         <button
           type="button"
           aria-label={`Annotation ${annotation.reference_code}`}
-          className="group/pin absolute -translate-x-1/2 -translate-y-full outline-none"
+          className="group/pin absolute -translate-x-1/2 -translate-y-1/2 outline-none"
           style={{ left, top }}
         >
           {/* Circle with the reference code — coloured by its layer family */}
@@ -144,9 +147,9 @@ export function AnnotationPin({
           >
             {annotation.reference_code}
           </span>
-          {/* Leader line dropping from the circle to the marked point */}
+          {/* Leader line dropping from the circle's bottom edge (now +50% of circle height from center) */}
           <span
-            className="absolute top-5 left-1/2 h-5 w-1 -translate-x-1/2 rounded-full"
+            className="absolute top-full left-1/2 h-5 w-1 -translate-x-1/2 rounded-full"
             style={{ backgroundColor: color }}
           />
         </button>

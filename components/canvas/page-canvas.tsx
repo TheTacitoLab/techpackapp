@@ -33,6 +33,7 @@ import {
   updateSlotFraming,
 } from "@/app/(app)/products/[id]/canvas-actions";
 import { cn } from "@/lib/utils";
+import type { Json } from "@/types/database.types";
 import type { ProductAsset, ResolvedCanvasPage, ResolvedSlot } from "@/types";
 
 const ZOOM_MIN = 0.5;
@@ -138,7 +139,13 @@ function SlotView({
     );
   }
   if (slot.is_locked) {
-    return <AnnotationSlot slot={slot} activeLayerKey={activeLayerKey} />;
+    return (
+      <AnnotationSlot
+        slot={slot}
+        activeLayerKey={activeLayerKey}
+        workspaceId={workspaceId}
+      />
+    );
   }
   return (
     <FramingSlot
@@ -443,9 +450,11 @@ function FramingSlot({
 function AnnotationSlot({
   slot,
   activeLayerKey,
+  workspaceId,
 }: {
   slot: ResolvedSlot;
   activeLayerKey: LayerKey;
+  workspaceId: string;
 }) {
   const router = useRouter();
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -453,6 +462,22 @@ function AnnotationSlot({
   const [unlockConfirm, setUnlockConfirm] = useState(false);
   const [, startCreate] = useTransition();
   const [isUnlocking, startUnlock] = useTransition();
+
+  // Local, optimistic annotation list — pin create/update/delete apply here
+  // directly instead of waiting on router.refresh() (which re-fetches the
+  // entire product page). This can drift from the server if the same product
+  // is open in two tabs at once; an acceptable V1 tradeoff until realtime
+  // sync lands.
+  const [localAnnotations, setLocalAnnotations] = useState(slot.annotations);
+  // Tracks the prop so we can detect legitimate upstream changes (e.g. a
+  // lock/unlock refresh reloading this slot) and resync during render, per
+  // React's recommended "adjust state during render" pattern — avoids the
+  // extra render pass a useEffect-based sync would cost.
+  const [syncedAnnotations, setSyncedAnnotations] = useState(slot.annotations);
+  if (slot.annotations !== syncedAnnotations) {
+    setSyncedAnnotations(slot.annotations);
+    setLocalAnnotations(slot.annotations);
+  }
 
   // Track the slot's rendered size so pins position from live fractions.
   useEffect(() => {
@@ -475,12 +500,57 @@ function AnnotationSlot({
     const layerType = layerByKey(activeLayerKey).primaryType;
     startCreate(async () => {
       try {
-        await createAnnotation(slot.id, layerType, x, y, "point");
-        router.refresh();
+        const { id, referenceCode } = await createAnnotation(
+          slot.id,
+          layerType,
+          x,
+          y,
+          "point",
+        );
+        // Add directly to local state — no router.refresh(), no full page re-fetch.
+        setLocalAnnotations((prev) => [
+          ...prev,
+          {
+            id,
+            slot_id: slot.id,
+            workspace_id: workspaceId,
+            layer_type: layerType,
+            reference_code: referenceCode,
+            x,
+            y,
+            pin_type: "point",
+            end_x: null,
+            end_y: null,
+            data: {},
+            created_by: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ]);
       } catch {
         toast.error("Could not place the pin.");
       }
     });
+  }
+
+  function handleAnnotationUpdated(id: string, data: Record<string, unknown>) {
+    setLocalAnnotations((prev) =>
+      prev.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              data: {
+                ...(a.data as Record<string, unknown>),
+                ...data,
+              } as Json,
+            }
+          : a,
+      ),
+    );
+  }
+
+  function handleAnnotationDeleted(id: string) {
+    setLocalAnnotations((prev) => prev.filter((a) => a.id !== id));
   }
 
   function doUnlock() {
@@ -496,7 +566,7 @@ function AnnotationSlot({
   }
 
   function handleUnlock() {
-    if (slot.annotations.length > 0) setUnlockConfirm(true);
+    if (localAnnotations.length > 0) setUnlockConfirm(true);
     else doUnlock();
   }
 
@@ -527,7 +597,7 @@ function AnnotationSlot({
       />
 
       {/* Existing pins — active layer interactive, others dimmed for context */}
-      {slot.annotations.map((annotation) => (
+      {localAnnotations.map((annotation) => (
         <AnnotationPin
           key={annotation.id}
           annotation={annotation}
@@ -536,6 +606,8 @@ function AnnotationSlot({
           interactive={
             layerForType(annotation.layer_type)?.key === activeLayerKey
           }
+          onUpdated={handleAnnotationUpdated}
+          onDeleted={handleAnnotationDeleted}
         />
       ))}
 
