@@ -498,8 +498,10 @@ function AnnotationSlot({
     const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
     // New pins get the active layer's primary type (colourway/fabric/…).
     const layerType = layerByKey(activeLayerKey).primaryType;
+    console.time("[handleCanvasClick] TOTAL (click -> pin rendered)");
     startCreate(async () => {
       try {
+        console.time("[handleCanvasClick] server round-trip (createAnnotation)");
         const { id, referenceCode } = await createAnnotation(
           slot.id,
           layerType,
@@ -507,6 +509,11 @@ function AnnotationSlot({
           y,
           "point",
         );
+        console.timeEnd(
+          "[handleCanvasClick] server round-trip (createAnnotation)",
+        );
+
+        console.time("[handleCanvasClick] local state update");
         // Add directly to local state — no router.refresh(), no full page re-fetch.
         setLocalAnnotations((prev) => [
           ...prev,
@@ -527,7 +534,10 @@ function AnnotationSlot({
             updated_at: new Date().toISOString(),
           },
         ]);
+        console.timeEnd("[handleCanvasClick] local state update");
+        console.timeEnd("[handleCanvasClick] TOTAL (click -> pin rendered)");
       } catch {
+        console.timeEnd("[handleCanvasClick] TOTAL (click -> pin rendered)");
         toast.error("Could not place the pin.");
       }
     });

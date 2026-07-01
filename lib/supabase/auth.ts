@@ -22,25 +22,39 @@ export type CurrentUser = {
  * network calls in every server component that asks for the user.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  console.time("[getCurrentUser] TOTAL");
   const supabase = await createClient();
 
+  console.time("[getCurrentUser] auth.getUser()");
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return null;
+  console.timeEnd("[getCurrentUser] auth.getUser()");
+  if (!user) {
+    console.timeEnd("[getCurrentUser] TOTAL");
+    return null;
+  }
 
+  console.time("[getCurrentUser] profiles query");
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
     .single();
-  if (!profile) return null;
+  console.timeEnd("[getCurrentUser] profiles query");
+  if (!profile) {
+    console.timeEnd("[getCurrentUser] TOTAL");
+    return null;
+  }
 
+  console.time("[getCurrentUser] workspaces query");
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("*")
     .eq("id", profile.workspace_id)
     .single();
+  console.timeEnd("[getCurrentUser] workspaces query");
 
+  console.timeEnd("[getCurrentUser] TOTAL");
   return { user, profile, workspace: workspace ?? null };
 });

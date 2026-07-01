@@ -483,6 +483,7 @@ export async function createAnnotation(
   endY?: number | null,
   data?: Record<string, unknown>,
 ): Promise<{ id: string; referenceCode: string }> {
+  console.time("[createAnnotation] TOTAL");
   const input = createAnnotationSchema.parse({
     slotId,
     layerType,
@@ -493,12 +494,19 @@ export async function createAnnotation(
     endY,
     data,
   });
+
+  console.time("[createAnnotation] requireCtx (auth)");
   const { supabase, workspaceId, userId } = await requireCtx();
+  console.timeEnd("[createAnnotation] requireCtx (auth)");
+
+  console.time("[createAnnotation] getSlotContext (slot->page lookup)");
   const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+  console.timeEnd("[createAnnotation] getSlotContext (slot->page lookup)");
 
   // Single round-trip: join canvas_annotations -> canvas_slots -> canvas_pages
   // via PostgREST's embedded-resource filter syntax and count matches scoped to
   // this product, replacing the old page-ids -> slot-ids -> count sequence.
+  console.time("[createAnnotation] reference-code count query");
   const { count } = await supabase
     .from("canvas_annotations")
     .select("id, canvas_slots!inner(canvas_pages!inner(product_id))", {
@@ -508,8 +516,10 @@ export async function createAnnotation(
     .eq("workspace_id", workspaceId)
     .eq("layer_type", input.layerType)
     .eq("canvas_slots.canvas_pages.product_id", productId);
+  console.timeEnd("[createAnnotation] reference-code count query");
   const referenceCode = `${LAYER_PREFIX[input.layerType]}${(count ?? 0) + 1}`;
 
+  console.time("[createAnnotation] insert query");
   const { data: row, error } = await supabase
     .from("canvas_annotations")
     .insert({
@@ -527,11 +537,14 @@ export async function createAnnotation(
     })
     .select("id")
     .single();
+  console.timeEnd("[createAnnotation] insert query");
   if (error || !row) {
+    console.timeEnd("[createAnnotation] TOTAL");
     throw new Error(error?.message ?? "Failed to create annotation.");
   }
 
   revalidatePath(`/products/${productId}`);
+  console.timeEnd("[createAnnotation] TOTAL");
   return { id: row.id, referenceCode };
 }
 
