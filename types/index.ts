@@ -125,4 +125,5 @@ export const LAYER_PREFIX: Record<CanvasLayerType, string> = {
   measurement: "M",
   construction_note: "CN",
   detail_callout: "DC",
+  colourway: "C",
 };

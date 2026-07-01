@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
-import { CanvasSection } from "@/components/canvas/canvas-section";
+import { AssetUploadSection } from "@/components/canvas/asset-upload-section";
+import { TechnicalDetailsSection } from "@/components/canvas/technical-details-section";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { IdentitySection } from "@/components/identity-section";
 import { ProductLabels } from "@/components/product-labels";
@@ -163,6 +164,54 @@ export default async function ProductDetailPage({ params }: PageProps) {
   });
   const statuses: SectionStatus[] = resolved.map((s) => s.status);
 
+  // Per-section body renderer. Identity, Asset Upload and Technical Details are
+  // live; the remaining sections render a placeholder until their own phase.
+  // `product` is captured as a const alias so its non-null narrowing (from the
+  // notFound guard above) survives inside this nested function's closure.
+  const activeProduct = product;
+  function renderSectionBody(sectionKey: string) {
+    switch (sectionKey) {
+      case "identity":
+        return (
+          <IdentitySection
+            product={activeProduct}
+            sectionData={identitySectionData}
+            seasons={seasons}
+            collections={collections}
+            brandName={brand?.name ?? null}
+          />
+        );
+      case "assets":
+        return (
+          <AssetUploadSection
+            productId={activeProduct.id}
+            workspaceId={activeProduct.workspace_id}
+            assets={assets}
+            pages={resolvedPages}
+          />
+        );
+      case "technical_details":
+        return (
+          <TechnicalDetailsSection
+            productId={activeProduct.id}
+            workspaceId={activeProduct.workspace_id}
+            assets={assets}
+            pages={resolvedPages}
+          />
+        );
+      case "branding":
+      case "bom":
+      case "grading":
+      case "documents":
+      default:
+        return (
+          <p className="text-muted-foreground py-2 text-sm">
+            This section is coming in a later phase.
+          </p>
+        );
+    }
+  }
+
   return (
     <div className="flex flex-col">
       {/* Sticky workspace header: compact breadcrumb bar + slim progress row.
@@ -234,26 +283,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
             status={section.status}
             defaultOpen={index === 0}
           >
-            {section.section_key === "identity" ? (
-              <IdentitySection
-                product={product}
-                sectionData={identitySectionData}
-                seasons={seasons}
-                collections={collections}
-                brandName={brand?.name ?? null}
-              />
-            ) : section.section_key === "canvas" ? (
-              <CanvasSection
-                productId={product.id}
-                workspaceId={product.workspace_id}
-                assets={assets}
-                pages={resolvedPages}
-              />
-            ) : (
-              <p className="text-muted-foreground text-sm">
-                This section will be built in a later phase.
-              </p>
-            )}
+            {renderSectionBody(section.section_key)}
           </CollapsibleSection>
         ))}
       </div>

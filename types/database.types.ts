@@ -221,6 +221,7 @@ export type Database = {
           icon: string;
           default_sort_order: number;
           is_default: boolean;
+          export_to_pdf: boolean;
         };
         Insert: {
           id?: string;
@@ -229,6 +230,7 @@ export type Database = {
           icon: string;
           default_sort_order?: number;
           is_default?: boolean;
+          export_to_pdf?: boolean;
         };
         Update: {
           id?: string;
@@ -237,6 +239,7 @@ export type Database = {
           icon?: string;
           default_sort_order?: number;
           is_default?: boolean;
+          export_to_pdf?: boolean;
         };
         Relationships: [];
       };
@@ -607,7 +610,8 @@ export type Database = {
         | "packaging"
         | "measurement"
         | "construction_note"
-        | "detail_callout";
+        | "detail_callout"
+        | "colourway";
     };
     CompositeTypes: {
       [_ in never]: never;

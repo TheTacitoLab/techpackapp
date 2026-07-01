@@ -1,15 +1,15 @@
 "use client";
 
-// Phase 4b: renders the Asset Library panel.
-// Phase 4c: adds the page strip, template grids and the slot lock mechanic below.
+// Asset Upload section body: the product's image library lives here now (it was
+// previously rendered inside the canvas). Images uploaded here are the pool that
+// Technical Details annotates. This section is not exported to the PDF.
 
 import { useMemo } from "react";
 
 import { AssetLibrary } from "@/components/canvas/asset-library";
-import { CanvasPages } from "@/components/canvas/canvas-pages";
 import type { ProductAsset, ResolvedCanvasPage } from "@/types";
 
-export function CanvasSection({
+export function AssetUploadSection({
   productId,
   workspaceId,
   assets,
@@ -35,19 +35,17 @@ export function CanvasSection({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <AssetLibrary
         productId={productId}
         workspaceId={workspaceId}
         assets={assets}
         usedAssetIds={usedAssetIds}
       />
-      <CanvasPages
-        productId={productId}
-        workspaceId={workspaceId}
-        pages={pages}
-        assets={assets}
-      />
+      <p className="text-muted-foreground text-xs">
+        Images uploaded here are available for annotation in Technical Details.
+        This section is not included in the exported PDF.
+      </p>
     </div>
   );
 }

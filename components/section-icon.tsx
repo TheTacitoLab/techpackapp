@@ -1,10 +1,11 @@
 import {
-  BookMarked,
+  ClipboardList,
   Component,
-  Hammer,
+  Images,
+  Layers,
   ListTree,
-  PenTool,
-  Ruler,
+  Paperclip,
+  Table2,
   Tag,
   type LucideIcon,
 } from "lucide-react";
@@ -15,12 +16,13 @@ import {
  * dynamically importing the whole icon set. Unknown names fall back.
  */
 const ICONS: Record<string, LucideIcon> = {
+  ClipboardList,
+  Images,
+  Layers,
   Tag,
-  PenTool,
   ListTree,
-  Ruler,
-  Hammer,
-  BookMarked,
+  Table2,
+  Paperclip,
 };
 
 export function SectionIcon({

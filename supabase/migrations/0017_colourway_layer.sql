@@ -1,0 +1,11 @@
+-- ============================================================================
+-- 0017 — Add `colourway` to the canvas_layer_type enum.
+--
+-- Technical Details will annotate colourways in Stage 2. Idempotent via
+-- `add value if not exists`.
+--
+-- NOTE: `ALTER TYPE ... ADD VALUE` must run OUTSIDE an explicit transaction
+-- block. In the Supabase SQL editor, paste and run this statement on its own
+-- (do not wrap it in a transaction with other DDL).
+-- ============================================================================
+alter type public.canvas_layer_type add value if not exists 'colourway';
