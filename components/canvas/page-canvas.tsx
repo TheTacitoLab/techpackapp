@@ -16,6 +16,8 @@ import { AssetPicker } from "@/components/canvas/asset-picker";
 import { GRID_CLASS } from "@/components/canvas/canvas-templates";
 import { ColourwayPinEditor } from "@/components/canvas/colourway-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
+import { slotImageCssTransform } from "@/lib/cover-geometry";
+import { sampleColourAtPoint } from "@/lib/colour-sample";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { layerByKey, layerForType, type LayerKey } from "@/components/canvas/layers";
 import {
@@ -460,7 +462,7 @@ function FramingSlot({
         draggable={false}
         style={{
           position: "absolute",
-          transform: `translate(${framing.x}px, ${framing.y}px) scale(${framing.zoom})`,
+          transform: slotImageCssTransform(framing.x, framing.y, framing.zoom),
           transformOrigin: "center",
           width: "100%",
           height: "100%",
@@ -638,7 +640,10 @@ function DraftColourwayPin({
   slotHeight,
   slotId,
   productId,
+  initialHex,
+  receded,
   colourwayContext,
+  onRequestResample,
   onCreated,
   onCancel,
 }: {
@@ -648,7 +653,12 @@ function DraftColourwayPin({
   slotHeight: number;
   slotId: string;
   productId: string;
+  /** Colour auto-sampled at the click point before the editor opened, or null. */
+  initialHex: string | null;
+  /** True while the slot is in colour pick-mode — recede so the sample click passes through. */
+  receded: boolean;
   colourwayContext: ColourwayContext;
+  onRequestResample: (apply: (hex: string | null) => void) => void;
   onCreated: (result: {
     id: string;
     referenceCode: string;
@@ -672,7 +682,21 @@ function DraftColourwayPin({
           />
         </span>
       </PopoverTrigger>
-      <PopoverContent align="center" className="w-80 space-y-3">
+      <PopoverContent
+        align="center"
+        className={cn(
+          "w-80 space-y-3",
+          // Re-sampling from the create flow: recede so the click reaches the
+          // canvas capture layer, and don't let that click dismiss the draft.
+          receded && "pointer-events-none opacity-30",
+        )}
+        onInteractOutside={(e) => {
+          if (receded) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (receded) e.preventDefault();
+        }}
+      >
         <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
           New Colourway pin
         </div>
@@ -682,9 +706,11 @@ function DraftColourwayPin({
           x={x}
           y={y}
           productId={productId}
+          initialHex={initialHex}
           colourways={colourwayContext.colourways}
           lastUsedColourwayId={colourwayContext.lastUsedColourwayId}
           onColourwayCreated={colourwayContext.onColourwayCreated}
+          onRequestResample={onRequestResample}
           onCreated={onCreated}
           onCancel={onCancel}
         />
@@ -724,9 +750,21 @@ function AnnotationSlot({
   const [unlockConfirm, setUnlockConfirm] = useState(false);
   const [, startCreate] = useTransition();
   const [isUnlocking, startUnlock] = useTransition();
-  const [draftPoint, setDraftPoint] = useState<{ x: number; y: number } | null>(
-    null,
-  );
+  // A colourway draft carries the colour auto-sampled at its click point (or null
+  // if sampling wasn't possible); other layers ignore `hex`.
+  const [draftPoint, setDraftPoint] = useState<{
+    x: number;
+    y: number;
+    hex: string | null;
+  } | null>(null);
+
+  // Colour pick-mode: a DISTINCT flag (not reused draft/placement state) so a
+  // re-sample click can never be mistaken for placing a new pin. When set, the
+  // next canvas click samples a colour and hands it to `apply`, rather than
+  // creating a pin. `apply` is the editor's setter for its own hex field.
+  const [pickMode, setPickMode] = useState<{
+    apply: (hex: string | null) => void;
+  } | null>(null);
 
   // Track the slot's rendered size so pins position from live fractions.
   useEffect(() => {
@@ -739,6 +777,61 @@ function AnnotationSlot({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  // Sample the true image colour at a 0–1 slot coordinate, via the shared
+  // sampler that mirrors the display transform. Returns null (→ manual entry)
+  // when the asset is missing, the slot isn't measured yet, or CORS blocks the read.
+  const sampleAt = useCallback(
+    async (xFraction: number, yFraction: number): Promise<string | null> => {
+      const asset = slot.asset;
+      if (!asset || size.width === 0 || size.height === 0) return null;
+      return sampleColourAtPoint(
+        { file_url: asset.file_url, width: asset.width, height: asset.height },
+        { crop_x: slot.crop_x, crop_y: slot.crop_y, zoom: slot.zoom },
+        size.width,
+        size.height,
+        xFraction,
+        yFraction,
+      );
+    },
+    [slot.asset, slot.crop_x, slot.crop_y, slot.zoom, size.width, size.height],
+  );
+
+  // Called by an open colourway editor's "Re-sample" button — arm pick-mode; the
+  // next canvas click samples and feeds the result back through `apply`.
+  const requestResample = useCallback(
+    (apply: (hex: string | null) => void) => {
+      setPickMode({ apply });
+    },
+    [],
+  );
+
+  const cancelPickMode = useCallback(() => setPickMode(null), []);
+
+  // Escape leaves pick-mode without changing the hex.
+  useEffect(() => {
+    if (!pickMode) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPickMode(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickMode]);
+
+  async function handleSampleClick(e: React.MouseEvent<HTMLDivElement>) {
+    const current = pickMode;
+    if (!current) return;
+    const { x, y } = clientToFraction(
+      e.clientX,
+      e.clientY,
+      e.currentTarget.getBoundingClientRect(),
+    );
+    // Exit pick-mode immediately so the editor un-recedes and the capture layer
+    // clears; the (fast) sample then flows back into the hex field.
+    setPickMode(null);
+    const hex = await sampleAt(x, y);
+    current.apply(hex);
+  }
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     // 0–1 fractions of the slot via the shared helper — the exact same math the
@@ -753,8 +846,15 @@ function AnnotationSlot({
     // Fabrics & Trim and Colourways both defer creation to their editor at this
     // point — the chosen sub-type / colourway decides the reference code, which
     // is immutable afterward (see DraftFabricPin / DraftColourwayPin).
-    if (activeLayerKey === "fabric" || activeLayerKey === "colourway") {
-      setDraftPoint({ x, y });
+    if (activeLayerKey === "fabric") {
+      setDraftPoint({ x, y, hex: null });
+      return;
+    }
+    if (activeLayerKey === "colourway") {
+      // Auto-sample the colour at the exact click point, then open the editor
+      // with the hex pre-filled. Sampling failure is silent here — the editor
+      // just opens with an empty hex, ready for manual entry (never a crash).
+      void sampleAt(x, y).then((hex) => setDraftPoint({ x, y, hex }));
       return;
     }
 
@@ -926,7 +1026,7 @@ function AnnotationSlot({
         alt={slot.asset!.name}
         style={{
           position: "absolute",
-          transform: `translate(${slot.crop_x}px, ${slot.crop_y}px) scale(${slot.zoom})`,
+          transform: slotImageCssTransform(slot.crop_x, slot.crop_y, slot.zoom),
           transformOrigin: "center",
           width: "100%",
           height: "100%",
@@ -957,6 +1057,8 @@ function AnnotationSlot({
           libraryItems={libraryItems}
           colourways={colourwayContext.colourways}
           getSlotRect={() => overlayRef.current?.getBoundingClientRect() ?? null}
+          onRequestResample={requestResample}
+          isResampling={pickMode !== null}
           onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
           onMoved={(id, x, y) => onAnnotationMoved(slot.id, id, x, y)}
           onLabelOffsetChanged={(id, ox, oy) =>
@@ -988,10 +1090,39 @@ function AnnotationSlot({
           slotHeight={size.height}
           slotId={slot.id}
           productId={productId}
+          initialHex={draftPoint.hex}
+          receded={pickMode !== null}
           colourwayContext={colourwayContext}
+          onRequestResample={requestResample}
           onCreated={handleColourwayDraftCreated}
           onCancel={() => setDraftPoint(null)}
         />
+      )}
+
+      {/* Colour pick-mode: a crosshair capture layer above everything in the slot
+          that intercepts the next click as a colour sample (never a new pin), plus
+          an unobtrusive banner. Distinct from the place-a-pin overlay, so the two
+          interactions can't be confused. */}
+      {pickMode && (
+        <>
+          <div
+            className="absolute inset-0 z-30 cursor-crosshair"
+            onClick={handleSampleClick}
+            data-colour-pick="true"
+          />
+          <div className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center px-2">
+            <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white shadow-lg">
+              <span>Click anywhere on the image to sample that colour</span>
+              <button
+                type="button"
+                onClick={cancelPickMode}
+                className="font-medium underline underline-offset-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Toolbar */}

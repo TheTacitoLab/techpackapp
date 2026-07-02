@@ -203,6 +203,8 @@ export function AnnotationPin({
   libraryItems,
   colourways,
   getSlotRect,
+  onRequestResample,
+  isResampling = false,
   onUpdated,
   onDeleted,
   onMoved,
@@ -217,6 +219,10 @@ export function AnnotationPin({
   libraryItems: ResolvedLibraryItem[];
   colourways: CanvasColourway[];
   getSlotRect: () => DOMRect | null;
+  /** Enter image pick-mode to re-sample a colourway pin's hex (see ColourwayPinEditor). */
+  onRequestResample?: (apply: (hex: string | null) => void) => void;
+  /** True while the parent slot is in colour pick-mode — recede this popover so a sample click passes through to the canvas. */
+  isResampling?: boolean;
   onUpdated?: (id: string, data: Record<string, unknown>) => void;
   onDeleted?: (id: string) => void;
   onMoved?: (id: string, x: number, y: number) => void;
@@ -469,7 +475,18 @@ export function AnnotationPin({
       </span>
       <PopoverContent
         align="center"
-        className={hasDedicatedEditor ? "w-80 space-y-3" : "w-64 space-y-3"}
+        className={cn(
+          hasDedicatedEditor ? "w-80 space-y-3" : "w-64 space-y-3",
+          // While re-sampling, recede so the sample click passes through to the
+          // canvas capture layer beneath, and don't let that click dismiss us.
+          isResampling && "pointer-events-none opacity-30",
+        )}
+        onInteractOutside={(e) => {
+          if (isResampling) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (isResampling) e.preventDefault();
+        }}
       >
         <div className="flex items-center justify-between">
           <span
@@ -502,6 +519,7 @@ export function AnnotationPin({
             mode="edit"
             annotation={annotation}
             colourways={colourways}
+            onRequestResample={onRequestResample}
             onSaved={(data) => {
               setOpen(false);
               onUpdated?.(annotation.id, data);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Pipette, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -54,17 +54,33 @@ type CreatedResult = {
  *
  * Colourway assignment is chosen once, at creation, then immutable — edit mode
  * shows it as read-only text. Colour name / hex / Pantone / notes stay editable
- * in both modes. Hex and Pantone are manual this session (Session B adds
- * image-sampling to the hex field).
+ * in both modes.
+ *
+ * The hex field auto-fills from the image pixel at the pin's click point: create
+ * mode receives that pre-sampled value as `initialHex`, and both modes expose a
+ * "Re-sample from image" action (via `onRequestResample`) that lets the user pick
+ * a different spot to correct an inaccurate read. Sampling is a pure enhancement —
+ * manual entry always works, and a failed re-sample just shows an inline note.
  */
 export function ColourwayPinEditor(
-  props: { colourways: CanvasColourway[] } & (
+  props: {
+    colourways: CanvasColourway[];
+    /**
+     * Request image pick-mode for the "Re-sample" action. The parent (which owns
+     * the canvas + slot geometry) puts the canvas into pick-mode and calls `apply`
+     * with the sampled hex (or `null` if it failed). Omitted when no slot is
+     * available to sample from, in which case the button is hidden.
+     */
+    onRequestResample?: (apply: (hex: string | null) => void) => void;
+  } & (
     | {
         mode: "create";
         slotId: string;
         x: number;
         y: number;
         productId: string;
+        /** Colour auto-sampled at the click point before the editor opened, or null. */
+        initialHex: string | null;
         lastUsedColourwayId: string | null;
         onColourwayCreated: (colourway: CanvasColourway) => void;
         onCreated: (result: CreatedResult) => void;
@@ -78,12 +94,17 @@ export function ColourwayPinEditor(
       }
   ),
 ) {
-  const { colourways } = props;
+  const { colourways, onRequestResample } = props;
 
   const initial: ColourwayAnnotationData =
     props.mode === "edit"
       ? readColourwayData(props.annotation.data)
-      : { colour_name: null, hex: null, pantone: null, notes: null };
+      : {
+          colour_name: null,
+          hex: props.initialHex,
+          pantone: null,
+          notes: null,
+        };
 
   const [colourName, setColourName] = useState(initial.colour_name ?? "");
   const [hex, setHex] = useState(initial.hex ?? "");
@@ -93,6 +114,21 @@ export function ColourwayPinEditor(
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Set only when an explicit re-sample returns null (CORS/security), so the user
+  // who actively asked to sample gets feedback. Auto-sample-on-create stays silent.
+  const [resampleFailed, setResampleFailed] = useState(false);
+
+  function handleResample() {
+    if (!onRequestResample) return;
+    onRequestResample((sampled) => {
+      if (sampled) {
+        setHex(sampled);
+        setResampleFailed(false);
+      } else {
+        setResampleFailed(true);
+      }
+    });
+  }
 
   // ---- Colourway selection (create mode only) ------------------------------
   // The most-recently-created colourway is the sensible default; fall back to
@@ -283,7 +319,24 @@ export function ColourwayPinEditor(
             className="w-32 font-mono uppercase"
             maxLength={7}
           />
+          {onRequestResample && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleResample}
+              title="Click a point on the image to sample its colour"
+            >
+              <Pipette className="size-4" />
+              Re-sample
+            </Button>
+          )}
         </div>
+        {resampleFailed && (
+          <p className="text-muted-foreground text-xs">
+            Couldn&apos;t read colour from this image — enter it manually.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">
