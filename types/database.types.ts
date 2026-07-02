@@ -522,6 +522,8 @@ export type Database = {
           pin_type: string;
           end_x: number | null;
           end_y: number | null;
+          label_offset_x: number | null;
+          label_offset_y: number | null;
           data: Json;
           created_by: string | null;
           created_at: string;
@@ -538,6 +540,8 @@ export type Database = {
           pin_type?: string;
           end_x?: number | null;
           end_y?: number | null;
+          label_offset_x?: number | null;
+          label_offset_y?: number | null;
           data?: Json;
           created_by?: string | null;
           created_at?: string;
@@ -554,6 +558,8 @@ export type Database = {
           pin_type?: string;
           end_x?: number | null;
           end_y?: number | null;
+          label_offset_x?: number | null;
+          label_offset_y?: number | null;
           data?: Json;
           created_by?: string | null;
           created_at?: string;

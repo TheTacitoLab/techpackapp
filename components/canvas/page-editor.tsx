@@ -135,6 +135,34 @@ export function PageEditor({
     setSelectedAnnotationId((current) => (current === id ? null : current));
   }
 
+  // Tip drag → new anchor; badge drag → new label offset. Both patch the live
+  // annotation in place (same optimistic, no-refresh path as create/update).
+  function handleAnnotationMoved(
+    slotId: string,
+    id: string,
+    x: number,
+    y: number,
+  ) {
+    updateSlotAnnotations(slotId, (prev) =>
+      prev.map((a) => (a.id === id ? { ...a, x, y } : a)),
+    );
+  }
+
+  function handleAnnotationLabelOffset(
+    slotId: string,
+    id: string,
+    offsetX: number | null,
+    offsetY: number | null,
+  ) {
+    updateSlotAnnotations(slotId, (prev) =>
+      prev.map((a) =>
+        a.id === id
+          ? { ...a, label_offset_x: offsetX, label_offset_y: offsetY }
+          : a,
+      ),
+    );
+  }
+
   // Two-way sync: selecting a row switches to its page (if different) and
   // marks it selected; AnnotationPin picks this up to highlight + scroll into
   // view once it (re)mounts. Clicking a pin on the canvas calls this too
@@ -254,6 +282,8 @@ export function PageEditor({
       selectedAnnotationId={selectedAnnotationId}
       onAnnotationCreated={handleAnnotationCreated}
       onAnnotationUpdated={handleAnnotationUpdated}
+      onAnnotationMoved={handleAnnotationMoved}
+      onAnnotationLabelOffset={handleAnnotationLabelOffset}
       onAnnotationDeleted={handleAnnotationDeleted}
       onSelectAnnotation={handleSelectAnnotation}
     />

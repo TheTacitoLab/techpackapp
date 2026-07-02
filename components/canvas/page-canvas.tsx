@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { AnnotationPin } from "@/components/canvas/annotation-pin";
 import { AssetPicker } from "@/components/canvas/asset-picker";
 import { GRID_CLASS } from "@/components/canvas/canvas-templates";
+import { clientToFraction } from "@/components/canvas/coords";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { layerByKey, layerForType, type LayerKey } from "@/components/canvas/layers";
 import {
@@ -82,6 +83,13 @@ type AnnotationMutationHandlers = {
     id: string,
     data: Record<string, unknown>,
   ) => void;
+  onAnnotationMoved: (slotId: string, id: string, x: number, y: number) => void;
+  onAnnotationLabelOffset: (
+    slotId: string,
+    id: string,
+    offsetX: number | null,
+    offsetY: number | null,
+  ) => void;
   onAnnotationDeleted: (slotId: string, id: string) => void;
   onSelectAnnotation: (id: string) => void;
 };
@@ -114,6 +122,8 @@ export function PageCanvas({
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
+  onAnnotationMoved,
+  onAnnotationLabelOffset,
   onAnnotationDeleted,
   onSelectAnnotation,
 }: {
@@ -147,6 +157,8 @@ export function PageCanvas({
               selectedAnnotationId={selectedAnnotationId}
               onAnnotationCreated={onAnnotationCreated}
               onAnnotationUpdated={onAnnotationUpdated}
+              onAnnotationMoved={onAnnotationMoved}
+              onAnnotationLabelOffset={onAnnotationLabelOffset}
               onAnnotationDeleted={onAnnotationDeleted}
               onSelectAnnotation={onSelectAnnotation}
             />
@@ -168,6 +180,8 @@ function SlotView({
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
+  onAnnotationMoved,
+  onAnnotationLabelOffset,
   onAnnotationDeleted,
   onSelectAnnotation,
 }: {
@@ -199,6 +213,8 @@ function SlotView({
         selectedAnnotationId={selectedAnnotationId}
         onAnnotationCreated={onAnnotationCreated}
         onAnnotationUpdated={onAnnotationUpdated}
+        onAnnotationMoved={onAnnotationMoved}
+        onAnnotationLabelOffset={onAnnotationLabelOffset}
         onAnnotationDeleted={onAnnotationDeleted}
         onSelectAnnotation={onSelectAnnotation}
       />
@@ -594,6 +610,8 @@ function AnnotationSlot({
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
+  onAnnotationMoved,
+  onAnnotationLabelOffset,
   onAnnotationDeleted,
   onSelectAnnotation,
 }: {
@@ -626,10 +644,14 @@ function AnnotationSlot({
   }, []);
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    // 0–1 fractions of the slot — identical math to Konva's click next session.
-    const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-    const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+    // 0–1 fractions of the slot via the shared helper — the exact same math the
+    // pin tip-drag reuses on release, so a click and a drag onto the same point
+    // land identically.
+    const { x, y } = clientToFraction(
+      e.clientX,
+      e.clientY,
+      e.currentTarget.getBoundingClientRect(),
+    );
 
     // Fabrics & Trim: open the editor at this point BEFORE creating anything —
     // the chosen sub-type decides the real layer_type (see DraftFabricPin).
@@ -683,6 +705,8 @@ function AnnotationSlot({
           pin_type: "point",
           end_x: null,
           end_y: null,
+          label_offset_x: null,
+          label_offset_y: null,
           data: {},
           created_by: null,
           created_at: new Date().toISOString(),
@@ -733,6 +757,8 @@ function AnnotationSlot({
       pin_type: "point",
       end_x: null,
       end_y: null,
+      label_offset_x: null,
+      label_offset_y: null,
       data: result.data as unknown as Json,
       created_by: null,
       created_at: new Date().toISOString(),
@@ -796,7 +822,12 @@ function AnnotationSlot({
           }
           isSelected={annotation.id === selectedAnnotationId}
           libraryItems={libraryItems}
+          getSlotRect={() => overlayRef.current?.getBoundingClientRect() ?? null}
           onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
+          onMoved={(id, x, y) => onAnnotationMoved(slot.id, id, x, y)}
+          onLabelOffsetChanged={(id, ox, oy) =>
+            onAnnotationLabelOffset(slot.id, id, ox, oy)
+          }
           onDeleted={(id) => onAnnotationDeleted(slot.id, id)}
           onSelected={onSelectAnnotation}
         />

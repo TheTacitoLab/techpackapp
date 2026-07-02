@@ -639,6 +639,52 @@ export async function moveAnnotation(
   revalidatePath(`/products/${productId}`);
 }
 
+// Badge offsets are slot-relative fractions like x/y, but signed: the badge is
+// normally ABOVE the tip (negative y) and can sit either side of it (±x). null
+// on either resets that axis to the default position directly above the tip.
+const offsetFraction = z.number().min(-1).max(1);
+const updateLabelOffsetSchema = z.object({
+  id: z.uuid(),
+  offsetX: offsetFraction.nullable(),
+  offsetY: offsetFraction.nullable(),
+});
+
+/**
+ * Move only a pin's reference-code BADGE relative to its tip — a pure
+ * rendering/geometry concern, kept separate from `updateAnnotation`'s business
+ * `data`. `null`/`null` resets the badge to its default position above the tip.
+ */
+export async function updateLabelOffset(
+  id: string,
+  offsetX: number | null,
+  offsetY: number | null,
+): Promise<void> {
+  const input = updateLabelOffsetSchema.parse({ id, offsetX, offsetY });
+  const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: annotation } = await supabase
+    .from("canvas_annotations")
+    .select("id, slot_id")
+    .eq("id", input.id)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (!annotation) throw new Error("Not found in your workspace.");
+
+  const { productId } = await getSlotContext(
+    supabase,
+    annotation.slot_id,
+    workspaceId,
+  );
+
+  const { error } = await supabase
+    .from("canvas_annotations")
+    .update({ label_offset_x: input.offsetX, label_offset_y: input.offsetY })
+    .eq("id", input.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${productId}`);
+}
+
 export async function deleteAnnotation(id: string): Promise<void> {
   const input = idSchema.parse({ id });
   const { supabase, workspaceId } = await requireActionContext();
