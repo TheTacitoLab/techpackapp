@@ -14,7 +14,11 @@ import { toast } from "sonner";
 import { AnnotationPin } from "@/components/canvas/annotation-pin";
 import { AssetPicker } from "@/components/canvas/asset-picker";
 import { GRID_CLASS } from "@/components/canvas/canvas-templates";
-import { ColourwayPinEditor } from "@/components/canvas/colourway-pin-editor";
+import {
+  ColourwayPinEditor,
+  useColourwayDraftFields,
+  useColourwaySelectionDraft,
+} from "@/components/canvas/colourway-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import { slotImageCssTransform } from "@/lib/cover-geometry";
 import { sampleColourAtPoint } from "@/lib/colour-sample";
@@ -641,9 +645,8 @@ function DraftColourwayPin({
   slotId,
   productId,
   initialHex,
-  receded,
   colourwayContext,
-  onRequestResample,
+  requestResample,
   onCreated,
   onCancel,
 }: {
@@ -655,10 +658,15 @@ function DraftColourwayPin({
   productId: string;
   /** Colour auto-sampled at the click point before the editor opened, or null. */
   initialHex: string | null;
-  /** True while the slot is in colour pick-mode — recede so the sample click passes through. */
-  receded: boolean;
   colourwayContext: ColourwayContext;
-  onRequestResample: (apply: (hex: string | null) => void) => void;
+  /**
+   * Enter image pick-mode to re-sample this draft pin's hex. `resolve` is
+   * called exactly once when pick-mode ends: a hex string on a successful
+   * sample, `null` on a failed sample, or `undefined` if cancelled.
+   */
+  requestResample?: (
+    resolve: (hex: string | null | undefined) => void,
+  ) => void;
   onCreated: (result: {
     id: string;
     referenceCode: string;
@@ -668,8 +676,41 @@ function DraftColourwayPin({
   onCancel: () => void;
 }) {
   const color = layerByKey("colourway").color;
+
+  // Draft state lives here — one level above the Popover — so it survives the
+  // popover fully closing during "Re-sample" (see useColourwayDraftFields).
+  const [open, setOpen] = useState(true);
+  const draft = useColourwayDraftFields({
+    colour_name: null,
+    hex: initialHex,
+    pantone: null,
+    notes: null,
+  });
+  const selection = useColourwaySelectionDraft(
+    colourwayContext.colourways,
+    colourwayContext.lastUsedColourwayId,
+  );
+
+  // Genuinely close the popover (not fade it) so Radix's portalled Content —
+  // and its own outside-click interception — is removed from the DOM entirely,
+  // leaving the canvas capture overlay free to receive the sample click.
+  function handleRequestResample() {
+    if (!requestResample) return;
+    setOpen(false);
+    requestResample((hex) => {
+      if (hex !== undefined) draft.applySample(hex);
+      setOpen(true);
+    });
+  }
+
   return (
-    <Popover open onOpenChange={(next) => !next && onCancel()}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) onCancel();
+      }}
+    >
       <PopoverTrigger asChild>
         <span
           aria-hidden
@@ -682,21 +723,7 @@ function DraftColourwayPin({
           />
         </span>
       </PopoverTrigger>
-      <PopoverContent
-        align="center"
-        className={cn(
-          "w-80 space-y-3",
-          // Re-sampling from the create flow: recede so the click reaches the
-          // canvas capture layer, and don't let that click dismiss the draft.
-          receded && "pointer-events-none opacity-30",
-        )}
-        onInteractOutside={(e) => {
-          if (receded) e.preventDefault();
-        }}
-        onEscapeKeyDown={(e) => {
-          if (receded) e.preventDefault();
-        }}
-      >
+      <PopoverContent align="center" className="w-80 space-y-3">
         <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
           New Colourway pin
         </div>
@@ -706,11 +733,11 @@ function DraftColourwayPin({
           x={x}
           y={y}
           productId={productId}
-          initialHex={initialHex}
+          draft={draft}
+          selection={selection}
           colourways={colourwayContext.colourways}
-          lastUsedColourwayId={colourwayContext.lastUsedColourwayId}
           onColourwayCreated={colourwayContext.onColourwayCreated}
-          onRequestResample={onRequestResample}
+          onRequestResample={requestResample ? handleRequestResample : undefined}
           onCreated={onCreated}
           onCancel={onCancel}
         />
@@ -760,10 +787,13 @@ function AnnotationSlot({
 
   // Colour pick-mode: a DISTINCT flag (not reused draft/placement state) so a
   // re-sample click can never be mistaken for placing a new pin. When set, the
-  // next canvas click samples a colour and hands it to `apply`, rather than
-  // creating a pin. `apply` is the editor's setter for its own hex field.
+  // next canvas click samples a colour and hands it to `resolve`, rather than
+  // creating a pin. `resolve` is called exactly once — with the sampled hex
+  // (or null on failure) on a genuine sample, or `undefined` on cancel/escape —
+  // so the requesting popover (already fully closed, not just faded) knows to
+  // reopen either way.
   const [pickMode, setPickMode] = useState<{
-    apply: (hex: string | null) => void;
+    resolve: (hex: string | null | undefined) => void;
   } | null>(null);
 
   // Track the slot's rendered size so pins position from live fractions.
@@ -798,25 +828,30 @@ function AnnotationSlot({
   );
 
   // Called by an open colourway editor's "Re-sample" button — arm pick-mode; the
-  // next canvas click samples and feeds the result back through `apply`.
+  // next canvas click samples and feeds the result back through `resolve`.
   const requestResample = useCallback(
-    (apply: (hex: string | null) => void) => {
-      setPickMode({ apply });
+    (resolve: (hex: string | null | undefined) => void) => {
+      setPickMode({ resolve });
     },
     [],
   );
 
-  const cancelPickMode = useCallback(() => setPickMode(null), []);
+  // Leaves pick-mode WITHOUT sampling — resolve(undefined) tells the caller "no
+  // change," distinct from resolve(null) which means "sampled but it failed."
+  const cancelPickMode = useCallback(() => {
+    pickMode?.resolve(undefined);
+    setPickMode(null);
+  }, [pickMode]);
 
   // Escape leaves pick-mode without changing the hex.
   useEffect(() => {
     if (!pickMode) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setPickMode(null);
+      if (e.key === "Escape") cancelPickMode();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pickMode]);
+  }, [pickMode, cancelPickMode]);
 
   async function handleSampleClick(e: React.MouseEvent<HTMLDivElement>) {
     const current = pickMode;
@@ -826,11 +861,11 @@ function AnnotationSlot({
       e.clientY,
       e.currentTarget.getBoundingClientRect(),
     );
-    // Exit pick-mode immediately so the editor un-recedes and the capture layer
-    // clears; the (fast) sample then flows back into the hex field.
+    // Exit pick-mode immediately so the capture layer clears; the (fast) sample
+    // then flows back into the hex field once it resolves.
     setPickMode(null);
     const hex = await sampleAt(x, y);
-    current.apply(hex);
+    current.resolve(hex);
   }
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -1057,8 +1092,7 @@ function AnnotationSlot({
           libraryItems={libraryItems}
           colourways={colourwayContext.colourways}
           getSlotRect={() => overlayRef.current?.getBoundingClientRect() ?? null}
-          onRequestResample={requestResample}
-          isResampling={pickMode !== null}
+          requestResample={requestResample}
           onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
           onMoved={(id, x, y) => onAnnotationMoved(slot.id, id, x, y)}
           onLabelOffsetChanged={(id, ox, oy) =>
@@ -1091,9 +1125,8 @@ function AnnotationSlot({
           slotId={slot.id}
           productId={productId}
           initialHex={draftPoint.hex}
-          receded={pickMode !== null}
           colourwayContext={colourwayContext}
-          onRequestResample={requestResample}
+          requestResample={requestResample}
           onCreated={handleColourwayDraftCreated}
           onCancel={() => setDraftPoint(null)}
         />

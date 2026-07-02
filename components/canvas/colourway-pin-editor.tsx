@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Pipette, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,7 +19,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   colourwayLabel,
   isValidHex,
-  readColourwayData,
 } from "@/components/canvas/colourway-data";
 import {
   createColourway,
@@ -45,6 +44,103 @@ type CreatedResult = {
   data: ColourwayAnnotationData;
 };
 
+export type ColourwayDraftFields = {
+  colourName: string;
+  setColourName: (value: string) => void;
+  hex: string;
+  setHex: (value: string) => void;
+  pantone: string;
+  setPantone: (value: string) => void;
+  notes: string;
+  setNotes: (value: string) => void;
+  /** True after an explicit re-sample attempt came back unsampleable (CORS/etc). */
+  resampleFailed: boolean;
+  /** Apply a re-sample result: a hex string on success, null when sampling failed. */
+  applySample: (hex: string | null) => void;
+};
+
+/**
+ * Owns the colourway pin editor's draft field state (colour name / hex / Pantone /
+ * notes) OUTSIDE the Popover's own content subtree — call this in the component
+ * that renders the `Popover` itself (`AnnotationPin` for edit mode,
+ * `DraftColourwayPin` for create mode), NOT inside `ColourwayPinEditor`.
+ *
+ * This matters because "Re-sample from image" now genuinely closes the popover
+ * (see `ColourwayPinEditor` doc comment) rather than just fading it, which
+ * unmounts `PopoverContent` and everything rendered inside it (Radix wraps it in
+ * a `Portal` with `Presence`, so a closed popover has no DOM at all). Any state
+ * living inside `ColourwayPinEditor` itself would reset to its initial value on
+ * reopen. Because the caller of this hook sits one level up and never unmounts
+ * during that close/reopen cycle, the draft the user already typed — including a
+ * still-inflight hex from re-sampling — survives untouched.
+ */
+export function useColourwayDraftFields(
+  initial: ColourwayAnnotationData,
+): ColourwayDraftFields {
+  const [colourName, setColourName] = useState(initial.colour_name ?? "");
+  const [hex, setHex] = useState(initial.hex ?? "");
+  const [pantone, setPantone] = useState(initial.pantone ?? "");
+  const [notes, setNotes] = useState(initial.notes ?? "");
+  // Set only when an explicit re-sample returns null (CORS/security), so the user
+  // who actively asked to sample gets feedback. Auto-sample-on-create stays silent.
+  const [resampleFailed, setResampleFailed] = useState(false);
+
+  const applySample = useCallback((sampled: string | null) => {
+    if (sampled) {
+      setHex(sampled);
+      setResampleFailed(false);
+    } else {
+      setResampleFailed(true);
+    }
+  }, []);
+
+  return {
+    colourName,
+    setColourName,
+    hex,
+    setHex,
+    pantone,
+    setPantone,
+    notes,
+    setNotes,
+    resampleFailed,
+    applySample,
+  };
+}
+
+export type ColourwaySelectionDraft = {
+  selection: string;
+  setSelection: (value: string) => void;
+  newName: string;
+  setNewName: (value: string) => void;
+};
+
+/**
+ * Owns the create-mode "which colourway" draft (existing selection, or the name
+ * typed for a brand-new one) — same lifting rationale as `useColourwayDraftFields`:
+ * called by `DraftColourwayPin`, not by `ColourwayPinEditor`, so it survives the
+ * popover closing during re-sample.
+ */
+export function useColourwaySelectionDraft(
+  colourways: CanvasColourway[],
+  lastUsedColourwayId: string | null,
+): ColourwaySelectionDraft {
+  // The most-recently-created colourway is the sensible default; fall back to
+  // the caller's last-used one when it still exists.
+  const mostRecent =
+    colourways.length > 0
+      ? [...colourways].sort((a, b) => b.sequence_number - a.sequence_number)[0]
+      : null;
+  const initialSelection =
+    lastUsedColourwayId && colourways.some((c) => c.id === lastUsedColourwayId)
+      ? lastUsedColourwayId
+      : (mostRecent?.id ?? DEFAULT_COLOURWAY);
+
+  const [selection, setSelection] = useState(initialSelection);
+  const [newName, setNewName] = useState("");
+  return { selection, setSelection, newName, setNewName };
+}
+
 /**
  * The dedicated Colourways pin editor — replaces the generic label/notes form
  * for pins whose layer_type is 'colourway'. Renders as plain content (no Popover
@@ -54,24 +150,29 @@ type CreatedResult = {
  *
  * Colourway assignment is chosen once, at creation, then immutable — edit mode
  * shows it as read-only text. Colour name / hex / Pantone / notes stay editable
- * in both modes.
+ * in both modes, via the `draft` prop — owned by the caller (see
+ * `useColourwayDraftFields`), NOT local state here, so it survives this
+ * component unmounting when the popover closes for "Re-sample."
  *
  * The hex field auto-fills from the image pixel at the pin's click point: create
- * mode receives that pre-sampled value as `initialHex`, and both modes expose a
- * "Re-sample from image" action (via `onRequestResample`) that lets the user pick
- * a different spot to correct an inaccurate read. Sampling is a pure enhancement —
- * manual entry always works, and a failed re-sample just shows an inline note.
+ * mode receives that pre-sampled value as the draft's initial `hex`, and both
+ * modes expose a "Re-sample from image" action (`onRequestResample`) that lets
+ * the user pick a different spot to correct an inaccurate read. Sampling is a
+ * pure enhancement — manual entry always works, and a failed re-sample just
+ * shows an inline note.
  */
 export function ColourwayPinEditor(
   props: {
     colourways: CanvasColourway[];
+    draft: ColourwayDraftFields;
     /**
-     * Request image pick-mode for the "Re-sample" action. The parent (which owns
-     * the canvas + slot geometry) puts the canvas into pick-mode and calls `apply`
-     * with the sampled hex (or `null` if it failed). Omitted when no slot is
-     * available to sample from, in which case the button is hidden.
+     * Request image pick-mode for the "Re-sample" action. The caller (which owns
+     * the Popover's `open` state) closes the popover, samples, then reopens it
+     * with `draft` already carrying the result — this component doesn't manage
+     * any of that, it just asks for it. Omitted when no slot is available to
+     * sample from, in which case the button is hidden.
      */
-    onRequestResample?: (apply: (hex: string | null) => void) => void;
+    onRequestResample?: () => void;
   } & (
     | {
         mode: "create";
@@ -79,9 +180,7 @@ export function ColourwayPinEditor(
         x: number;
         y: number;
         productId: string;
-        /** Colour auto-sampled at the click point before the editor opened, or null. */
-        initialHex: string | null;
-        lastUsedColourwayId: string | null;
+        selection: ColourwaySelectionDraft;
         onColourwayCreated: (colourway: CanvasColourway) => void;
         onCreated: (result: CreatedResult) => void;
         onCancel: () => void;
@@ -94,72 +193,36 @@ export function ColourwayPinEditor(
       }
   ),
 ) {
-  const { colourways, onRequestResample } = props;
-
-  const initial: ColourwayAnnotationData =
-    props.mode === "edit"
-      ? readColourwayData(props.annotation.data)
-      : {
-          colour_name: null,
-          hex: props.initialHex,
-          pantone: null,
-          notes: null,
-        };
-
-  const [colourName, setColourName] = useState(initial.colour_name ?? "");
-  const [hex, setHex] = useState(initial.hex ?? "");
-  const [pantone, setPantone] = useState(initial.pantone ?? "");
-  const [notes, setNotes] = useState(initial.notes ?? "");
+  const { colourways, draft, onRequestResample } = props;
+  const {
+    colourName,
+    setColourName,
+    hex,
+    setHex,
+    pantone,
+    setPantone,
+    notes,
+    setNotes,
+    resampleFailed,
+  } = draft;
 
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  // Set only when an explicit re-sample returns null (CORS/security), so the user
-  // who actively asked to sample gets feedback. Auto-sample-on-create stays silent.
-  const [resampleFailed, setResampleFailed] = useState(false);
-
-  function handleResample() {
-    if (!onRequestResample) return;
-    onRequestResample((sampled) => {
-      if (sampled) {
-        setHex(sampled);
-        setResampleFailed(false);
-      } else {
-        setResampleFailed(true);
-      }
-    });
-  }
-
-  // ---- Colourway selection (create mode only) ------------------------------
-  // The most-recently-created colourway is the sensible default; fall back to
-  // the caller's last-used one when it still exists.
-  const mostRecent =
-    colourways.length > 0
-      ? [...colourways].sort((a, b) => b.sequence_number - a.sequence_number)[0]
-      : null;
-  const initialSelection =
-    props.mode === "create"
-      ? props.lastUsedColourwayId &&
-        colourways.some((c) => c.id === props.lastUsedColourwayId)
-        ? props.lastUsedColourwayId
-        : (mostRecent?.id ?? DEFAULT_COLOURWAY)
-      : DEFAULT_COLOURWAY;
-
-  const [selection, setSelection] = useState(initialSelection);
-  const [newName, setNewName] = useState("");
   const [isCreatingColourway, setIsCreatingColourway] = useState(false);
 
   async function handleCreateColourway() {
     if (props.mode !== "create") return;
+    const { selection } = props;
     setIsCreatingColourway(true);
     try {
       const colourway = await createColourway(
         props.productId,
-        newName.trim() || undefined,
+        selection.newName.trim() || undefined,
       );
       props.onColourwayCreated(colourway);
-      setSelection(colourway.id);
-      setNewName("");
+      selection.setSelection(colourway.id);
+      selection.setNewName("");
       toast.success(`${colourway.name} created.`);
     } catch {
       toast.error("Could not create the colourway.");
@@ -178,7 +241,7 @@ export function ColourwayPinEditor(
   }
 
   async function handleSave() {
-    if (props.mode === "create" && selection === NEW_COLOURWAY) {
+    if (props.mode === "create" && props.selection.selection === NEW_COLOURWAY) {
       toast.error("Name and create the colourway first.");
       return;
     }
@@ -190,8 +253,8 @@ export function ColourwayPinEditor(
         toast.success("Colour saved.");
         props.onSaved(data);
       } else {
-        const colourwayId =
-          selection === DEFAULT_COLOURWAY ? null : selection;
+        const { selection } = props.selection;
+        const colourwayId = selection === DEFAULT_COLOURWAY ? null : selection;
         const { id, referenceCode, colourway } =
           await createColourwayAnnotation(
             props.slotId,
@@ -235,7 +298,10 @@ export function ColourwayPinEditor(
       {props.mode === "create" ? (
         <div className="space-y-1.5">
           <Label className="text-xs">Colourway</Label>
-          <Select value={selection} onValueChange={setSelection}>
+          <Select
+            value={props.selection.selection}
+            onValueChange={props.selection.setSelection}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -257,11 +323,11 @@ export function ColourwayPinEditor(
             </SelectContent>
           </Select>
 
-          {selection === NEW_COLOURWAY && (
+          {props.selection.selection === NEW_COLOURWAY && (
             <div className="flex items-center gap-2 pt-1">
               <Input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                value={props.selection.newName}
+                onChange={(e) => props.selection.setNewName(e.target.value)}
                 placeholder={`Colourway ${colourways.length + 1}`}
                 maxLength={60}
                 autoFocus
@@ -324,7 +390,7 @@ export function ColourwayPinEditor(
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleResample}
+              onClick={onRequestResample}
               title="Click a point on the image to sample its colour"
             >
               <Pipette className="size-4" />

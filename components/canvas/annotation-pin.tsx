@@ -15,7 +15,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
-import { ColourwayPinEditor } from "@/components/canvas/colourway-pin-editor";
+import { readColourwayData } from "@/components/canvas/colourway-data";
+import {
+  ColourwayPinEditor,
+  useColourwayDraftFields,
+} from "@/components/canvas/colourway-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import {
@@ -203,8 +207,7 @@ export function AnnotationPin({
   libraryItems,
   colourways,
   getSlotRect,
-  onRequestResample,
-  isResampling = false,
+  requestResample,
   onUpdated,
   onDeleted,
   onMoved,
@@ -219,10 +222,15 @@ export function AnnotationPin({
   libraryItems: ResolvedLibraryItem[];
   colourways: CanvasColourway[];
   getSlotRect: () => DOMRect | null;
-  /** Enter image pick-mode to re-sample a colourway pin's hex (see ColourwayPinEditor). */
-  onRequestResample?: (apply: (hex: string | null) => void) => void;
-  /** True while the parent slot is in colour pick-mode — recede this popover so a sample click passes through to the canvas. */
-  isResampling?: boolean;
+  /**
+   * Enter image pick-mode to re-sample a colourway pin's hex (see
+   * ColourwayPinEditor). `resolve` is called exactly once when pick-mode ends:
+   * a hex string on a successful sample, `null` when the sample failed
+   * (CORS/etc), or `undefined` if the user cancelled without sampling at all.
+   */
+  requestResample?: (
+    resolve: (hex: string | null | undefined) => void,
+  ) => void;
   onUpdated?: (id: string, data: Record<string, unknown>) => void;
   onDeleted?: (id: string) => void;
   onMoved?: (id: string, x: number, y: number) => void;
@@ -245,6 +253,30 @@ export function AnnotationPin({
   const isFabricFamily = layerKey === "fabric";
   const isColourway = layerKey === "colourway";
   const hasDedicatedEditor = isFabricFamily || isColourway;
+
+  // Draft field state for the colourway editor, owned HERE (not inside
+  // ColourwayPinEditor) so it survives the popover fully closing during
+  // "Re-sample from image" — see useColourwayDraftFields for why. Harmless to
+  // call for non-colourway pins too; readColourwayData defensively returns nulls.
+  const colourwayDraft = useColourwayDraftFields(
+    isColourway
+      ? readColourwayData(annotation.data)
+      : { colour_name: null, hex: null, pantone: null, notes: null },
+  );
+
+  // "Re-sample": genuinely close the popover (not just fade it) so Radix's
+  // portalled Content — and its own outside-click interception — is removed
+  // from the DOM entirely, leaving the canvas capture overlay free to receive
+  // the next click. Draft state lives above, in colourwayDraft, so it's intact
+  // whether the sample succeeds, fails, or the user cancels.
+  function handleRequestResample() {
+    if (!requestResample) return;
+    setOpen(false);
+    requestResample((hex) => {
+      if (hex !== undefined) colourwayDraft.applySample(hex);
+      setOpen(true);
+    });
+  }
 
   // Badge offset (slot fractions, relative to the tip). null on an axis means
   // "use the default," so untouched pins render exactly as before.
@@ -475,18 +507,7 @@ export function AnnotationPin({
       </span>
       <PopoverContent
         align="center"
-        className={cn(
-          hasDedicatedEditor ? "w-80 space-y-3" : "w-64 space-y-3",
-          // While re-sampling, recede so the sample click passes through to the
-          // canvas capture layer beneath, and don't let that click dismiss us.
-          isResampling && "pointer-events-none opacity-30",
-        )}
-        onInteractOutside={(e) => {
-          if (isResampling) e.preventDefault();
-        }}
-        onEscapeKeyDown={(e) => {
-          if (isResampling) e.preventDefault();
-        }}
+        className={hasDedicatedEditor ? "w-80 space-y-3" : "w-64 space-y-3"}
       >
         <div className="flex items-center justify-between">
           <span
@@ -519,7 +540,8 @@ export function AnnotationPin({
             mode="edit"
             annotation={annotation}
             colourways={colourways}
-            onRequestResample={onRequestResample}
+            draft={colourwayDraft}
+            onRequestResample={requestResample ? handleRequestResample : undefined}
             onSaved={(data) => {
               setOpen(false);
               onUpdated?.(annotation.id, data);
