@@ -30,6 +30,67 @@ alter table public.canvas_annotations
   add column if not exists colourway_id uuid null
     references public.canvas_colourways (id) on delete cascade;
 
+-- Backfill: 'colourway' layer_type pins from before this session (placed via
+-- the old generic single-counter path, so they carry codes like C1/C2 and no
+-- colourway_id) would violate the CHECK constraint below. For each product
+-- with such orphans, reuse its lowest-sequence colourway if one already
+-- exists, else create "Colourway 1"; assign every orphan to it and renumber
+-- their reference codes C{sequence}.{n} in creation order. Idempotent: the
+-- WHERE clauses only ever match rows still missing colourway_id, so a re-run
+-- after a successful backfill touches nothing.
+do $$
+declare
+  prod record;
+  ann record;
+  cw_id uuid;
+  next_seq integer;
+  n integer;
+begin
+  for prod in
+    select distinct cp.product_id, ca.workspace_id
+    from public.canvas_annotations ca
+    join public.canvas_slots cs on cs.id = ca.slot_id
+    join public.canvas_pages cp on cp.id = cs.page_id
+    where ca.layer_type = 'colourway' and ca.colourway_id is null
+  loop
+    select id into cw_id
+    from public.canvas_colourways
+    where product_id = prod.product_id
+    order by sequence_number asc
+    limit 1;
+
+    if cw_id is null then
+      select coalesce(max(sequence_number), 0) + 1 into next_seq
+      from public.canvas_colourways
+      where product_id = prod.product_id;
+
+      insert into public.canvas_colourways (product_id, workspace_id, name, sequence_number)
+      values (prod.product_id, prod.workspace_id, 'Colourway 1', next_seq)
+      returning id into cw_id;
+    end if;
+
+    n := 0;
+    for ann in
+      select ca.id
+      from public.canvas_annotations ca
+      join public.canvas_slots cs on cs.id = ca.slot_id
+      join public.canvas_pages cp on cp.id = cs.page_id
+      where cp.product_id = prod.product_id
+        and ca.layer_type = 'colourway'
+        and ca.colourway_id is null
+      order by ca.created_at asc
+    loop
+      n := n + 1;
+      update public.canvas_annotations
+      set colourway_id = cw_id,
+          reference_code = 'C' || (
+            select sequence_number from public.canvas_colourways where id = cw_id
+          ) || '.' || n
+      where id = ann.id;
+    end loop;
+  end loop;
+end $$;
+
 -- Integrity: a colourway pin MUST have a colourway_id; every other layer type
 -- MUST NOT. Guarded existence check because Postgres has no
 -- `ADD CONSTRAINT IF NOT EXISTS`.
