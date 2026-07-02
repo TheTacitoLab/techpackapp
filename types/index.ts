@@ -86,6 +86,7 @@ export type ProductAsset = Tables<"product_assets">;
 export type CanvasPage = Tables<"canvas_pages">;
 export type CanvasSlot = Tables<"canvas_slots">;
 export type CanvasAnnotation = Tables<"canvas_annotations">;
+export type CanvasColourway = Tables<"canvas_colourways">;
 
 // Enum aliases
 export type CanvasTemplate = Enums<"canvas_template">;
@@ -137,6 +138,32 @@ export type FabricTrimAnnotationData = {
   unit: "per_metre" | "per_unit" | "per_kg" | null;
   supplier_code: string | null;
   notes: string | null;
+};
+
+/**
+ * Structured `data` jsonb shape for Colourway annotations (`layer_type` =
+ * 'colourway'). All fields are manual this session — `hex` gets image-sampling
+ * in Session B, and `pantone` stays manual forever (never auto-derived, for
+ * accuracy/liability). The pin's colourway grouping and two-level reference code
+ * (C1.2) live on the annotation row itself (`colourway_id`, `reference_code`),
+ * not here — this jsonb is only the colour's own attributes.
+ */
+export type ColourwayAnnotationData = {
+  colour_name: string | null;
+  hex: string | null;
+  pantone: string | null;
+  notes: string | null;
+};
+
+/**
+ * A colourway plus the annotations placed in it, ordered for the grouped list
+ * panel. Built product-side (never in the panel component) and passed down —
+ * Colourways is the only layer that renders grouped, so this stays specific to
+ * it rather than a generic multi-level grouping system.
+ */
+export type ColourwayGroup = {
+  colourway: CanvasColourway;
+  annotations: CanvasAnnotation[];
 };
 
 export const LAYER_PREFIX: Record<CanvasLayerType, string> = {

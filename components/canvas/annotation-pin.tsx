@@ -15,6 +15,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
+import { ColourwayPinEditor } from "@/components/canvas/colourway-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import {
@@ -29,7 +30,11 @@ import {
   updateLabelOffset,
 } from "@/app/(app)/products/[id]/canvas-actions";
 import { cn } from "@/lib/utils";
-import type { CanvasAnnotation, ResolvedLibraryItem } from "@/types";
+import type {
+  CanvasAnnotation,
+  CanvasColourway,
+  ResolvedLibraryItem,
+} from "@/types";
 
 /** Read a string field out of the annotation's freeform `data` jsonb. */
 function readString(data: CanvasAnnotation["data"], key: string): string {
@@ -196,6 +201,7 @@ export function AnnotationPin({
   interactive = true,
   isSelected = false,
   libraryItems,
+  colourways,
   getSlotRect,
   onUpdated,
   onDeleted,
@@ -209,6 +215,7 @@ export function AnnotationPin({
   interactive?: boolean;
   isSelected?: boolean;
   libraryItems: ResolvedLibraryItem[];
+  colourways: CanvasColourway[];
   getSlotRect: () => DOMRect | null;
   onUpdated?: (id: string, data: Record<string, unknown>) => void;
   onDeleted?: (id: string) => void;
@@ -228,7 +235,10 @@ export function AnnotationPin({
 
   const color = colourForLayerType(annotation.layer_type);
   const textColor = readableTextOn(color);
-  const isFabricFamily = layerForType(annotation.layer_type)?.key === "fabric";
+  const layerKey = layerForType(annotation.layer_type)?.key;
+  const isFabricFamily = layerKey === "fabric";
+  const isColourway = layerKey === "colourway";
+  const hasDedicatedEditor = isFabricFamily || isColourway;
 
   // Badge offset (slot fractions, relative to the tip). null on an axis means
   // "use the default," so untouched pins render exactly as before.
@@ -459,7 +469,7 @@ export function AnnotationPin({
       </span>
       <PopoverContent
         align="center"
-        className={isFabricFamily ? "w-80 space-y-3" : "w-64 space-y-3"}
+        className={hasDedicatedEditor ? "w-80 space-y-3" : "w-64 space-y-3"}
       >
         <div className="flex items-center justify-between">
           <span
@@ -478,6 +488,20 @@ export function AnnotationPin({
             mode="edit"
             annotation={annotation}
             libraryItems={libraryItems}
+            onSaved={(data) => {
+              setOpen(false);
+              onUpdated?.(annotation.id, data);
+            }}
+            onDeleted={() => {
+              setOpen(false);
+              onDeleted?.(annotation.id);
+            }}
+          />
+        ) : isColourway ? (
+          <ColourwayPinEditor
+            mode="edit"
+            annotation={annotation}
+            colourways={colourways}
             onSaved={(data) => {
               setOpen(false);
               onUpdated?.(annotation.id, data);

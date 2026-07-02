@@ -510,6 +510,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      canvas_colourways: {
+        Row: {
+          id: string;
+          product_id: string;
+          workspace_id: string;
+          name: string;
+          sequence_number: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          workspace_id: string;
+          name: string;
+          sequence_number: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          product_id?: string;
+          workspace_id?: string;
+          name?: string;
+          sequence_number?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       canvas_annotations: {
         Row: {
           id: string;
@@ -524,6 +554,7 @@ export type Database = {
           end_y: number | null;
           label_offset_x: number | null;
           label_offset_y: number | null;
+          colourway_id: string | null;
           data: Json;
           created_by: string | null;
           created_at: string;
@@ -542,6 +573,7 @@ export type Database = {
           end_y?: number | null;
           label_offset_x?: number | null;
           label_offset_y?: number | null;
+          colourway_id?: string | null;
           data?: Json;
           created_by?: string | null;
           created_at?: string;
@@ -560,6 +592,7 @@ export type Database = {
           end_y?: number | null;
           label_offset_x?: number | null;
           label_offset_y?: number | null;
+          colourway_id?: string | null;
           data?: Json;
           created_by?: string | null;
           created_at?: string;

@@ -25,6 +25,8 @@ import { PageCanvas } from "@/components/canvas/page-canvas";
 import { PageThumbnailStrip } from "@/components/canvas/page-thumbnail-strip";
 import type {
   CanvasAnnotation,
+  CanvasColourway,
+  ColourwayGroup,
   ProductAsset,
   ResolvedCanvasPage,
   ResolvedLibraryItem,
@@ -60,6 +62,11 @@ export function PageEditor({
   activeLayer,
   isFullscreen,
   libraryItems,
+  colourways,
+  lastUsedColourwayId,
+  onColourwayCreated,
+  onColourwayUsed,
+  onColourwayRenamed,
   onLayerChange,
   onSelectPage,
   onBackToOverview,
@@ -74,6 +81,11 @@ export function PageEditor({
   activeLayer: LayerKey;
   isFullscreen: boolean;
   libraryItems: ResolvedLibraryItem[];
+  colourways: CanvasColourway[];
+  lastUsedColourwayId: string | null;
+  onColourwayCreated: (colourway: CanvasColourway) => void;
+  onColourwayUsed: (colourwayId: string) => void;
+  onColourwayRenamed: (id: string, name: string) => void;
   onLayerChange: (layer: LayerKey) => void;
   onSelectPage: (pageId: string) => void;
   onBackToOverview: () => void;
@@ -207,6 +219,22 @@ export function PageEditor({
       }),
     );
 
+  // Colourways render grouped: build one section per colourway (sequence order),
+  // each holding its own pins (reference-code order). Built here — where the
+  // annotations already live — never inside the panel, keeping the grouping
+  // specific to this layer rather than a generic system.
+  const colourwayGroups: ColourwayGroup[] | undefined =
+    activeLayer === "colourway"
+      ? [...colourways]
+          .sort((a, b) => a.sequence_number - b.sequence_number)
+          .map((colourway) => ({
+            colourway,
+            annotations: activeLayerAnnotations.filter(
+              (a) => a.colourway_id === colourway.id,
+            ),
+          }))
+      : undefined;
+
   function handleCreated(newPageId: string) {
     router.refresh();
     onSelectPage(newPageId);
@@ -279,6 +307,12 @@ export function PageEditor({
       stageZoom={stageZoom}
       heightClassName={isFullscreen ? "min-h-[calc(100vh-120px)]" : "h-[500px]"}
       libraryItems={libraryItems}
+      colourwayContext={{
+        colourways,
+        lastUsedColourwayId,
+        onColourwayCreated,
+        onColourwayUsed,
+      }}
       selectedAnnotationId={selectedAnnotationId}
       onAnnotationCreated={handleAnnotationCreated}
       onAnnotationUpdated={handleAnnotationUpdated}
@@ -292,6 +326,8 @@ export function PageEditor({
   const listPanel = (
     <AnnotationListPanel
       annotations={activeLayerAnnotations}
+      colourwayGroups={colourwayGroups}
+      onRenameColourway={onColourwayRenamed}
       activeLayerKey={activeLayer}
       selectedId={selectedAnnotationId}
       onSelect={handleSelectAnnotation}

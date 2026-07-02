@@ -32,7 +32,12 @@ import { z } from "zod";
 
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
-import { LAYER_PREFIX, type CanvasLayerType } from "@/types";
+import {
+  LAYER_PREFIX,
+  type CanvasColourway,
+  type CanvasLayerType,
+  type ColourwayAnnotationData,
+} from "@/types";
 
 // ---- Shared input fragments -------------------------------------------------
 // `layer_type` is validated against the canonical 12 keys of LAYER_PREFIX so the
@@ -710,4 +715,208 @@ export async function deleteAnnotation(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 
   revalidatePath(`/products/${productId}`);
+}
+
+// ============================================================================
+// Colourways
+// ============================================================================
+//
+// Colourways are the ONE layer that doesn't use the shared LAYER_PREFIX +
+// product-wide counter. A product owns multiple named colourways, each with a
+// stable `sequence_number`; a colourway pin's reference code is two-level —
+// `C{sequence_number}.{n}` where n counts pins WITHIN that colourway. This is a
+// deliberately separate code path from `createAnnotation`; do not fold them
+// together. Colourway assignment is fixed at creation (immutable), so there is
+// intentionally no action to change a pin's `colourway_id` — only rename the
+// colourway (which never touches sequence_number or any reference code).
+
+const colourwayDataSchema = z.object({
+  colour_name: z.string().nullable(),
+  hex: z.string().nullable(),
+  pantone: z.string().nullable(),
+  notes: z.string().nullable(),
+});
+
+const createColourwaySchema = z.object({
+  productId: z.uuid(),
+  name: z.string().trim().max(60).optional(),
+});
+
+/**
+ * Create a new named colourway for a product. `sequence_number` is the count of
+ * existing colourways + 1 (stable forever), and the name defaults to
+ * "Colourway N" when omitted. Returns the full row so the client can drop it
+ * straight into its optimistic colourway list.
+ */
+export async function createColourway(
+  productId: string,
+  name?: string,
+): Promise<CanvasColourway> {
+  const input = createColourwaySchema.parse({ productId, name });
+  const { supabase, workspaceId } = await requireActionContext();
+  await assertProductInWorkspace(supabase, input.productId, workspaceId);
+
+  const { count } = await supabase
+    .from("canvas_colourways")
+    .select("id", { count: "exact", head: true })
+    .eq("product_id", input.productId)
+    .eq("workspace_id", workspaceId);
+
+  const sequenceNumber = (count ?? 0) + 1;
+  const finalName = input.name && input.name.length > 0 ? input.name : `Colourway ${sequenceNumber}`;
+
+  const { data: row, error } = await supabase
+    .from("canvas_colourways")
+    .insert({
+      product_id: input.productId,
+      workspace_id: workspaceId,
+      name: finalName,
+      sequence_number: sequenceNumber,
+    })
+    .select("*")
+    .single();
+  if (error || !row) {
+    throw new Error(error?.message ?? "Failed to create colourway.");
+  }
+
+  revalidatePath(`/products/${input.productId}`);
+  return row;
+}
+
+const renameColourwaySchema = z.object({
+  id: z.uuid(),
+  name: z.string().trim().min(1).max(60),
+});
+
+/**
+ * Rename a colourway. Renaming ONLY — `sequence_number` and every pin's
+ * reference code are deliberately untouched (renaming "Colourway 1" to "Navy"
+ * doesn't renumber anything).
+ */
+export async function renameColourway(id: string, name: string): Promise<void> {
+  const input = renameColourwaySchema.parse({ id, name });
+  const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: colourway } = await supabase
+    .from("canvas_colourways")
+    .select("id, product_id")
+    .eq("id", input.id)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (!colourway) throw new Error("Not found in your workspace.");
+
+  const { error } = await supabase
+    .from("canvas_colourways")
+    .update({ name: input.name })
+    .eq("id", input.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${colourway.product_id}`);
+}
+
+const createColourwayAnnotationSchema = z.object({
+  slotId: z.uuid(),
+  x: fraction,
+  y: fraction,
+  colourwayId: z.uuid().nullable(),
+  data: colourwayDataSchema,
+});
+
+/**
+ * Place a colourway pin with a two-level reference code. Separate from
+ * `createAnnotation` on purpose (see the section header). `colourwayId` null
+ * means "use the product's most-recent colourway, or auto-create Colourway 1 if
+ * none exists yet" — so the first colour pin on a product is zero-extra-steps.
+ * Returns the resolved colourway row so the client can add it to local state
+ * whether it was pre-existing or just auto-created.
+ */
+export async function createColourwayAnnotation(
+  slotId: string,
+  x: number,
+  y: number,
+  colourwayId: string | null,
+  data: ColourwayAnnotationData,
+): Promise<{ id: string; referenceCode: string; colourway: CanvasColourway }> {
+  const input = createColourwayAnnotationSchema.parse({
+    slotId,
+    x,
+    y,
+    colourwayId,
+    data,
+  });
+  const { supabase, workspaceId, userId } = await requireActionContext();
+  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+
+  // Resolve the target colourway (explicit → most-recent → auto-create).
+  let colourway: CanvasColourway;
+  if (input.colourwayId) {
+    const { data: found } = await supabase
+      .from("canvas_colourways")
+      .select("*")
+      .eq("id", input.colourwayId)
+      .eq("product_id", productId)
+      .eq("workspace_id", workspaceId)
+      .single();
+    if (!found) throw new Error("Colourway not found in your workspace.");
+    colourway = found;
+  } else {
+    const { data: recent } = await supabase
+      .from("canvas_colourways")
+      .select("*")
+      .eq("product_id", productId)
+      .eq("workspace_id", workspaceId)
+      .order("sequence_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recent) {
+      colourway = recent;
+    } else {
+      const { data: created, error: createErr } = await supabase
+        .from("canvas_colourways")
+        .insert({
+          product_id: productId,
+          workspace_id: workspaceId,
+          name: "Colourway 1",
+          sequence_number: 1,
+        })
+        .select("*")
+        .single();
+      if (createErr || !created) {
+        throw new Error(createErr?.message ?? "Failed to create colourway.");
+      }
+      colourway = created;
+    }
+  }
+
+  // Two-level code: count pins already in THIS colourway (colourway_id already
+  // scopes to one product, so no product join is needed — workspace_id guards).
+  const { count } = await supabase
+    .from("canvas_annotations")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .eq("colourway_id", colourway.id);
+  const referenceCode = `C${colourway.sequence_number}.${(count ?? 0) + 1}`;
+
+  const { data: row, error } = await supabase
+    .from("canvas_annotations")
+    .insert({
+      slot_id: input.slotId,
+      workspace_id: workspaceId,
+      layer_type: "colourway",
+      colourway_id: colourway.id,
+      reference_code: referenceCode,
+      x: input.x,
+      y: input.y,
+      pin_type: "point",
+      data: input.data as unknown as Json,
+      created_by: userId,
+    })
+    .select("id")
+    .single();
+  if (error || !row) {
+    throw new Error(error?.message ?? "Failed to create colourway pin.");
+  }
+
+  revalidatePath(`/products/${productId}`);
+  return { id: row.id, referenceCode, colourway };
 }

@@ -16,6 +16,7 @@ import { PageEditor } from "@/components/canvas/page-editor";
 import { PageOverview } from "@/components/canvas/page-overview";
 import type { LayerKey } from "@/components/canvas/layers";
 import type {
+  CanvasColourway,
   ProductAsset,
   ResolvedCanvasPage,
   ResolvedLibraryItem,
@@ -28,18 +29,48 @@ export function TechnicalDetailsSection({
   workspaceId,
   assets,
   pages,
+  colourways,
   libraryItems,
 }: {
   productId: string;
   workspaceId: string;
   assets: ProductAsset[];
   pages: ResolvedCanvasPage[];
+  colourways: CanvasColourway[];
   libraryItems: ResolvedLibraryItem[];
 }) {
   const [mode, setMode] = useState<Mode>({ view: "overview" });
   // Default to Fabrics & Trim — the most-used layer, and the one that builds the BOM.
   const [activeLayer, setActiveLayer] = useState<LayerKey>("fabric");
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Optimistic colourway list, owned here (above the overview/edit switch) so a
+  // colourway created while editing survives a bounce to the overview and back.
+  // Resynced from the server prop via the render-time adjustment pattern.
+  const [localColourways, setLocalColourways] = useState(colourways);
+  const [syncedColourways, setSyncedColourways] = useState(colourways);
+  if (colourways !== syncedColourways) {
+    setSyncedColourways(colourways);
+    setLocalColourways(colourways);
+  }
+  // Which colourway the next colour pin defaults to (the last one placed into or
+  // created). Session-local; falls back to most-recent when unset.
+  const [lastUsedColourwayId, setLastUsedColourwayId] = useState<string | null>(
+    null,
+  );
+
+  function handleColourwayCreated(colourway: CanvasColourway) {
+    setLocalColourways((prev) =>
+      prev.some((c) => c.id === colourway.id) ? prev : [...prev, colourway],
+    );
+    setLastUsedColourwayId(colourway.id);
+  }
+
+  function handleColourwayRenamed(id: string, name: string) {
+    setLocalColourways((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, name } : c)),
+    );
+  }
 
   function openPage(pageId: string) {
     setMode({ view: "edit", pageId });
@@ -72,6 +103,11 @@ export function TechnicalDetailsSection({
       activeLayer={activeLayer}
       isFullscreen={isFullscreen}
       libraryItems={libraryItems}
+      colourways={localColourways}
+      lastUsedColourwayId={lastUsedColourwayId}
+      onColourwayCreated={handleColourwayCreated}
+      onColourwayUsed={setLastUsedColourwayId}
+      onColourwayRenamed={handleColourwayRenamed}
       onLayerChange={setActiveLayer}
       onSelectPage={(pageId) => setMode({ view: "edit", pageId })}
       onBackToOverview={backToOverview}

@@ -16,6 +16,7 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
   CanvasAnnotation,
+  CanvasColourway,
   CanvasPage,
   CanvasSlot,
   Collection,
@@ -104,8 +105,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
   ]);
 
   // Canvas data (Phase 4b): the product's image assets and its pages with slots
-  // (each slot's chosen asset + annotation pins nested) resolved for the UI.
-  const [assetsResult, pagesResult] = await Promise.all([
+  // (each slot's chosen asset + annotation pins nested) resolved for the UI,
+  // plus its named colourways (the Colourways layer groups pins by these).
+  const [assetsResult, pagesResult, colourwaysResult] = await Promise.all([
     supabase
       .from("product_assets")
       .select("*")
@@ -125,9 +127,15 @@ export default async function ProductDetailPage({ params }: PageProps) {
       )
       .eq("product_id", product.id)
       .order("sort_order", { ascending: true }),
+    supabase
+      .from("canvas_colourways")
+      .select("*")
+      .eq("product_id", product.id)
+      .order("sequence_number", { ascending: true }),
   ]);
 
   const assets: ProductAsset[] = assetsResult.data ?? [];
+  const colourways: CanvasColourway[] = colourwaysResult.data ?? [];
 
   // The nested embed shape (slots carry their asset + annotations); mapped into
   // the flat ResolvedCanvasPage the canvas UI expects. The generated types don't
@@ -214,6 +222,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
             workspaceId={activeProduct.workspace_id}
             assets={assets}
             pages={resolvedPages}
+            colourways={colourways}
             libraryItems={libraryItems}
           />
         );

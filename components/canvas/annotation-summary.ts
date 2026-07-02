@@ -1,9 +1,18 @@
 import { layerForType } from "@/components/canvas/layers";
+import { readColourwayData } from "@/components/canvas/colourway-data";
 import { readFabricTrimData } from "@/components/canvas/fabric-trim-data";
 import type { CanvasAnnotation } from "@/types";
 
-/** A short, uniform summary of an annotation for the tooltip and list panel. */
-export type AnnotationSummary = { title: string; detail: string | null };
+/**
+ * A short, uniform summary of an annotation for the tooltip and list panel.
+ * `swatch` is an optional hex the row can render as a colour dot (Colourways
+ * layer) — null for layers that have no intrinsic colour of their own.
+ */
+export type AnnotationSummary = {
+  title: string;
+  detail: string | null;
+  swatch?: string | null;
+};
 
 function readLegacyLabelNotes(data: CanvasAnnotation["data"]): {
   label: string | null;
@@ -43,7 +52,17 @@ export function getAnnotationSummary(
     };
   }
 
-  // Generic layers (measurement, construction, colourway): legacy label/notes.
+  if (layer?.key === "colourway") {
+    const d = readColourwayData(annotation.data);
+    const detailParts = [d.pantone, d.hex].filter((v): v is string => !!v);
+    return {
+      title: d.colour_name ?? "Untitled colour",
+      detail: detailParts.length > 0 ? detailParts.join(" · ") : d.notes,
+      swatch: d.hex,
+    };
+  }
+
+  // Generic layers (measurement, construction): legacy label/notes.
   const { label, notes } = readLegacyLabelNotes(annotation.data);
   return {
     title: label ?? `Untitled ${layerLabel.toLowerCase()}`,

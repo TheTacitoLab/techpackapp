@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { AnnotationPin } from "@/components/canvas/annotation-pin";
 import { AssetPicker } from "@/components/canvas/asset-picker";
 import { GRID_CLASS } from "@/components/canvas/canvas-templates";
+import { ColourwayPinEditor } from "@/components/canvas/colourway-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { layerByKey, layerForType, type LayerKey } from "@/components/canvas/layers";
@@ -43,12 +44,27 @@ import { cn } from "@/lib/utils";
 import type { Json } from "@/types/database.types";
 import type {
   CanvasAnnotation,
+  CanvasColourway,
   CanvasLayerType,
+  ColourwayAnnotationData,
   ProductAsset,
   ResolvedCanvasPage,
   ResolvedLibraryItem,
   ResolvedSlot,
 } from "@/types";
+
+/**
+ * Colourway layer state + callbacks threaded from `TechnicalDetailsSection`
+ * (which owns the optimistic colourway list and the last-used selection) down
+ * to the pin editors. Grouped separately from the annotation mutation handlers
+ * because colourways are product-level, not per-annotation.
+ */
+type ColourwayContext = {
+  colourways: CanvasColourway[];
+  lastUsedColourwayId: string | null;
+  onColourwayCreated: (colourway: CanvasColourway) => void;
+  onColourwayUsed: (colourwayId: string) => void;
+};
 
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
@@ -119,6 +135,7 @@ export function PageCanvas({
   stageZoom,
   heightClassName,
   libraryItems,
+  colourwayContext,
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
@@ -135,6 +152,7 @@ export function PageCanvas({
   stageZoom: number;
   heightClassName: string;
   libraryItems: ResolvedLibraryItem[];
+  colourwayContext: ColourwayContext;
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
   return (
@@ -154,6 +172,7 @@ export function PageCanvas({
               workspaceId={workspaceId}
               activeLayerKey={activeLayerKey}
               libraryItems={libraryItems}
+              colourwayContext={colourwayContext}
               selectedAnnotationId={selectedAnnotationId}
               onAnnotationCreated={onAnnotationCreated}
               onAnnotationUpdated={onAnnotationUpdated}
@@ -177,6 +196,7 @@ function SlotView({
   workspaceId,
   activeLayerKey,
   libraryItems,
+  colourwayContext,
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
@@ -191,6 +211,7 @@ function SlotView({
   workspaceId: string;
   activeLayerKey: LayerKey;
   libraryItems: ResolvedLibraryItem[];
+  colourwayContext: ColourwayContext;
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
   if (!slot.asset) {
@@ -207,9 +228,11 @@ function SlotView({
     return (
       <AnnotationSlot
         slot={slot}
+        productId={productId}
         activeLayerKey={activeLayerKey}
         workspaceId={workspaceId}
         libraryItems={libraryItems}
+        colourwayContext={colourwayContext}
         selectedAnnotationId={selectedAnnotationId}
         onAnnotationCreated={onAnnotationCreated}
         onAnnotationUpdated={onAnnotationUpdated}
@@ -600,13 +623,85 @@ function DraftFabricPin({
   );
 }
 
+// ---- Draft pin (Colourways: choose/create colourway BEFORE creating) --------
+
+/**
+ * A new Colourway pin also defers creation to its editor (like Fabrics & Trim),
+ * because the chosen colourway determines the pin's two-level reference code
+ * (C1.2) and is immutable afterward. Same pulsing-marker pattern; dismissing
+ * without saving never touches the server.
+ */
+function DraftColourwayPin({
+  x,
+  y,
+  slotWidth,
+  slotHeight,
+  slotId,
+  productId,
+  colourwayContext,
+  onCreated,
+  onCancel,
+}: {
+  x: number;
+  y: number;
+  slotWidth: number;
+  slotHeight: number;
+  slotId: string;
+  productId: string;
+  colourwayContext: ColourwayContext;
+  onCreated: (result: {
+    id: string;
+    referenceCode: string;
+    colourway: CanvasColourway;
+    data: ColourwayAnnotationData;
+  }) => void;
+  onCancel: () => void;
+}) {
+  const color = layerByKey("colourway").color;
+  return (
+    <Popover open onOpenChange={(next) => !next && onCancel()}>
+      <PopoverTrigger asChild>
+        <span
+          aria-hidden
+          className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
+          style={{ left: x * slotWidth, top: y * slotHeight }}
+        >
+          <span
+            className="block size-1.5 rounded-full ring-2 ring-white"
+            style={{ backgroundColor: color }}
+          />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent align="center" className="w-80 space-y-3">
+        <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+          New Colourway pin
+        </div>
+        <ColourwayPinEditor
+          mode="create"
+          slotId={slotId}
+          x={x}
+          y={y}
+          productId={productId}
+          colourways={colourwayContext.colourways}
+          lastUsedColourwayId={colourwayContext.lastUsedColourwayId}
+          onColourwayCreated={colourwayContext.onColourwayCreated}
+          onCreated={onCreated}
+          onCancel={onCancel}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ---- Annotation slot (filled, locked) ---------------------------------------
 
 function AnnotationSlot({
   slot,
+  productId,
   activeLayerKey,
   workspaceId,
   libraryItems,
+  colourwayContext,
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
@@ -616,9 +711,11 @@ function AnnotationSlot({
   onSelectAnnotation,
 }: {
   slot: ResolvedSlot;
+  productId: string;
   activeLayerKey: LayerKey;
   workspaceId: string;
   libraryItems: ResolvedLibraryItem[];
+  colourwayContext: ColourwayContext;
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
   const router = useRouter();
@@ -653,9 +750,10 @@ function AnnotationSlot({
       e.currentTarget.getBoundingClientRect(),
     );
 
-    // Fabrics & Trim: open the editor at this point BEFORE creating anything —
-    // the chosen sub-type decides the real layer_type (see DraftFabricPin).
-    if (activeLayerKey === "fabric") {
+    // Fabrics & Trim and Colourways both defer creation to their editor at this
+    // point — the chosen sub-type / colourway decides the reference code, which
+    // is immutable afterward (see DraftFabricPin / DraftColourwayPin).
+    if (activeLayerKey === "fabric" || activeLayerKey === "colourway") {
       setDraftPoint({ x, y });
       return;
     }
@@ -707,6 +805,7 @@ function AnnotationSlot({
           end_y: null,
           label_offset_x: null,
           label_offset_y: null,
+          colourway_id: null,
           data: {},
           created_by: null,
           created_at: new Date().toISOString(),
@@ -759,6 +858,40 @@ function AnnotationSlot({
       end_y: null,
       label_offset_x: null,
       label_offset_y: null,
+      colourway_id: null,
+      data: result.data as unknown as Json,
+      created_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    setDraftPoint(null);
+  }
+
+  function handleColourwayDraftCreated(result: {
+    id: string;
+    referenceCode: string;
+    colourway: CanvasColourway;
+    data: ColourwayAnnotationData;
+  }) {
+    if (!draftPoint) return;
+    // The resolved colourway may have been auto-created server-side (first pin);
+    // upsert it into product state and mark it the last-used one.
+    colourwayContext.onColourwayCreated(result.colourway);
+    colourwayContext.onColourwayUsed(result.colourway.id);
+    onAnnotationCreated(slot.id, {
+      id: result.id,
+      slot_id: slot.id,
+      workspace_id: workspaceId,
+      layer_type: "colourway",
+      reference_code: result.referenceCode,
+      x: draftPoint.x,
+      y: draftPoint.y,
+      pin_type: "point",
+      end_x: null,
+      end_y: null,
+      label_offset_x: null,
+      label_offset_y: null,
+      colourway_id: result.colourway.id,
       data: result.data as unknown as Json,
       created_by: null,
       created_at: new Date().toISOString(),
@@ -822,6 +955,7 @@ function AnnotationSlot({
           }
           isSelected={annotation.id === selectedAnnotationId}
           libraryItems={libraryItems}
+          colourways={colourwayContext.colourways}
           getSlotRect={() => overlayRef.current?.getBoundingClientRect() ?? null}
           onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
           onMoved={(id, x, y) => onAnnotationMoved(slot.id, id, x, y)}
@@ -833,7 +967,7 @@ function AnnotationSlot({
         />
       ))}
 
-      {draftPoint && (
+      {draftPoint && activeLayerKey === "fabric" && (
         <DraftFabricPin
           x={draftPoint.x}
           y={draftPoint.y}
@@ -842,6 +976,20 @@ function AnnotationSlot({
           slotId={slot.id}
           libraryItems={libraryItems}
           onCreated={handleDraftCreated}
+          onCancel={() => setDraftPoint(null)}
+        />
+      )}
+
+      {draftPoint && activeLayerKey === "colourway" && (
+        <DraftColourwayPin
+          x={draftPoint.x}
+          y={draftPoint.y}
+          slotWidth={size.width}
+          slotHeight={size.height}
+          slotId={slot.id}
+          productId={productId}
+          colourwayContext={colourwayContext}
+          onCreated={handleColourwayDraftCreated}
           onCancel={() => setDraftPoint(null)}
         />
       )}
