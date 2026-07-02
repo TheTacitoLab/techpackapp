@@ -16,6 +16,7 @@ import {
   ColourwayPinEditor,
   useColourwayDraftFields,
 } from "@/components/canvas/colourway-pin-editor";
+import { ConstructionPinEditor } from "@/components/canvas/construction-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import {
@@ -178,8 +179,10 @@ function LeaderLine({
  * stays exactly on the originally-clicked screen pixel at any zoom.
  *
  * Fabrics & Trim pins (layer_type fabric/trim/hardware/elastic) open the
- * dedicated `FabricTrimPinEditor`; every other layer keeps the generic
- * label/notes form for now. Edit popover and delete call server actions, then
+ * dedicated `FabricTrimPinEditor`, Colourway pins the `ColourwayPinEditor`,
+ * and Construction pins (stitch/construction_note) the
+ * `ConstructionPinEditor`; Measurements keeps the generic label/notes form
+ * for now. Edit popover and delete call server actions, then
  * report the result up via `onUpdated`/`onDeleted` so the parent slot can
  * update its local annotation list directly — no `router.refresh()` / full
  * page re-fetch on every edit.
@@ -248,7 +251,8 @@ export function AnnotationPin({
   const layerKey = layerForType(annotation.layer_type)?.key;
   const isFabricFamily = layerKey === "fabric";
   const isColourway = layerKey === "colourway";
-  const hasDedicatedEditor = isFabricFamily || isColourway;
+  const isConstruction = layerKey === "construction";
+  const hasDedicatedEditor = isFabricFamily || isColourway || isConstruction;
 
   // Draft field state for the colourway editor, owned HERE (not inside
   // ColourwayPinEditor) so it survives the editor Dialog fully closing during
@@ -538,6 +542,20 @@ export function AnnotationPin({
             colourways={colourways}
             draft={colourwayDraft}
             onRequestResample={requestResample ? handleRequestResample : undefined}
+            onSaved={(data) => {
+              setOpen(false);
+              onUpdated?.(annotation.id, data);
+            }}
+            onDeleted={() => {
+              setOpen(false);
+              onDeleted?.(annotation.id);
+            }}
+          />
+        ) : isConstruction ? (
+          <ConstructionPinEditor
+            mode="edit"
+            annotation={annotation}
+            libraryItems={libraryItems}
             onSaved={(data) => {
               setOpen(false);
               onUpdated?.(annotation.id, data);

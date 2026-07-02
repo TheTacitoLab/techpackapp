@@ -239,12 +239,23 @@ function ListRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
-            {summary.swatch && (
+            {/* Leading visual — one generic slot per row: an icon image when
+                the summary carries one (stitch SVG diagram), else a colour
+                dot (Colourways), else nothing. 3:2 to match the seeded
+                120×80 diagrams; white ground so they read in dark mode. */}
+            {summary.icon ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={summary.icon}
+                alt=""
+                className="h-6 w-9 shrink-0 rounded-sm border bg-white object-contain"
+              />
+            ) : summary.swatch ? (
               <span
                 className="size-3 shrink-0 rounded-full border"
                 style={{ backgroundColor: summary.swatch }}
               />
-            )}
+            ) : null}
             <span className="text-foreground block truncate text-sm font-medium">
               {summary.title}
             </span>

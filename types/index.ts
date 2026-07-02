@@ -156,6 +156,35 @@ export type ColourwayAnnotationData = {
 };
 
 /**
+ * Structured `data` jsonb shape for Construction annotations (`layer_type` in
+ * stitch/construction_note — one shape shared by both sub-types, mirroring how
+ * Fabrics & Trim shares one shape across its four). Stitch pins denormalise
+ * the picked Master Library item at selection time (`library_item_id`,
+ * `library_item_name`, `library_item_image_url`) so the list panel — and the
+ * future PDF export — can render the stitch's SVG diagram straight off the
+ * annotation, no join back to `library_items`; `spi` is a single editable
+ * number derived from the item's `spi_range` (never the raw range string) and
+ * `thread_colour` is manual per-garment entry (same reasoning as Colourways'
+ * manual Pantone). Note pins carry only `note_text`. Pins created before the
+ * dedicated editor store `{ label, notes }` — read as a display fallback,
+ * never migrated; see `readConstructionData` in
+ * `components/canvas/construction-data.ts`.
+ */
+export type ConstructionAnnotationData = {
+  // Set only for stitch-type pins
+  library_item_id: string | null;
+  library_item_name: string | null;
+  library_item_image_url: string | null;
+  spi: number | null;
+  thread_colour: string | null;
+  // Set only for construction-note pins
+  note_text: string | null;
+  // Shared by both types
+  placement: string | null;
+  notes: string | null;
+};
+
+/**
  * A colourway plus the annotations placed in it, ordered for the grouped list
  * panel. Built product-side (never in the panel component) and passed down —
  * Colourways is the only layer that renders grouped, so this stays specific to

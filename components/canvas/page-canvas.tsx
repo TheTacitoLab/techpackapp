@@ -19,6 +19,7 @@ import {
   useColourwayDraftFields,
   useColourwaySelectionDraft,
 } from "@/components/canvas/colourway-pin-editor";
+import { ConstructionPinEditor } from "@/components/canvas/construction-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import { slotImageCssTransform } from "@/lib/cover-geometry";
 import { sampleColourAtPoint } from "@/lib/colour-sample";
@@ -751,6 +752,77 @@ function DraftColourwayPin({
   );
 }
 
+// ---- Draft pin (Construction: pick sub-type BEFORE creating) ----------------
+
+/**
+ * A new Construction pin defers `createAnnotation` until save for the same
+ * reason Fabrics & Trim does: the sub-type chosen in the editor (Stitch /
+ * Construction Note) IS the pin's `layer_type`, which determines its S/CN
+ * reference-code prefix and is immutable after creation. Same pulsing-marker
+ * pattern; dismissing without saving never touches the server.
+ */
+function DraftConstructionPin({
+  x,
+  y,
+  slotWidth,
+  slotHeight,
+  slotId,
+  libraryItems,
+  onCreated,
+  onCancel,
+}: {
+  x: number;
+  y: number;
+  slotWidth: number;
+  slotHeight: number;
+  slotId: string;
+  libraryItems: ResolvedLibraryItem[];
+  onCreated: (result: {
+    id: string;
+    referenceCode: string;
+    layerType: CanvasLayerType;
+    data: Record<string, unknown>;
+  }) => void;
+  onCancel: () => void;
+}) {
+  const color = layerByKey("construction").color;
+  return (
+    <>
+      {/* Pending-placement marker at the click point (see DraftFabricPin). */}
+      <span
+        aria-hidden
+        className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
+        style={{ left: x * slotWidth, top: y * slotHeight }}
+      >
+        <span
+          className="block size-1.5 rounded-full ring-2 ring-white"
+          style={{ backgroundColor: color }}
+        />
+      </span>
+      <PinEditorDialog
+        open
+        onOpenChange={(next) => !next && onCancel()}
+        title="New Construction pin"
+        header={
+          <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            New Construction pin
+          </div>
+        }
+      >
+        <ConstructionPinEditor
+          mode="create"
+          slotId={slotId}
+          x={x}
+          y={y}
+          libraryItems={libraryItems}
+          onCreated={onCreated}
+          onCancel={onCancel}
+        />
+      </PinEditorDialog>
+    </>
+  );
+}
+
 // ---- Annotation slot (filled, locked) ---------------------------------------
 
 function AnnotationSlot({
@@ -883,10 +955,11 @@ function AnnotationSlot({
       e.currentTarget.getBoundingClientRect(),
     );
 
-    // Fabrics & Trim and Colourways both defer creation to their editor at this
-    // point — the chosen sub-type / colourway decides the reference code, which
-    // is immutable afterward (see DraftFabricPin / DraftColourwayPin).
-    if (activeLayerKey === "fabric") {
+    // Fabrics & Trim, Colourways, and Construction all defer creation to their
+    // editor at this point — the chosen sub-type / colourway decides the
+    // reference code, which is immutable afterward (see DraftFabricPin /
+    // DraftColourwayPin / DraftConstructionPin).
+    if (activeLayerKey === "fabric" || activeLayerKey === "construction") {
       setDraftPoint({ x, y, hex: null });
       return;
     }
@@ -911,7 +984,8 @@ function AnnotationSlot({
       "color: #C8F000",
       t1,
     );
-    // New pins get the active layer's primary type (measurement/construction/…).
+    // New pins get the active layer's primary type (only Measurements still
+    // takes this immediate-create path).
     const layerType = layerByKey(activeLayerKey).primaryType;
 
     startCreate(async () => {
@@ -1110,6 +1184,19 @@ function AnnotationSlot({
 
       {draftPoint && activeLayerKey === "fabric" && (
         <DraftFabricPin
+          x={draftPoint.x}
+          y={draftPoint.y}
+          slotWidth={size.width}
+          slotHeight={size.height}
+          slotId={slot.id}
+          libraryItems={libraryItems}
+          onCreated={handleDraftCreated}
+          onCancel={() => setDraftPoint(null)}
+        />
+      )}
+
+      {draftPoint && activeLayerKey === "construction" && (
+        <DraftConstructionPin
           x={draftPoint.x}
           y={draftPoint.y}
           slotWidth={size.width}
