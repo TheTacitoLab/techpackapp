@@ -24,7 +24,14 @@ import { clientToFraction } from "@/components/canvas/coords";
 import { slotImageCssTransform } from "@/lib/cover-geometry";
 import { sampleColourAtPoint } from "@/lib/colour-sample";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
-import { layerByKey, layerForType, type LayerKey } from "@/components/canvas/layers";
+import { MeasurementLinePin } from "@/components/canvas/measurement-line-pin";
+import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
+import {
+  layerByKey,
+  layerForType,
+  readableTextOn,
+  type LayerKey,
+} from "@/components/canvas/layers";
 import { PinEditorDialog } from "@/components/canvas/pin-editor-dialog";
 import {
   AlertDialog,
@@ -102,7 +109,15 @@ type AnnotationMutationHandlers = {
     id: string,
     data: Record<string, unknown>,
   ) => void;
-  onAnnotationMoved: (slotId: string, id: string, x: number, y: number) => void;
+  /** Point pins pass x/y only; measurement lines also pass their endpoint. */
+  onAnnotationMoved: (
+    slotId: string,
+    id: string,
+    x: number,
+    y: number,
+    endX?: number | null,
+    endY?: number | null,
+  ) => void;
   onAnnotationLabelOffset: (
     slotId: string,
     id: string,
@@ -852,7 +867,6 @@ function AnnotationSlot({
   const overlayRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [unlockConfirm, setUnlockConfirm] = useState(false);
-  const [, startCreate] = useTransition();
   const [isUnlocking, startUnlock] = useTransition();
   // A colourway draft carries the colour auto-sampled at its click point (or null
   // if sampling wasn't possible); other layers ignore `hex`.
@@ -861,6 +875,35 @@ function AnnotationSlot({
     y: number;
     hex: string | null;
   } | null>(null);
+
+  // Measurement two-click drawing state: a DEDICATED flag for this layer's
+  // two-step line placement, deliberately not shared with `draftPoint` (the
+  // single-click layers' pending pin) or `pickMode` (Colourways' sampling) —
+  // three distinct interactions, three distinct flags, so no click can ever be
+  // routed to the wrong flow. Set by the first click (start point + live
+  // cursor for the rubber-band preview); the second click — captured by a
+  // dedicated overlay, so it can't land on pins or place anything else —
+  // completes the line. Escape or switching layers discards it untouched.
+  const [measureDraft, setMeasureDraft] = useState<{
+    startX: number;
+    startY: number;
+    cursorX: number;
+    cursorY: number;
+  } | null>(null);
+
+  // The measurement line just created by the second click — its editor opens
+  // immediately (annotation already exists server-side, unlike the deferred
+  // draft-pin editors) to capture name/value/unit.
+  const [justCreated, setJustCreated] = useState<CanvasAnnotation | null>(null);
+
+  // Render-time adjustment (documented local-state resync pattern): switching
+  // away from the Measurements layer mid-draw discards the pending start point
+  // so returning later never resumes a stale line.
+  if (measureDraft && activeLayerKey !== "measurement") {
+    setMeasureDraft(null);
+  }
+
+  const measureColor = layerByKey("measurement").color;
 
   // Colour pick-mode: a DISTINCT flag (not reused draft/placement state) so a
   // re-sample click can never be mistaken for placing a new pin. When set, the
@@ -930,6 +973,71 @@ function AnnotationSlot({
     return () => window.removeEventListener("keydown", onKey);
   }, [pickMode, cancelPickMode]);
 
+  // Escape mid-draw cancels the measurement line cleanly: discard the start
+  // point, create nothing. (Mirrors the pick-mode escape above — separate
+  // effect because the two modes are separate flags.)
+  useEffect(() => {
+    if (!measureDraft) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMeasureDraft(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [measureDraft]);
+
+  /**
+   * Second click of the measurement flow: create the line annotation NOW —
+   * `pin_type: 'line'` with both endpoints, reference code from the same
+   * unchanged `createAnnotation` path as every layer — then open its editor
+   * to capture name/value/unit. A second click (nearly) on top of the start
+   * point is ignored (still drawing) so an accidental double-click can't
+   * produce a degenerate zero-length dimension.
+   */
+  async function completeMeasurementLine(endX: number, endY: number) {
+    const draft = measureDraft;
+    if (!draft) return;
+    const px = Math.hypot(
+      (endX - draft.startX) * size.width,
+      (endY - draft.startY) * size.height,
+    );
+    if (px < 4) return;
+    setMeasureDraft(null);
+    try {
+      const result = await createAnnotation(
+        slot.id,
+        "measurement",
+        draft.startX,
+        draft.startY,
+        "line",
+        endX,
+        endY,
+      );
+      const annotation: CanvasAnnotation = {
+        id: result.id,
+        slot_id: slot.id,
+        workspace_id: workspaceId,
+        layer_type: "measurement",
+        reference_code: result.referenceCode,
+        x: draft.startX,
+        y: draft.startY,
+        pin_type: "line",
+        end_x: endX,
+        end_y: endY,
+        label_offset_x: null,
+        label_offset_y: null,
+        colourway_id: null,
+        data: {},
+        created_by: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      onAnnotationCreated(slot.id, annotation);
+      setJustCreated(annotation);
+    } catch {
+      toast.error("Could not place the measurement.");
+    }
+  }
+
   async function handleSampleClick(e: React.MouseEvent<HTMLDivElement>) {
     const current = pickMode;
     if (!current) return;
@@ -955,10 +1063,17 @@ function AnnotationSlot({
       e.currentTarget.getBoundingClientRect(),
     );
 
-    // Fabrics & Trim, Colourways, and Construction all defer creation to their
-    // editor at this point — the chosen sub-type / colourway decides the
-    // reference code, which is immutable afterward (see DraftFabricPin /
-    // DraftColourwayPin / DraftConstructionPin).
+    // Every layer now routes through a dedicated flow — the old immediate
+    // point-create path (and its [TIMING] instrumentation) is gone, along with
+    // the latency it was investigating; nothing placed a bare pin on click
+    // anymore once Measurements moved to two-click:
+    //  • Fabrics & Trim / Construction defer creation to their editor (the
+    //    chosen sub-type decides the immutable reference-code prefix).
+    //  • Colourways samples the clicked pixel first, then defers likewise.
+    //  • Measurements arms the two-click line draw — the FIRST click only
+    //    records the start point; the second is captured by the dedicated
+    //    drawing overlay (never this handler), so the two placement styles
+    //    can't interfere.
     if (activeLayerKey === "fabric" || activeLayerKey === "construction") {
       setDraftPoint({ x, y, hex: null });
       return;
@@ -970,86 +1085,8 @@ function AnnotationSlot({
       void sampleAt(x, y).then((hex) => setDraftPoint({ x, y, hex }));
       return;
     }
-
-    // TEMPORARY client-side timing instrumentation (browser console) — splits
-    // click-to-visible into three honest phases: T0→T2 pure client work before
-    // any network call, T2→T3 the real network+server round-trip, T3→T5 React
-    // re-render/paint. Logic is unchanged. Only applies to this immediate-create
-    // path (other layers); the deferred Fabrics & Trim flow above isn't timed.
-    const t0 = performance.now();
-    console.log("%c[TIMING] T0 - click registered", "color: #C8F000", t0);
-    const t1 = performance.now();
-    console.log(
-      `%c[TIMING] T1 - coords computed (+${(t1 - t0).toFixed(1)}ms)`,
-      "color: #C8F000",
-      t1,
-    );
-    // New pins get the active layer's primary type (only Measurements still
-    // takes this immediate-create path).
-    const layerType = layerByKey(activeLayerKey).primaryType;
-
-    startCreate(async () => {
-      const t2 = performance.now();
-      console.log(
-        `%c[TIMING] T2 - transition started, calling server (+${(t2 - t1).toFixed(1)}ms since T1)`,
-        "color: #C8F000",
-        t2,
-      );
-      try {
-        const result = await createAnnotation(slot.id, layerType, x, y, "point");
-        const t3 = performance.now();
-        console.log(
-          `%c[TIMING] T3 - server responded (+${(t3 - t2).toFixed(1)}ms)`,
-          "color: #FF6B6B",
-          t3,
-        );
-
-        // Add directly to shared state (owned by PageEditor) — no
-        // router.refresh(), no full page re-fetch.
-        onAnnotationCreated(slot.id, {
-          id: result.id,
-          slot_id: slot.id,
-          workspace_id: workspaceId,
-          layer_type: layerType,
-          reference_code: result.referenceCode,
-          x,
-          y,
-          pin_type: "point",
-          end_x: null,
-          end_y: null,
-          label_offset_x: null,
-          label_offset_y: null,
-          colourway_id: null,
-          data: {},
-          created_by: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-        const t4 = performance.now();
-        console.log(
-          `%c[TIMING] T4 - local state updated (+${(t4 - t3).toFixed(1)}ms)`,
-          "color: #C8F000",
-          t4,
-        );
-        requestAnimationFrame(() => {
-          const t5 = performance.now();
-          console.log(
-            `%c[TIMING] T5 - next paint after state update (+${(t5 - t4).toFixed(1)}ms)`,
-            "color: #60B4FF",
-            t5,
-          );
-          console.log(
-            `%c[TIMING] TOTAL click-to-visible: ${(t5 - t0).toFixed(1)}ms`,
-            "color: #FFB347; font-weight: bold",
-            "",
-          );
-        });
-      } catch (err) {
-        console.error("[TIMING] Error:", err);
-        toast.error("Could not place the pin.");
-      }
-    });
+    // Measurements (the only remaining layer key).
+    setMeasureDraft({ startX: x, startY: y, cursorX: x, cursorY: y });
   }
 
   function handleDraftCreated(result: {
@@ -1157,30 +1194,56 @@ function AnnotationSlot({
         data-slot-id={slot.id}
       />
 
-      {/* Existing pins — active layer interactive, others dimmed for context */}
-      {slot.annotations.map((annotation) => (
-        <AnnotationPin
-          key={annotation.id}
-          annotation={annotation}
-          slotWidth={size.width}
-          slotHeight={size.height}
-          interactive={
-            layerForType(annotation.layer_type)?.key === activeLayerKey
-          }
-          isSelected={annotation.id === selectedAnnotationId}
-          libraryItems={libraryItems}
-          colourways={colourwayContext.colourways}
-          getSlotRect={() => overlayRef.current?.getBoundingClientRect() ?? null}
-          requestResample={requestResample}
-          onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
-          onMoved={(id, x, y) => onAnnotationMoved(slot.id, id, x, y)}
-          onLabelOffsetChanged={(id, ox, oy) =>
-            onAnnotationLabelOffset(slot.id, id, ox, oy)
-          }
-          onDeleted={(id) => onAnnotationDeleted(slot.id, id)}
-          onSelected={onSelectAnnotation}
-        />
-      ))}
+      {/* Existing pins — active layer interactive, others dimmed for context.
+          Measurement LINES (pin_type 'line') render as dimension arrows via
+          MeasurementLinePin; every point pin keeps the standard AnnotationPin. */}
+      {slot.annotations.map((annotation) =>
+        annotation.pin_type === "line" ? (
+          <MeasurementLinePin
+            key={annotation.id}
+            annotation={annotation}
+            slotWidth={size.width}
+            slotHeight={size.height}
+            interactive={
+              layerForType(annotation.layer_type)?.key === activeLayerKey
+            }
+            isSelected={annotation.id === selectedAnnotationId}
+            getSlotRect={() =>
+              overlayRef.current?.getBoundingClientRect() ?? null
+            }
+            onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
+            onMoved={(id, x, y, endX, endY) =>
+              onAnnotationMoved(slot.id, id, x, y, endX, endY)
+            }
+            onDeleted={(id) => onAnnotationDeleted(slot.id, id)}
+            onSelected={onSelectAnnotation}
+          />
+        ) : (
+          <AnnotationPin
+            key={annotation.id}
+            annotation={annotation}
+            slotWidth={size.width}
+            slotHeight={size.height}
+            interactive={
+              layerForType(annotation.layer_type)?.key === activeLayerKey
+            }
+            isSelected={annotation.id === selectedAnnotationId}
+            libraryItems={libraryItems}
+            colourways={colourwayContext.colourways}
+            getSlotRect={() =>
+              overlayRef.current?.getBoundingClientRect() ?? null
+            }
+            requestResample={requestResample}
+            onUpdated={(id, data) => onAnnotationUpdated(slot.id, id, data)}
+            onMoved={(id, x, y) => onAnnotationMoved(slot.id, id, x, y)}
+            onLabelOffsetChanged={(id, ox, oy) =>
+              onAnnotationLabelOffset(slot.id, id, ox, oy)
+            }
+            onDeleted={(id) => onAnnotationDeleted(slot.id, id)}
+            onSelected={onSelectAnnotation}
+          />
+        ),
+      )}
 
       {draftPoint && activeLayerKey === "fabric" && (
         <DraftFabricPin
@@ -1222,6 +1285,121 @@ function AnnotationSlot({
           onCreated={handleColourwayDraftCreated}
           onCancel={() => setDraftPoint(null)}
         />
+      )}
+
+      {/* Measurement drawing mode: after the first click armed the line, a
+          dedicated capture layer above everything (same construction as the
+          colour pick-mode layer below — the two are separate flags on separate
+          layers and can never co-occur) takes the live cursor for the
+          rubber-band preview and the SECOND click as the end point. Because it
+          sits above every pin, that click can't open an editor or place a
+          single-click pin — and because the preview + completion both use the
+          shared clientToFraction on the same inset-0 rect, the previewed line
+          and the saved line are byte-identical. */}
+      {measureDraft && (
+        <>
+          <div
+            className="absolute inset-0 z-30 cursor-crosshair"
+            data-measure-draw="true"
+            onPointerMove={(e) => {
+              const f = clientToFraction(
+                e.clientX,
+                e.clientY,
+                e.currentTarget.getBoundingClientRect(),
+              );
+              setMeasureDraft((prev) =>
+                prev ? { ...prev, cursorX: f.x, cursorY: f.y } : prev,
+              );
+            }}
+            onClick={(e) => {
+              const f = clientToFraction(
+                e.clientX,
+                e.clientY,
+                e.currentTarget.getBoundingClientRect(),
+              );
+              void completeMeasurementLine(f.x, f.y);
+            }}
+          />
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-30 h-full w-full overflow-visible"
+          >
+            <line
+              x1={measureDraft.startX * size.width}
+              y1={measureDraft.startY * size.height}
+              x2={measureDraft.cursorX * size.width}
+              y2={measureDraft.cursorY * size.height}
+              stroke={measureColor}
+              strokeWidth={2}
+              strokeDasharray="6 5"
+              strokeLinecap="round"
+              opacity={0.85}
+            />
+            <circle
+              cx={measureDraft.startX * size.width}
+              cy={measureDraft.startY * size.height}
+              r={3.5}
+              fill={measureColor}
+              stroke="#ffffff"
+              strokeWidth={1.5}
+            />
+          </svg>
+          <div className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center px-2">
+            <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white shadow-lg">
+              <span>Click to set the end point of the measurement</span>
+              <button
+                type="button"
+                onClick={() => setMeasureDraft(null)}
+                className="font-medium underline underline-offset-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* The measurement line just placed by the second click: its editor opens
+          immediately to capture name/value/unit. The annotation already exists
+          (created with its M-code by the standard path), so this is a plain
+          edit — closing without saving keeps the line, which the list panel
+          shows with a "No value yet" hint. */}
+      {justCreated && (
+        <PinEditorDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setJustCreated(null);
+          }}
+          title={`Edit ${justCreated.reference_code}`}
+          header={
+            <div className="flex items-center justify-between">
+              <span
+                className="rounded-md px-2 py-0.5 text-xs font-bold"
+                style={{
+                  backgroundColor: measureColor,
+                  color: readableTextOn(measureColor),
+                }}
+              >
+                {justCreated.reference_code}
+              </span>
+              <span className="text-muted-foreground text-xs capitalize">
+                {justCreated.layer_type}
+              </span>
+            </div>
+          }
+        >
+          <MeasurementPinEditor
+            annotation={justCreated}
+            onSaved={(data) => {
+              onAnnotationUpdated(slot.id, justCreated.id, data);
+              setJustCreated(null);
+            }}
+            onDeleted={() => {
+              onAnnotationDeleted(slot.id, justCreated.id);
+              setJustCreated(null);
+            }}
+          />
+        </PinEditorDialog>
       )}
 
       {/* Colour pick-mode: a crosshair capture layer above everything in the slot

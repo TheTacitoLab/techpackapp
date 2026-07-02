@@ -185,6 +185,23 @@ export type ConstructionAnnotationData = {
 };
 
 /**
+ * Structured `data` jsonb shape for Measurement annotations (`layer_type` =
+ * 'measurement', `pin_type` = 'line'). A freehand dimension: one name, one
+ * value, one unit — deliberately NOT related to the Grading size chart (a
+ * separate, later feature with per-size structure); the two never share data.
+ * Line geometry (`x`, `y`, `end_x`, `end_y`) lives on the annotation row's own
+ * columns, not here. Pins created by the old generic editor store `{ label,
+ * notes }` — label is read as a display fallback for `name`, never migrated;
+ * see `readMeasurementData` in `components/canvas/measurement-data.ts`.
+ */
+export type MeasurementAnnotationData = {
+  name: string | null;
+  value: number | null;
+  unit: "cm" | "mm" | "in" | null;
+  notes: string | null;
+};
+
+/**
  * A colourway plus the annotations placed in it, ordered for the grouped list
  * panel. Built product-side (never in the panel component) and passed down —
  * Colourways is the only layer that renders grouped, so this stays specific to

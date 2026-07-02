@@ -19,6 +19,7 @@ import {
 import { ConstructionPinEditor } from "@/components/canvas/construction-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
+import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
 import {
   colourForLayerType,
   layerForType,
@@ -63,10 +64,17 @@ function clampOffset(value: number): number {
   return Math.min(OFFSET_LIMIT, Math.max(-OFFSET_LIMIT, value));
 }
 
-type DragPoint = { clientX: number; clientY: number; dx: number; dy: number };
+export type DragPoint = {
+  clientX: number;
+  clientY: number;
+  dx: number;
+  dy: number;
+};
 
 /**
- * Pointer-based click-vs-drag disambiguation shared by the tip and the badge.
+ * Pointer-based click-vs-drag disambiguation shared by the tip and the badge —
+ * and exported for `MeasurementLinePin`'s endpoint handles, so every draggable
+ * canvas element disambiguates identically (one implementation, no drift).
  * A press that never travels past `DRAG_THRESHOLD_PX` counts as a click (opens
  * the editor); any real movement is a drag (repositions), and suppresses the
  * click entirely. `active` is non-null only once a gesture has crossed the
@@ -74,7 +82,10 @@ type DragPoint = { clientX: number; clientY: number; dx: number; dy: number };
  * leaving a plain click untouched. Callbacks are read through refs so the
  * window listeners never need re-binding mid-gesture.
  */
-function usePointerDrag(onDragEnd: (p: DragPoint) => void, onClick: () => void): {
+export function usePointerDrag(
+  onDragEnd: (p: DragPoint) => void,
+  onClick: () => void,
+): {
   active: DragPoint | null;
   onPointerDown: (e: React.PointerEvent) => void;
 } {
@@ -180,9 +191,13 @@ function LeaderLine({
  *
  * Fabrics & Trim pins (layer_type fabric/trim/hardware/elastic) open the
  * dedicated `FabricTrimPinEditor`, Colourway pins the `ColourwayPinEditor`,
- * and Construction pins (stitch/construction_note) the
- * `ConstructionPinEditor`; Measurements keeps the generic label/notes form
- * for now. Edit popover and delete call server actions, then
+ * Construction pins (stitch/construction_note) the `ConstructionPinEditor`,
+ * and Measurement pins the `MeasurementPinEditor`. This component renders
+ * POINT pins only — measurement LINE pins (`pin_type === 'line'`) are
+ * dispatched to `MeasurementLinePin` by the slot's pin mapping in
+ * `page-canvas.tsx` (a legacy measurement placed as a point by the old
+ * generic flow still renders here, with the measurement editor). Edit popover
+ * and delete call server actions, then
  * report the result up via `onUpdated`/`onDeleted` so the parent slot can
  * update its local annotation list directly — no `router.refresh()` / full
  * page re-fetch on every edit.
@@ -252,7 +267,9 @@ export function AnnotationPin({
   const isFabricFamily = layerKey === "fabric";
   const isColourway = layerKey === "colourway";
   const isConstruction = layerKey === "construction";
-  const hasDedicatedEditor = isFabricFamily || isColourway || isConstruction;
+  const isMeasurement = layerKey === "measurement";
+  const hasDedicatedEditor =
+    isFabricFamily || isColourway || isConstruction || isMeasurement;
 
   // Draft field state for the colourway editor, owned HERE (not inside
   // ColourwayPinEditor) so it survives the editor Dialog fully closing during
@@ -556,6 +573,18 @@ export function AnnotationPin({
             mode="edit"
             annotation={annotation}
             libraryItems={libraryItems}
+            onSaved={(data) => {
+              setOpen(false);
+              onUpdated?.(annotation.id, data);
+            }}
+            onDeleted={() => {
+              setOpen(false);
+              onDeleted?.(annotation.id);
+            }}
+          />
+        ) : isMeasurement ? (
+          <MeasurementPinEditor
+            annotation={annotation}
             onSaved={(data) => {
               setOpen(false);
               onUpdated?.(annotation.id, data);

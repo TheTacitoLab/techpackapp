@@ -149,14 +149,29 @@ export function PageEditor({
 
   // Tip drag → new anchor; badge drag → new label offset. Both patch the live
   // annotation in place (same optimistic, no-refresh path as create/update).
+  // Measurement lines pass their end coordinates too; point pins never do, so
+  // `end_x`/`end_y` stay untouched for them.
   function handleAnnotationMoved(
     slotId: string,
     id: string,
     x: number,
     y: number,
+    endX?: number | null,
+    endY?: number | null,
   ) {
     updateSlotAnnotations(slotId, (prev) =>
-      prev.map((a) => (a.id === id ? { ...a, x, y } : a)),
+      prev.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              x,
+              y,
+              ...(endX !== undefined && endY !== undefined
+                ? { end_x: endX, end_y: endY }
+                : {}),
+            }
+          : a,
+      ),
     );
   }
 

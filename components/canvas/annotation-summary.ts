@@ -2,6 +2,10 @@ import { layerForType } from "@/components/canvas/layers";
 import { readColourwayData } from "@/components/canvas/colourway-data";
 import { readConstructionData } from "@/components/canvas/construction-data";
 import { readFabricTrimData } from "@/components/canvas/fabric-trim-data";
+import {
+  formatMeasurementValue,
+  readMeasurementData,
+} from "@/components/canvas/measurement-data";
 import type { CanvasAnnotation } from "@/types";
 
 /**
@@ -93,7 +97,18 @@ export function getAnnotationSummary(
     };
   }
 
-  // Generic layers (measurement): legacy label/notes.
+  if (layer?.key === "measurement") {
+    // The measurements table row: code badge + name + value — the same shape
+    // the eventual PDF export's measurements table will print. Rows with no
+    // value yet get an explicit muted hint rather than a blank.
+    const d = readMeasurementData(annotation.data);
+    return {
+      title: d.name ?? "Untitled measurement",
+      detail: formatMeasurementValue(d.value, d.unit) ?? "No value yet",
+    };
+  }
+
+  // Layers without structured data (none today): legacy label/notes.
   const { label, notes } = readLegacyLabelNotes(annotation.data);
   return {
     title: label ?? `Untitled ${layerLabel.toLowerCase()}`,
