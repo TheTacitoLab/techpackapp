@@ -7,14 +7,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
+import { PinEditorDialog } from "@/components/canvas/pin-editor-dialog";
 import { readColourwayData } from "@/components/canvas/colourway-data";
 import {
   ColourwayPinEditor,
@@ -255,7 +251,7 @@ export function AnnotationPin({
   const hasDedicatedEditor = isFabricFamily || isColourway;
 
   // Draft field state for the colourway editor, owned HERE (not inside
-  // ColourwayPinEditor) so it survives the popover fully closing during
+  // ColourwayPinEditor) so it survives the editor Dialog fully closing during
   // "Re-sample from image" — see useColourwayDraftFields for why. Harmless to
   // call for non-colourway pins too; readColourwayData defensively returns nulls.
   const colourwayDraft = useColourwayDraftFields(
@@ -264,11 +260,11 @@ export function AnnotationPin({
       : { colour_name: null, hex: null, pantone: null, notes: null },
   );
 
-  // "Re-sample": genuinely close the popover (not just fade it) so Radix's
-  // portalled Content — and its own outside-click interception — is removed
-  // from the DOM entirely, leaving the canvas capture overlay free to receive
-  // the next click. Draft state lives above, in colourwayDraft, so it's intact
-  // whether the sample succeeds, fails, or the user cancels.
+  // "Re-sample": genuinely close the editor Dialog (not just fade it) so Radix's
+  // portalled content — and its own outside-click interception — is removed from
+  // the DOM entirely, leaving the canvas capture overlay free to receive the next
+  // click. Draft state lives above, in colourwayDraft, so it's intact whether the
+  // sample succeeds, fails, or the user cancels.
   function handleRequestResample() {
     if (!requestResample) return;
     setOpen(false);
@@ -427,14 +423,7 @@ export function AnnotationPin({
   }
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        onSelected?.(annotation.id);
-        if (!next) setConfirmingDelete(false);
-      }}
-    >
+    <>
       <span
         ref={wrapperRef}
         className="absolute -translate-x-1/2 -translate-y-1/2"
@@ -472,31 +461,31 @@ export function AnnotationPin({
         </span>
 
         {/* Tip — the sole in-flow child; its 6x6 box IS what gets centered on
-            (left, top) by the translate above. It anchors the popover, triggers
-            the tooltip, and is draggable to move the annotation itself. */}
+            (left, top) by the translate above. It opens the editor, triggers the
+            tooltip, and is draggable to move the annotation itself. The editor is
+            now a centered Dialog (rendered below), so the tip is no longer a
+            positioning anchor — its onClick just flips `open`. */}
         <Tooltip
           open={open || tipDrag.active || badgeDrag.active ? false : undefined}
         >
-          <PopoverAnchor asChild>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={`Annotation ${annotation.reference_code}`}
-                onPointerDown={tipDrag.onPointerDown}
-                onClick={(e) => {
-                  if (e.detail === 0) setOpen(true);
-                }}
-                className={cn(
-                  "block size-1.5 touch-none rounded-full outline-none",
-                  tipDrag.active ? "cursor-grabbing" : "cursor-grab",
-                  isSelected
-                    ? "ring-brand ring-2 ring-offset-2"
-                    : "ring-2 ring-white",
-                )}
-                style={{ backgroundColor: color }}
-              />
-            </TooltipTrigger>
-          </PopoverAnchor>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Annotation ${annotation.reference_code}`}
+              onPointerDown={tipDrag.onPointerDown}
+              onClick={(e) => {
+                if (e.detail === 0) setOpen(true);
+              }}
+              className={cn(
+                "block size-1.5 touch-none rounded-full outline-none",
+                tipDrag.active ? "cursor-grabbing" : "cursor-grab",
+                isSelected
+                  ? "ring-brand ring-2 ring-offset-2"
+                  : "ring-2 ring-white",
+              )}
+              style={{ backgroundColor: color }}
+            />
+          </TooltipTrigger>
           <TooltipContent side="top">
             <span className="font-semibold">{annotation.reference_code}</span>
             {" — "}
@@ -505,22 +494,29 @@ export function AnnotationPin({
           </TooltipContent>
         </Tooltip>
       </span>
-      <PopoverContent
-        align="center"
-        className={hasDedicatedEditor ? "w-80 space-y-3" : "w-64 space-y-3"}
+      <PinEditorDialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          onSelected?.(annotation.id);
+          if (!next) setConfirmingDelete(false);
+        }}
+        title={`Edit ${annotation.reference_code}`}
+        className={hasDedicatedEditor ? "w-80" : "w-64"}
+        header={
+          <div className="flex items-center justify-between">
+            <span
+              className="rounded-md px-2 py-0.5 text-xs font-bold"
+              style={{ backgroundColor: color, color: textColor }}
+            >
+              {annotation.reference_code}
+            </span>
+            <span className="text-muted-foreground text-xs capitalize">
+              {annotation.layer_type.replace("_", " ")}
+            </span>
+          </div>
+        }
       >
-        <div className="flex items-center justify-between">
-          <span
-            className="rounded-md px-2 py-0.5 text-xs font-bold"
-            style={{ backgroundColor: color, color: textColor }}
-          >
-            {annotation.reference_code}
-          </span>
-          <span className="text-muted-foreground text-xs capitalize">
-            {annotation.layer_type.replace("_", " ")}
-          </span>
-        </div>
-
         {isFabricFamily ? (
           <FabricTrimPinEditor
             mode="edit"
@@ -623,7 +619,7 @@ export function AnnotationPin({
             </div>
           </>
         )}
-      </PopoverContent>
-    </Popover>
+      </PinEditorDialog>
+    </>
   );
 }

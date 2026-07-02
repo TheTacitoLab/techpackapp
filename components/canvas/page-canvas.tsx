@@ -24,6 +24,7 @@ import { slotImageCssTransform } from "@/lib/cover-geometry";
 import { sampleColourAtPoint } from "@/lib/colour-sample";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { layerByKey, layerForType, type LayerKey } from "@/components/canvas/layers";
+import { PinEditorDialog } from "@/components/canvas/pin-editor-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,11 +35,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   createAnnotation,
   fillSlot,
@@ -598,23 +594,30 @@ function DraftFabricPin({
 }) {
   const color = layerByKey("fabric").color;
   return (
-    <Popover open onOpenChange={(next) => !next && onCancel()}>
-      <PopoverTrigger asChild>
+    <>
+      {/* Pending-placement marker at the click point. The editor opens centered
+          (PinEditorDialog), decoupled from this point so it never clips near an
+          edge; the marker still shows where the pin will land on save. */}
+      <span
+        aria-hidden
+        className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
+        style={{ left: x * slotWidth, top: y * slotHeight }}
+      >
         <span
-          aria-hidden
-          className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
-          style={{ left: x * slotWidth, top: y * slotHeight }}
-        >
-          <span
-            className="block size-1.5 rounded-full ring-2 ring-white"
-            style={{ backgroundColor: color }}
-          />
-        </span>
-      </PopoverTrigger>
-      <PopoverContent align="center" className="w-80 space-y-3">
-        <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-          New Fabrics &amp; Trim pin
-        </div>
+          className="block size-1.5 rounded-full ring-2 ring-white"
+          style={{ backgroundColor: color }}
+        />
+      </span>
+      <PinEditorDialog
+        open
+        onOpenChange={(next) => !next && onCancel()}
+        title="New Fabrics & Trim pin"
+        header={
+          <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            New Fabrics &amp; Trim pin
+          </div>
+        }
+      >
         <FabricTrimPinEditor
           mode="create"
           slotId={slotId}
@@ -624,8 +627,8 @@ function DraftFabricPin({
           onCreated={onCreated}
           onCancel={onCancel}
         />
-      </PopoverContent>
-    </Popover>
+      </PinEditorDialog>
+    </>
   );
 }
 
@@ -677,8 +680,8 @@ function DraftColourwayPin({
 }) {
   const color = layerByKey("colourway").color;
 
-  // Draft state lives here — one level above the Popover — so it survives the
-  // popover fully closing during "Re-sample" (see useColourwayDraftFields).
+  // Draft state lives here — one level above the editor Dialog — so it survives
+  // the Dialog fully closing during "Re-sample" (see useColourwayDraftFields).
   const [open, setOpen] = useState(true);
   const draft = useColourwayDraftFields({
     colour_name: null,
@@ -691,9 +694,9 @@ function DraftColourwayPin({
     colourwayContext.lastUsedColourwayId,
   );
 
-  // Genuinely close the popover (not fade it) so Radix's portalled Content —
-  // and its own outside-click interception — is removed from the DOM entirely,
-  // leaving the canvas capture overlay free to receive the sample click.
+  // Genuinely close the editor (not fade it) so its portalled Dialog — and its
+  // own outside-click interception — is removed from the DOM entirely, leaving
+  // the canvas capture overlay free to receive the sample click.
   function handleRequestResample() {
     if (!requestResample) return;
     setOpen(false);
@@ -704,29 +707,31 @@ function DraftColourwayPin({
   }
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) onCancel();
-      }}
-    >
-      <PopoverTrigger asChild>
+    <>
+      {/* Pending-placement marker at the click point (see DraftFabricPin). */}
+      <span
+        aria-hidden
+        className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
+        style={{ left: x * slotWidth, top: y * slotHeight }}
+      >
         <span
-          aria-hidden
-          className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
-          style={{ left: x * slotWidth, top: y * slotHeight }}
-        >
-          <span
-            className="block size-1.5 rounded-full ring-2 ring-white"
-            style={{ backgroundColor: color }}
-          />
-        </span>
-      </PopoverTrigger>
-      <PopoverContent align="center" className="w-80 space-y-3">
-        <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-          New Colourway pin
-        </div>
+          className="block size-1.5 rounded-full ring-2 ring-white"
+          style={{ backgroundColor: color }}
+        />
+      </span>
+      <PinEditorDialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) onCancel();
+        }}
+        title="New Colourway pin"
+        header={
+          <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            New Colourway pin
+          </div>
+        }
+      >
         <ColourwayPinEditor
           mode="create"
           slotId={slotId}
@@ -741,8 +746,8 @@ function DraftColourwayPin({
           onCreated={onCreated}
           onCancel={onCancel}
         />
-      </PopoverContent>
-    </Popover>
+      </PinEditorDialog>
+    </>
   );
 }
 
