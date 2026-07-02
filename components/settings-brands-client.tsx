@@ -6,6 +6,10 @@ import {
   DeleteBrandButton,
   RenameBrandDialog,
 } from "@/components/hierarchy-dialogs";
+import {
+  BrandLogoControl,
+  BrandLogoThumb,
+} from "@/components/settings/brand-logo-control";
 import type { Brand, Season } from "@/types";
 
 type BrandWithCount = Brand & { productCount: number };
@@ -13,9 +17,11 @@ type BrandWithCount = Brand & { productCount: number };
 export function SettingsBrandsClient({
   brands,
   seasons,
+  workspaceId,
 }: {
   brands: BrandWithCount[];
   seasons: Season[];
+  workspaceId: string;
 }) {
   return (
     <div className="space-y-4">
@@ -30,6 +36,7 @@ export function SettingsBrandsClient({
               key={brand.id}
               className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
             >
+              <BrandLogoThumb brand={brand} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{brand.name}</p>
                 <p className="text-muted-foreground text-xs">
@@ -39,6 +46,7 @@ export function SettingsBrandsClient({
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                <BrandLogoControl brand={brand} workspaceId={workspaceId} />
                 <RenameBrandDialog id={brand.id} name={brand.name} />
                 <DeleteBrandButton id={brand.id} name={brand.name} />
               </div>

@@ -255,7 +255,7 @@ export function FabricTrimPinEditor(
               No {FABRIC_FAMILY_LABEL[fixedSubType ?? subType].toLowerCase()}s in
               your library yet — add one in{" "}
               <Link
-                href="/settings"
+                href="/settings?tab=library"
                 className="text-foreground font-medium underline underline-offset-2"
               >
                 Settings → Master Library

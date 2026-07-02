@@ -113,6 +113,111 @@ export async function deleteBrand(id: string) {
   revalidatePath("/products");
 }
 
+/**
+ * Recover the Storage object path from one of OUR OWN minted signed URLs
+ * (`…/storage/v1/object/sign/product-assets/{path}?token=…` — see the brand
+ * logo upload in `components/settings/brand-logo-control.tsx` and the asset
+ * flow in `components/canvas/asset-upload.ts`). `brands` has no `logo_path`
+ * column, so the URL is the only record of where the file lives; parsing it
+ * back is safe because we only ever store URLs we minted in this exact shape.
+ * Returns null (→ skip cleanup) for anything that doesn't match, including
+ * paths outside the caller's workspace prefix — never throws.
+ */
+function logoPathFromSignedUrl(
+  logoUrl: string,
+  workspaceId: string,
+): string | null {
+  try {
+    const marker = "/storage/v1/object/sign/product-assets/";
+    const pathname = new URL(logoUrl).pathname;
+    const index = pathname.indexOf(marker);
+    if (index === -1) return null;
+    const path = decodeURIComponent(pathname.slice(index + marker.length));
+    return path.startsWith(`${workspaceId}/`) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+const brandLogoSchema = z.object({
+  id: z.string().uuid(),
+  logoUrl: z.string().url(),
+});
+
+/**
+ * Point a brand at its freshly-uploaded logo. The binary went browser-direct
+ * to the existing `product-assets` bucket (same pattern and RLS as product
+ * assets — the workspace id is the first path segment); this action only
+ * persists the signed URL onto `brands.logo_url`. A previously-set logo's
+ * object is removed best-effort AFTER the row update — the row is the source
+ * of truth, so a stale orphan object must never fail the action.
+ */
+export async function updateBrandLogo(id: string, logoUrl: string) {
+  const input = brandLogoSchema.parse({ id, logoUrl });
+  const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: brand } = await supabase
+    .from("brands")
+    .select("id, logo_url")
+    .eq("id", input.id)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (!brand) throw new Error("Not found in your workspace.");
+
+  const { error } = await supabase
+    .from("brands")
+    .update({ logo_url: input.logoUrl })
+    .eq("id", input.id)
+    .eq("workspace_id", workspaceId);
+  if (error) throw new Error(error.message);
+
+  if (brand.logo_url && brand.logo_url !== input.logoUrl) {
+    const oldPath = logoPathFromSignedUrl(brand.logo_url, workspaceId);
+    if (oldPath) {
+      await supabase.storage.from("product-assets").remove([oldPath]);
+    }
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/products");
+}
+
+/**
+ * Clear a brand's logo (and best-effort delete the stored file, same
+ * philosophy as `deleteAsset`: DB first, storage cleanup must never fail it).
+ */
+export async function removeBrandLogo(id: string) {
+  const input = z.object({ id: z.string().uuid() }).parse({ id });
+  const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: brand } = await supabase
+    .from("brands")
+    .select("id, logo_url")
+    .eq("id", input.id)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (!brand) throw new Error("Not found in your workspace.");
+
+  const { error } = await supabase
+    .from("brands")
+    .update({ logo_url: null })
+    .eq("id", input.id)
+    .eq("workspace_id", workspaceId);
+  if (error) throw new Error(error.message);
+
+  if (brand.logo_url) {
+    const oldPath = logoPathFromSignedUrl(brand.logo_url, workspaceId);
+    if (oldPath) {
+      await supabase.storage.from("product-assets").remove([oldPath]);
+    }
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/products");
+}
+
 export async function createSeason(input: z.input<typeof seasonSchema>) {
   const { name, year } = seasonSchema.parse(input);
   const { supabase, workspaceId } = await requireActionContext();

@@ -252,7 +252,7 @@ export function ConstructionPinEditor(
                 <>
                   No stitch types in your library yet — add one in{" "}
                   <Link
-                    href="/settings"
+                    href="/settings?tab=library"
                     className="text-foreground font-medium underline underline-offset-2"
                   >
                     Settings → Master Library

@@ -1,26 +1,39 @@
-import {
-  CreditCard,
-  Download,
-  Library,
-  Palette,
-  RefreshCw,
-  Tag,
-  Users,
-} from "lucide-react";
 import { redirect } from "next/navigation";
 
-import { LabelsManager } from "@/components/labels-manager";
-import { LibraryManager } from "@/components/library-manager";
-import { SectionCard } from "@/components/section-card";
-import { SettingsBrandsClient } from "@/components/settings-brands-client";
-import { SettingsBrandSwitcher } from "@/components/settings-brand-switcher";
+import { BrandsTab } from "@/components/settings/brands-tab";
+import { LabelsTab } from "@/components/settings/labels-tab";
+import { LibraryTab } from "@/components/settings/library-tab";
+import { SettingsTabs } from "@/components/settings/settings-tabs";
+import {
+  isSettingsTabKey,
+  type SettingsTabKey,
+} from "@/components/settings/settings-tabs-config";
+import { WorkspaceTab } from "@/components/settings/workspace-tab";
 import { getWorkspaceLibrary } from "@/lib/library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function SettingsPage() {
+interface PageProps {
+  searchParams: Promise<{ tab?: string | string[] }>;
+}
+
+/**
+ * Settings, organised as top tabs (one per area) instead of the old single
+ * scroll — the active tab rides the `?tab=` param so it's linkable and
+ * refresh-stable. All data is still fetched here in one pass and handed to the
+ * per-tab components; the tab shell (`SettingsTabs`) is a pure client switch
+ * driven by the `SETTINGS_TABS` config array, so future areas (Grading
+ * profiles, PDF/Export preferences) are an array entry + a content component.
+ */
+export default async function SettingsPage({ searchParams }: PageProps) {
   const ctx = await getCurrentUser();
   if (!ctx) redirect("/login");
+
+  const { tab } = await searchParams;
+  const requestedTab = typeof tab === "string" ? tab : "";
+  const initialTab: SettingsTabKey = isSettingsTabKey(requestedTab)
+    ? requestedTab
+    : "brands";
 
   const supabase = await createClient();
   const wsId = ctx.profile.workspace_id;
@@ -86,42 +99,21 @@ export default async function SettingsPage() {
         </p>
       </div>
 
-      <SectionCard title="Your Brands" icon={<Palette />}>
-        <SettingsBrandsClient
-          brands={brandsWithCounts}
-          seasons={seasons ?? []}
-        />
-      </SectionCard>
-
-      <SectionCard title="Switch Active Brand" icon={<RefreshCw />}>
-        <SettingsBrandSwitcher brands={brandsWithCounts} />
-      </SectionCard>
-
-      <SectionCard title="Labels" icon={<Tag />}>
-        <LabelsManager labels={labelsWithUsage} />
-      </SectionCard>
-
-      <SectionCard title="Master Library" icon={<Library />}>
-        <LibraryManager items={libraryItems} />
-      </SectionCard>
-
-      <SectionCard title="Team Members" icon={<Users />}>
-        <p className="text-muted-foreground text-sm">
-          Team management — coming in Phase 3.
-        </p>
-      </SectionCard>
-
-      <SectionCard title="Billing" icon={<CreditCard />}>
-        <p className="text-muted-foreground text-sm">
-          Billing and subscription — coming in Phase 3.
-        </p>
-      </SectionCard>
-
-      <SectionCard title="Export Preferences" icon={<Download />}>
-        <p className="text-muted-foreground text-sm">
-          PDF and export configuration — coming in Phase 3.
-        </p>
-      </SectionCard>
+      <SettingsTabs
+        initialTab={initialTab}
+        content={{
+          brands: (
+            <BrandsTab
+              brands={brandsWithCounts}
+              seasons={seasons ?? []}
+              workspaceId={wsId}
+            />
+          ),
+          labels: <LabelsTab labels={labelsWithUsage} />,
+          library: <LibraryTab items={libraryItems} />,
+          workspace: <WorkspaceTab />,
+        }}
+      />
     </div>
   );
 }

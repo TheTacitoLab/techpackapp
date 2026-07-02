@@ -21,8 +21,12 @@ import { uploadAssetMetadata } from "@/app/(app)/products/[id]/canvas-actions";
 import { createClient } from "@/lib/supabase/client";
 import type { ProductAsset } from "@/types";
 
-/** 1 year, in seconds — the signed-URL lifetime (see file header). */
-const SIGNED_URL_TTL = 60 * 60 * 24 * 365;
+/**
+ * 1 year, in seconds — the signed-URL lifetime (see file header). Exported so
+ * the brand-logo upload (which reuses this exact Storage pattern) signs for
+ * the same duration.
+ */
+export const SIGNED_URL_TTL = 60 * 60 * 24 * 365;
 
 /**
  * Turn a filename into a friendly default asset name: drop the extension,
