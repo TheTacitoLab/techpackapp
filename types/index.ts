@@ -108,22 +108,28 @@ export type ResolvedCanvasPage = CanvasPage & {
 };
 
 /**
- * Reference-code prefix per annotation layer. `createAnnotation` counts existing
- * pins of a layer for the product and appends the next number (F1, T2, M1…).
- * Exported so the canvas UI and the generated BOM render the same codes — the
- * single source of truth for both the zod enum and the prefixes.
+ * The Trim umbrella's sub-types. "Trim" is one material family (one plain T
+ * reference sequence); the specific kind — zip vs elastic vs binding — is this
+ * stored field, shown in the BOM and list panel but NEVER encoded in the
+ * reference code (matching how real tech packs number trims: one Trims
+ * section, sequentially numbered, with a type column).
  */
+export type TrimKind = "fastener" | "elastic" | "binding" | "drawcord" | "other";
+
 /**
  * Structured `data` jsonb shape for Fabrics & Trim annotations (`layer_type` in
- * fabric/trim/hardware/elastic). Fields auto-filled from the selected Master
- * Library item at pick-time (`library_item_id`, `library_item_name`,
- * `category`, `composition`, `colour`, `gsm`, `supplier_code`) are denormalised
- * onto the annotation so the BOM and pin UI never need a join back to
- * `library_items`; `placement`/`quantity`/`unit`/`notes` are per-instance and
- * entered on this pin only. `gsm` is fabric-specific and null for trims/
- * hardware/elastics. Annotations created before this session store only
- * `{ label, notes }` — those legacy fields are read as a display fallback
- * (never migrated) so old pins keep working; see `readFabricTrimData` in
+ * fabric/trim — the two material families since the 0023 restructure). Fields
+ * auto-filled from the selected Master Library item at pick-time
+ * (`library_item_id`, `library_item_name`, `category`, `composition`,
+ * `colour`, `gsm`, `supplier_code`) are denormalised onto the annotation so
+ * the BOM and pin UI never need a join back to `library_items`;
+ * `placement`/`quantity`/`unit`/`notes` are per-instance and entered on this
+ * pin only. `gsm` is fabric-specific and null for trims. `trim_kind` is set
+ * only on trim pins (null for fabric) and stays editable after creation — it
+ * is descriptive, never part of the reference code. Annotations created
+ * before the dedicated editor store only `{ label, notes }` — those legacy
+ * fields are read as a display fallback (never migrated) so old pins keep
+ * working; see `readFabricTrimData` in
  * `components/canvas/fabric-trim-data.ts`.
  */
 export type FabricTrimAnnotationData = {
@@ -133,6 +139,7 @@ export type FabricTrimAnnotationData = {
   composition: string | null;
   colour: string | null;
   gsm: number | null;
+  trim_kind: TrimKind | null;
   placement: string | null;
   quantity: number | null;
   unit: "per_metre" | "per_unit" | "per_kg" | null;
@@ -212,11 +219,20 @@ export type ColourwayGroup = {
   annotations: CanvasAnnotation[];
 };
 
+/**
+ * Reference-code prefix per annotation layer. `createAnnotation` counts existing
+ * pins of a layer for the product and appends the next number (F1, T2, M1…).
+ * Exported so the canvas UI and the generated BOM render the same codes — the
+ * single source of truth for both the zod enum and the prefixes. Retired
+ * types keep an entry only because the DB enum still contains them (the
+ * record must stay total over `CanvasLayerType`); they are filtered out of
+ * the accepted-input list via `RETIRED_LAYER_TYPES` below.
+ */
 export const LAYER_PREFIX: Record<CanvasLayerType, string> = {
   fabric: "F",
   trim: "T",
-  hardware: "H",
-  elastic: "E",
+  hardware: "H", // retired — see RETIRED_LAYER_TYPES
+  elastic: "E", // retired — see RETIRED_LAYER_TYPES
   label_component: "L",
   print: "P",
   stitch: "S",
@@ -227,3 +243,15 @@ export const LAYER_PREFIX: Record<CanvasLayerType, string> = {
   detail_callout: "DC",
   colourway: "C",
 };
+
+/**
+ * Layer types still physically present in the `canvas_layer_type` DB enum but
+ * no longer used anywhere (0023 restructure: hardware/elastic pins became
+ * `trim` pins carrying `data.trim_kind`). Postgres can't cheaply drop enum
+ * values, so they stay in the enum; this list is what keeps them out of the
+ * app — `createAnnotation` rejects them and no UI offers them.
+ */
+export const RETIRED_LAYER_TYPES: readonly CanvasLayerType[] = [
+  "hardware",
+  "elastic",
+];

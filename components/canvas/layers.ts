@@ -42,11 +42,15 @@ export const ANNOTATION_LAYERS: readonly AnnotationLayer[] = [
     primaryType: "colourway",
   },
   {
+    // Two material families since the 0023 restructure: Fabric (F) and Trim
+    // (T, an umbrella whose kind lives in `data.trim_kind`). The retired
+    // `hardware`/`elastic` layer_types are deliberately NOT listed — pins of
+    // those types no longer exist (cleared in 0023) and must not be offered.
     key: "fabric",
     label: "Fabrics & Trim",
     icon: "Layers",
     defaultColor: "#3B82F6",
-    types: ["fabric", "trim", "hardware", "elastic"],
+    types: ["fabric", "trim"],
     primaryType: "fabric",
   },
   {

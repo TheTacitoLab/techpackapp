@@ -192,8 +192,8 @@ function LeaderLine({
  * local-coordinate math — both scale the whole subtree uniformly, so the tip
  * stays exactly on the originally-clicked screen pixel at any zoom.
  *
- * Fabrics & Trim pins (layer_type fabric/trim/hardware/elastic) open the
- * dedicated `FabricTrimPinEditor`, Colourway pins the `ColourwayPinEditor`,
+ * Fabrics & Trim pins (layer_type fabric/trim) open the dedicated
+ * `FabricTrimPinEditor`, Colourway pins the `ColourwayPinEditor`,
  * Construction pins (stitch/construction_note) the `ConstructionPinEditor`,
  * and Measurement pins the `MeasurementPinEditor`. This component renders
  * POINT pins only — measurement LINE pins (`pin_type === 'line'`) are

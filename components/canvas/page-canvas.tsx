@@ -810,9 +810,10 @@ function FramingSlot({
 /**
  * A new Fabrics & Trim pin defers `createAnnotation` until the editor is
  * saved — unlike other layers, which create immediately on click — because
- * the sub-type chosen in the editor (Fabric/Trim/Fastener/Elastic) determines
- * the annotation's actual `layer_type`, and that can't be changed after
- * creation (it would invalidate the assigned reference code). This renders a
+ * the material family chosen in the editor (Fabric/Trim) determines the
+ * annotation's actual `layer_type`, and that can't be changed after creation
+ * (it would invalidate the assigned reference code). A Trim pin's kind
+ * (`data.trim_kind`) is just a data field, no such constraint. This renders a
  * small pulsing marker at the click point with the editor already open;
  * dismissing without saving never calls the server, so no orphan row exists.
  */

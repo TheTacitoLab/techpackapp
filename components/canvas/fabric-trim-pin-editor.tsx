@@ -19,11 +19,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { FabricPicker } from "@/components/fabric-picker";
 import {
   FABRIC_FAMILY_LABEL,
-  FABRIC_FAMILY_TO_LIBRARY_CATEGORY,
+  FABRIC_FAMILY_LIBRARY_CATEGORIES,
+  TRIM_KINDS,
+  TRIM_KIND_LABEL,
   fabricTrimDataFromLibraryItem,
   libraryColourOptions,
   libraryItemSummaryLine,
   readFabricTrimData,
+  trimKindFromLibraryCategory,
+  type FabricFamilyKey,
 } from "@/components/canvas/fabric-trim-data";
 import {
   createAnnotation,
@@ -35,15 +39,10 @@ import type {
   CanvasLayerType,
   FabricTrimAnnotationData,
   ResolvedLibraryItem,
+  TrimKind,
 } from "@/types";
 
-type FabricFamilyKey = "fabric" | "trim" | "hardware" | "elastic";
-const FABRIC_FAMILY_KEYS: readonly FabricFamilyKey[] = [
-  "fabric",
-  "trim",
-  "hardware",
-  "elastic",
-];
+const FABRIC_FAMILY_KEYS: readonly FabricFamilyKey[] = ["fabric", "trim"];
 
 const UNIT_LABEL: Record<NonNullable<FabricTrimAnnotationData["unit"]>, string> = {
   per_metre: "per metre",
@@ -60,10 +59,13 @@ type CreatedResult = {
 
 /**
  * The dedicated Fabrics & Trim pin editor — replaces the generic label/notes
- * form for pins whose layer_type is fabric/trim/hardware/elastic. Renders as
- * plain content (no Popover wrapper of its own) so it can be dropped into the
- * existing pin popover (`annotation-pin.tsx`, edit mode) or a "new pin" popover
- * anchored at the click point (`page-canvas.tsx`, create mode).
+ * form for pins whose layer_type is fabric/trim. Renders as plain content (no
+ * Popover wrapper of its own) so it can be dropped into the existing pin
+ * popover (`annotation-pin.tsx`, edit mode) or a "new pin" popover anchored at
+ * the click point (`page-canvas.tsx`, create mode). Family (Fabric vs Trim)
+ * fixes the layer_type and is immutable after creation; a Trim pin's KIND
+ * (`data.trim_kind`) is only descriptive — never in the reference code — so
+ * it stays editable in both modes.
  */
 export function FabricTrimPinEditor(
   props: { libraryItems: ResolvedLibraryItem[] } & (
@@ -95,6 +97,7 @@ export function FabricTrimPinEditor(
           composition: null,
           colour: null,
           gsm: null,
+          trim_kind: null,
           placement: null,
           quantity: null,
           unit: null,
@@ -102,11 +105,14 @@ export function FabricTrimPinEditor(
           notes: null,
         };
 
-  // Sub-type is only choosable for a brand-new pin — an existing pin's
+  // Family is only choosable for a brand-new pin — an existing pin's
   // layer_type (and therefore its reference-code prefix) is fixed forever.
   const fixedSubType =
     props.mode === "edit" ? (props.annotation.layer_type as FabricFamilyKey) : null;
   const [subType, setSubType] = useState<FabricFamilyKey>(fixedSubType ?? "fabric");
+  // The trim kind, by contrast, is a descriptive stored field (never part of
+  // the reference code), so it stays editable on existing trim pins too.
+  const [trimKind, setTrimKind] = useState<TrimKind | null>(initial.trim_kind);
 
   const [libraryItemId, setLibraryItemId] = useState(initial.library_item_id);
   const [autoFilled, setAutoFilled] = useState<
@@ -130,8 +136,13 @@ export function FabricTrimPinEditor(
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const category = FABRIC_FAMILY_TO_LIBRARY_CATEGORY[subType];
-  const filteredItems = libraryItems.filter((i) => i.category === category);
+  // The Trim family's picker spans every trim-ish library category (trim +
+  // fastener + elastic) in one searchable list — the Master Library keeps its
+  // finer categories, the canvas just stops splitting them into layer types.
+  const categories = FABRIC_FAMILY_LIBRARY_CATEGORIES[subType];
+  const filteredItems = libraryItems.filter((i) =>
+    categories.includes(i.category),
+  );
   const selectedItem = libraryItems.find((i) => i.id === libraryItemId) ?? null;
   const colourOptions = selectedItem ? libraryColourOptions(selectedItem) : [];
 
@@ -147,6 +158,12 @@ export function FabricTrimPinEditor(
     });
     const options = libraryColourOptions(item);
     setColour(options.length === 1 ? options[0].name : null);
+    // A fastener/elastic library item states what kind of trim it is —
+    // auto-fill the Trim type (still user-editable afterwards).
+    if (subType === "trim") {
+      const derived = trimKindFromLibraryCategory(item.category);
+      if (derived) setTrimKind(derived);
+    }
   }
 
   function buildData(): FabricTrimAnnotationData {
@@ -157,6 +174,7 @@ export function FabricTrimPinEditor(
       composition: autoFilled.composition,
       colour,
       gsm: autoFilled.gsm,
+      trim_kind: subType === "trim" ? trimKind : null,
       placement: placement.trim() || null,
       quantity: quantity.trim() ? Number(quantity) : null,
       unit,
@@ -211,13 +229,14 @@ export function FabricTrimPinEditor(
   return (
     <div className="space-y-3">
       {props.mode === "create" && (
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-2 gap-1">
           {FABRIC_FAMILY_KEYS.map((key) => (
             <button
               key={key}
               type="button"
               onClick={() => {
                 setSubType(key);
+                setTrimKind(null);
                 setLibraryItemId(null);
                 setColour(null);
                 setAutoFilled({
@@ -240,20 +259,39 @@ export function FabricTrimPinEditor(
         </div>
       )}
 
+      {subType === "trim" && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Trim type</Label>
+          <Select
+            value={trimKind ?? undefined}
+            onValueChange={(v) => setTrimKind(v as TrimKind)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a trim type…" />
+            </SelectTrigger>
+            <SelectContent>
+              {TRIM_KINDS.map((kind) => (
+                <SelectItem key={kind} value={kind}>
+                  {TRIM_KIND_LABEL[kind]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="space-y-1.5">
-        <Label className="text-xs">
-          {FABRIC_FAMILY_LABEL[fixedSubType ?? subType]}
-        </Label>
+        <Label className="text-xs">{FABRIC_FAMILY_LABEL[subType]}</Label>
         <FabricPicker
           fabrics={filteredItems}
           value={libraryItemId}
           onChange={handlePickLibraryItem}
           summaryLine={libraryItemSummaryLine}
-          placeholder={`Select a ${FABRIC_FAMILY_LABEL[fixedSubType ?? subType].toLowerCase()}…`}
+          placeholder={`Select a ${FABRIC_FAMILY_LABEL[subType].toLowerCase()}…`}
           emptyMessage={
             <>
-              No {FABRIC_FAMILY_LABEL[fixedSubType ?? subType].toLowerCase()}s in
-              your library yet — add one in{" "}
+              No {FABRIC_FAMILY_LABEL[subType].toLowerCase()}s in your library
+              yet — add one in{" "}
               <Link
                 href="/settings?tab=library"
                 className="text-foreground font-medium underline underline-offset-2"

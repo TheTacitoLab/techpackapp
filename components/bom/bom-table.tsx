@@ -2,7 +2,10 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { ListTree } from "lucide-react";
 
-import { readFabricTrimData } from "@/components/canvas/fabric-trim-data";
+import {
+  TRIM_KIND_LABEL,
+  readFabricTrimData,
+} from "@/components/canvas/fabric-trim-data";
 import {
   Table,
   TableBody,
@@ -13,12 +16,13 @@ import {
 } from "@/components/ui/table";
 import type { CanvasAnnotation, CanvasLayerType } from "@/types";
 
-const GROUP_ORDER: readonly CanvasLayerType[] = ["fabric", "trim", "hardware", "elastic"];
-const GROUP_LABEL: Record<"fabric" | "trim" | "hardware" | "elastic", string> = {
+// Two sections since the 0023 restructure — one Fabrics run (F1, F2…) and one
+// Trims run (T1, T2…). A trim row's KIND (fastener/elastic/binding/…) shows in
+// its Category cell via `data.trim_kind`, never in the reference code.
+const GROUP_ORDER: readonly CanvasLayerType[] = ["fabric", "trim"];
+const GROUP_LABEL: Record<"fabric" | "trim", string> = {
   fabric: "Fabrics",
   trim: "Trims",
-  hardware: "Fasteners",
-  elastic: "Elastics",
 };
 
 const UNIT_LABEL: Record<string, string> = {
@@ -104,14 +108,21 @@ export function BomTable({ annotations }: { annotations: CanvasAnnotation[] }) {
                   ? `${d.composition} · ${d.gsm} GSM`
                   : d.composition
                 : (d.gsm !== null ? `${d.gsm} GSM` : null);
+              // The per-row category: "Fabric" for fabrics; for trims the
+              // specific KIND — so T2 reads as an Elastic and T3 as a
+              // Fastener even though both codes are plain T.
+              const rowCategory =
+                group.layerType === "trim"
+                  ? d.trim_kind
+                    ? TRIM_KIND_LABEL[d.trim_kind]
+                    : "Trim"
+                  : "Fabric";
               return (
                 <TableRow key={annotation.id}>
                   <TableCell className="font-semibold">
                     {annotation.reference_code}
                   </TableCell>
-                  <TableCell>
-                    {GROUP_LABEL[group.layerType as keyof typeof GROUP_LABEL]}
-                  </TableCell>
+                  <TableCell>{rowCategory}</TableCell>
                   <TableCell>{d.library_item_name ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {detail ?? "—"}

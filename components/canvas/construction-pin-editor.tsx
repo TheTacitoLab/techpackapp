@@ -44,7 +44,8 @@ type CreatedResult = {
 
 /**
  * The dedicated Construction pin editor — covers the layer's two sub-types
- * (stitch / construction note) the way `FabricTrimPinEditor` covers its four.
+ * (stitch / construction note) the way `FabricTrimPinEditor` covers its two
+ * material families.
  * Renders as plain content inside the shared centered `PinEditorDialog`
  * (`annotation-pin.tsx` for edit mode, `DraftConstructionPin` in
  * `page-canvas.tsx` for create mode) — no popup container of its own.

@@ -34,18 +34,20 @@ import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
 import {
   LAYER_PREFIX,
+  RETIRED_LAYER_TYPES,
   type CanvasColourway,
   type CanvasLayerType,
   type ColourwayAnnotationData,
 } from "@/types";
 
 // ---- Shared input fragments -------------------------------------------------
-// `layer_type` is validated against the canonical 12 keys of LAYER_PREFIX so the
-// zod enum and the reference-code prefixes can never drift apart.
-const LAYER_TYPES = Object.keys(LAYER_PREFIX) as [
-  CanvasLayerType,
-  ...CanvasLayerType[],
-];
+// `layer_type` is validated against the keys of LAYER_PREFIX so the zod enum
+// and the reference-code prefixes can never drift apart — minus the retired
+// types (hardware/elastic, absorbed into `trim` + `data.trim_kind` in 0023),
+// which still exist in the DB enum but must not gain new pins.
+const LAYER_TYPES = (Object.keys(LAYER_PREFIX) as CanvasLayerType[]).filter(
+  (t) => !RETIRED_LAYER_TYPES.includes(t),
+) as [CanvasLayerType, ...CanvasLayerType[]];
 const layerTypeSchema = z.enum(LAYER_TYPES);
 const pinTypeSchema = z.enum(["point", "line"]);
 const templateSchema = z.enum(["single", "split", "quad"]);

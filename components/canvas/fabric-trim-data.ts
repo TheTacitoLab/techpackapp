@@ -4,14 +4,23 @@ import type {
   FabricTrimAnnotationData,
   LibraryCategory,
   ResolvedLibraryItem,
+  TrimKind,
 } from "@/types";
 
-/** The four `layer_type`s the Fabrics & Trim canvas layer covers. */
+/**
+ * The material family a Fabrics & Trim pin belongs to — since the 0023
+ * restructure just Fabric (F) and Trim (T), where Trim is an umbrella whose
+ * specific kind (fastener/elastic/binding/drawcord/other) is the pin's
+ * `data.trim_kind` field, not a separate layer_type. The retired `hardware`/
+ * `elastic` layer_types still exist in the DB enum but are never created or
+ * offered anywhere (their pins were cleared in migration 0023).
+ */
+export type FabricFamilyKey = "fabric" | "trim";
+
+/** The two `layer_type`s the Fabrics & Trim canvas layer covers. */
 export const FABRIC_FAMILY_TYPES: readonly CanvasLayerType[] = [
   "fabric",
   "trim",
-  "hardware",
-  "elastic",
 ];
 
 export function isFabricFamilyType(layerType: CanvasLayerType): boolean {
@@ -19,31 +28,58 @@ export function isFabricFamilyType(layerType: CanvasLayerType): boolean {
 }
 
 /**
- * `library_items.category` doesn't name-match `canvas_layer_type` 1:1 — the
- * canvas layer_type `hardware` corresponds to the library category `fastener`
- * (there is no `hardware` library category). Confirmed against the enum in
- * `supabase/migrations/0008_library_schema.sql`.
+ * The Master Library keeps finer-grained categories than the two material
+ * families: fasteners and elastics are their own `library_category` values
+ * (confirmed against the enum in `supabase/migrations/0008_library_schema.sql`),
+ * but on the canvas they are all just trims. So the Trim family's picker
+ * surfaces the `trim`, `fastener` AND `elastic` categories in one list — the
+ * library items themselves are untouched by the restructure.
  */
-export const FABRIC_FAMILY_TO_LIBRARY_CATEGORY: Record<
-  "fabric" | "trim" | "hardware" | "elastic",
-  LibraryCategory
+export const FABRIC_FAMILY_LIBRARY_CATEGORIES: Record<
+  FabricFamilyKey,
+  readonly LibraryCategory[]
 > = {
-  fabric: "fabric",
-  trim: "trim",
-  hardware: "fastener",
-  elastic: "elastic",
+  fabric: ["fabric"],
+  trim: ["trim", "fastener", "elastic"],
 };
 
-/** Display label for the sub-type segmented control (new-pin creation only). */
-export const FABRIC_FAMILY_LABEL: Record<
-  "fabric" | "trim" | "hardware" | "elastic",
-  string
-> = {
+/** Display label for the family segmented control (new-pin creation only). */
+export const FABRIC_FAMILY_LABEL: Record<FabricFamilyKey, string> = {
   fabric: "Fabric",
   trim: "Trim",
-  hardware: "Fastener",
-  elastic: "Elastic",
 };
+
+/** Dropdown order for the Trim-type field. */
+export const TRIM_KINDS: readonly TrimKind[] = [
+  "fastener",
+  "elastic",
+  "binding",
+  "drawcord",
+  "other",
+];
+
+export const TRIM_KIND_LABEL: Record<TrimKind, string> = {
+  fastener: "Fastener",
+  elastic: "Elastic",
+  binding: "Binding",
+  drawcord: "Drawcord",
+  other: "Other",
+};
+
+/**
+ * The trim kind a library item implies, if any: picking a zip from the
+ * `fastener` category (or a waistband elastic from `elastic`) auto-fills the
+ * pin's Trim type, since the item's category already states what it is.
+ * Items from the broad `trim` category imply nothing — binding vs drawcord
+ * vs other stays the user's call.
+ */
+export function trimKindFromLibraryCategory(
+  category: LibraryCategory,
+): TrimKind | null {
+  if (category === "fastener") return "fastener";
+  if (category === "elastic") return "elastic";
+  return null;
+}
 
 function readProp(
   properties: Record<string, unknown> | null,
@@ -161,6 +197,11 @@ export function readFabricTrimData(
       ? (data as Record<string, unknown>)
       : {};
 
+  const rawKind = asString(raw.trim_kind);
+  const trimKind = (TRIM_KINDS as readonly string[]).includes(rawKind ?? "")
+    ? (rawKind as TrimKind)
+    : null;
+
   return {
     library_item_id: asString(raw.library_item_id),
     library_item_name: asString(raw.library_item_name) ?? asString(raw.label),
@@ -168,6 +209,7 @@ export function readFabricTrimData(
     composition: asString(raw.composition),
     colour: asString(raw.colour),
     gsm: asNumber(raw.gsm),
+    trim_kind: trimKind,
     placement: asString(raw.placement),
     quantity: asNumber(raw.quantity),
     unit: asString(raw.unit) as FabricTrimAnnotationData["unit"],

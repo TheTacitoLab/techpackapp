@@ -1,7 +1,10 @@
 import { layerForType } from "@/components/canvas/layers";
 import { readColourwayData } from "@/components/canvas/colourway-data";
 import { readConstructionData } from "@/components/canvas/construction-data";
-import { readFabricTrimData } from "@/components/canvas/fabric-trim-data";
+import {
+  TRIM_KIND_LABEL,
+  readFabricTrimData,
+} from "@/components/canvas/fabric-trim-data";
 import {
   formatMeasurementValue,
   readMeasurementData,
@@ -56,10 +59,22 @@ export function getAnnotationSummary(
 
   if (layer?.key === "fabric") {
     const d = readFabricTrimData(annotation.data);
-    const title = d.library_item_name ?? `Untitled ${layerLabel.toLowerCase()}`;
-    const detailParts = [d.composition, d.colour, d.placement].filter(
-      (v): v is string => !!v,
-    );
+    // A trim pin's reference code is plain T, so its KIND is what tells an
+    // elastic from a zip here: it titles the row when no library item is
+    // picked ("T2 — Elastic"), otherwise leads the detail line.
+    const kind =
+      annotation.layer_type === "trim" && d.trim_kind
+        ? TRIM_KIND_LABEL[d.trim_kind]
+        : null;
+    const fallbackTitle =
+      annotation.layer_type === "trim" ? (kind ?? "Untitled trim") : "Untitled fabric";
+    const title = d.library_item_name ?? fallbackTitle;
+    const detailParts = [
+      title === kind ? null : kind,
+      d.composition,
+      d.colour,
+      d.placement,
+    ].filter((v): v is string => !!v);
     return {
       title,
       detail: detailParts.length > 0 ? detailParts.join(" · ") : d.notes,
