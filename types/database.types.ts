@@ -486,6 +486,7 @@ export type Database = {
           crop_x: number;
           crop_y: number;
           zoom: number;
+          fit_mode: string;
           is_locked: boolean;
           created_at: string;
         };
@@ -497,6 +498,7 @@ export type Database = {
           crop_x?: number;
           crop_y?: number;
           zoom?: number;
+          fit_mode?: string;
           is_locked?: boolean;
           created_at?: string;
         };
@@ -508,6 +510,7 @@ export type Database = {
           crop_x?: number;
           crop_y?: number;
           zoom?: number;
+          fit_mode?: string;
           is_locked?: boolean;
           created_at?: string;
         };

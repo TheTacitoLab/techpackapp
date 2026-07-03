@@ -3,6 +3,7 @@
 import { ImageIcon } from "lucide-react";
 
 import { GRID_CLASS } from "@/components/canvas/canvas-templates";
+import { normaliseFitMode, slotImageObjectFit } from "@/lib/cover-geometry";
 import { cn } from "@/lib/utils";
 import type { ResolvedCanvasPage } from "@/types";
 
@@ -41,8 +42,11 @@ export function MiniTemplate({
             <img
               src={slot.asset.file_url}
               alt={slot.asset.name}
-              className="size-full object-cover"
+              className="size-full"
               style={{
+                // Mirror the slot's fit mode so a letterboxed ('fit') slot is
+                // recognisable in the thumbnail too, not cropped differently.
+                objectFit: slotImageObjectFit(normaliseFitMode(slot.fit_mode)),
                 transform: `translate(${slot.crop_x}px, ${slot.crop_y}px) scale(${slot.zoom})`,
                 transformOrigin: "center",
               }}

@@ -393,9 +393,20 @@ export async function fillSlot(slotId: string, assetId: string): Promise<void> {
     .single();
   if (!asset) throw new Error("Asset not found in your workspace.");
 
+  // Fresh placements default to FIT — for garment work, seeing the whole
+  // image (letterboxed, never chopped) is the right starting point. Existing
+  // slots are untouched: the column default is 'fill', so nothing already
+  // framed shifts by even a pixel.
   const { error } = await supabase
     .from("canvas_slots")
-    .update({ asset_id: input.assetId, crop_x: 0, crop_y: 0, zoom: 1, is_locked: false })
+    .update({
+      asset_id: input.assetId,
+      crop_x: 0,
+      crop_y: 0,
+      zoom: 1,
+      fit_mode: "fit",
+      is_locked: false,
+    })
     .eq("id", input.slotId);
   if (error) throw new Error(error.message);
 
@@ -407,22 +418,29 @@ const framingSchema = z.object({
   cropX: z.number(),
   cropY: z.number(),
   zoom: z.number().positive(),
+  fitMode: z.enum(["fill", "fit"]),
 });
 
-/** Persist pan/zoom while framing. Called debounced (~400ms) from the client. */
+/** Persist pan/zoom/fit while framing. Called debounced (~400ms) from the client. */
 export async function updateSlotFraming(
   slotId: string,
   cropX: number,
   cropY: number,
   zoom: number,
+  fitMode: "fill" | "fit",
 ): Promise<void> {
-  const input = framingSchema.parse({ slotId, cropX, cropY, zoom });
+  const input = framingSchema.parse({ slotId, cropX, cropY, zoom, fitMode });
   const { supabase, workspaceId } = await requireActionContext();
   const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
 
   const { error } = await supabase
     .from("canvas_slots")
-    .update({ crop_x: input.cropX, crop_y: input.cropY, zoom: input.zoom })
+    .update({
+      crop_x: input.cropX,
+      crop_y: input.cropY,
+      zoom: input.zoom,
+      fit_mode: input.fitMode,
+    })
     .eq("id", input.slotId);
   if (error) throw new Error(error.message);
 

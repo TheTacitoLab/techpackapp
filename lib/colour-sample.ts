@@ -1,10 +1,10 @@
-import { coverSampleTransform } from "@/lib/cover-geometry";
+import { normaliseFitMode, slotSampleTransform } from "@/lib/cover-geometry";
 
 /**
  * Cross-browser image colour sampler. Reads the true pixel colour under a click
- * on a locked slot's image by replaying the exact same cover + pan/zoom framing
- * math the renderer uses (see `lib/cover-geometry.ts`) onto an offscreen canvas,
- * then reading that single pixel back.
+ * on a locked slot's image by replaying the exact same base-fit (cover/contain)
+ * + pan/zoom framing math the renderer uses (see `lib/cover-geometry.ts`) onto
+ * an offscreen canvas, then reading that single pixel back.
  *
  * Deliberately does NOT use the `EyeDropper` API (Chromium-only) — this works
  * identically in Chrome, Safari and Firefox with no feature branching, because a
@@ -71,7 +71,7 @@ function clampInt(value: number, min: number, max: number): number {
  */
 export async function sampleColourAtPoint(
   asset: { file_url: string; width: number | null; height: number | null },
-  slot: { crop_x: number; crop_y: number; zoom: number },
+  slot: { crop_x: number; crop_y: number; zoom: number; fit_mode: string },
   slotRenderedWidth: number,
   slotRenderedHeight: number,
   clickXFraction: number,
@@ -96,7 +96,7 @@ export async function sampleColourAtPoint(
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
 
-    const { scale, translateX, translateY } = coverSampleTransform(
+    const { scale, translateX, translateY } = slotSampleTransform(
       naturalWidth,
       naturalHeight,
       boxWidth,
@@ -104,11 +104,15 @@ export async function sampleColourAtPoint(
       slot.crop_x,
       slot.crop_y,
       slot.zoom,
+      normaliseFitMode(slot.fit_mode),
     );
-    // Reproduce the on-screen render into the offscreen canvas: cover base, then
-    // translate + scale about centre. Drawing the image at its natural size lets
-    // the context transform place every natural pixel exactly where the browser
-    // paints it on the visible slot.
+    // Reproduce the on-screen render into the offscreen canvas: the slot's base
+    // fit (cover or contain), then translate + scale about centre. Drawing the
+    // image at its natural size lets the context transform place every natural
+    // pixel exactly where the browser paints it on the visible slot. In 'fit'
+    // mode a click on the letterbox reads the blank canvas (transparent black →
+    // '#000000'); the colourway flow already treats any sample as a starting
+    // point the user can override, so no special-casing is needed here.
     ctx.setTransform(scale, 0, 0, scale, translateX, translateY);
     ctx.drawImage(img, 0, 0, naturalWidth, naturalHeight);
 

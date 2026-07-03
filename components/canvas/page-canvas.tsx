@@ -8,7 +8,7 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
-import { ImagePlus, Lock, Minus, Plus } from "lucide-react";
+import { ImagePlus, Lock, Minus, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { AnnotationPin } from "@/components/canvas/annotation-pin";
@@ -21,7 +21,13 @@ import {
 } from "@/components/canvas/colourway-pin-editor";
 import { ConstructionPinEditor } from "@/components/canvas/construction-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
-import { slotImageCssTransform } from "@/lib/cover-geometry";
+import {
+  displayedImageRect,
+  normaliseFitMode,
+  slotImageCssTransform,
+  slotImageObjectFit,
+  type SlotFitMode,
+} from "@/lib/cover-geometry";
 import { sampleColourAtPoint } from "@/lib/colour-sample";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { MeasurementLinePin } from "@/components/canvas/measurement-line-pin";
@@ -76,7 +82,10 @@ type ColourwayContext = {
   onColourwayUsed: (colourwayId: string) => void;
 };
 
-const ZOOM_MIN = 0.5;
+// Zoom 1 is the mode's own baseline (cover fills, contain shows everything);
+// below 1 'fill' would show blank gaps and 'fit' would just shrink inside its
+// letterbox, so the framing floor is 1 in both modes.
+const ZOOM_MIN = 1;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.25;
 
@@ -85,10 +94,14 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Clamp a pan offset so the (center-scaled, object-cover) image always fills the
- * slot with no blank edges. At zoom z the image overflows the slot by
- * `size*(z-1)/2` on each axis; that's the maximum offset. Below zoom 1 there is
- * no overflow, so pan is pinned to 0.
+ * Clamp a pan offset per axis from the image's ACTUAL displayed rectangle
+ * (shared geometry — `displayedImageRect`), one rule for both modes: an axis
+ * where the scaled image is larger than the slot pans freely within the no-gap
+ * range `±(displayed − slot)/2`; an axis where it is smaller stays centred (0),
+ * so 'fill' never shows blank edges and 'fit' never loses its letterbox
+ * symmetry. (Exact — replaces the old square-ish approximation, which
+ * under-allowed panning along a cover image's long axis.) Falls back to that
+ * approximation only if the asset's natural dimensions are unknown.
  */
 function clampPan(
   x: number,
@@ -96,9 +109,27 @@ function clampPan(
   zoom: number,
   width: number,
   height: number,
+  fitMode: SlotFitMode,
+  naturalWidth: number | null,
+  naturalHeight: number | null,
 ): { x: number; y: number } {
-  const maxX = Math.max(0, (width * (zoom - 1)) / 2);
-  const maxY = Math.max(0, (height * (zoom - 1)) / 2);
+  if (!naturalWidth || !naturalHeight || width <= 0 || height <= 0) {
+    const maxX = Math.max(0, (width * (zoom - 1)) / 2);
+    const maxY = Math.max(0, (height * (zoom - 1)) / 2);
+    return { x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
+  }
+  const rect = displayedImageRect(
+    naturalWidth,
+    naturalHeight,
+    width,
+    height,
+    0,
+    0,
+    zoom,
+    fitMode,
+  );
+  const maxX = Math.max(0, (rect.width - width) / 2);
+  const maxY = Math.max(0, (rect.height - height) / 2);
   return { x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
 }
 
@@ -317,7 +348,7 @@ function EmptySlot({
 
 // ---- Framing slot (filled, unlocked) ----------------------------------------
 
-type Framing = { x: number; y: number; zoom: number };
+type Framing = { x: number; y: number; zoom: number; fitMode: SlotFitMode };
 
 function FramingSlot({
   slot,
@@ -334,10 +365,17 @@ function FramingSlot({
   const containerRef = useRef<HTMLDivElement>(null);
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Natural image dimensions for the exact pan clamp (nullable: legacy assets
+  // without stored dimensions fall back to the old approximate clamp).
+  const naturalWidth = slot.asset?.width ?? null;
+  const naturalHeight = slot.asset?.height ?? null;
+  const initialFitMode = normaliseFitMode(slot.fit_mode);
+
   const [framing, setFraming] = useState<Framing>({
     x: slot.crop_x,
     y: slot.crop_y,
     zoom: slot.zoom,
+    fitMode: initialFitMode,
   });
   // Mirror for event handlers that close over stale state (drag/wheel/lock).
   const framingRef = useRef(framing);
@@ -353,13 +391,17 @@ function FramingSlot({
     (next: Framing) => {
       if (writeTimer.current) clearTimeout(writeTimer.current);
       writeTimer.current = setTimeout(() => {
-        void updateSlotFraming(slot.id, next.x, next.y, next.zoom).catch(
-          (err) => {
-            // TEMP diagnostic: surface the real error, not just the toast.
-            console.error("[DIAG] updateSlotFraming failed:", err);
-            toast.error("Could not save framing.");
-          },
-        );
+        void updateSlotFraming(
+          slot.id,
+          next.x,
+          next.y,
+          next.zoom,
+          next.fitMode,
+        ).catch((err) => {
+          // TEMP diagnostic: surface the real error, not just the toast.
+          console.error("[DIAG] updateSlotFraming failed:", err);
+          toast.error("Could not save framing.");
+        });
       }, 400);
     },
     [slot.id],
@@ -371,19 +413,42 @@ function FramingSlot({
       const w = rect?.width ?? 0;
       const h = rect?.height ?? 0;
       const zoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
+      const { fitMode } = framingRef.current;
       const { x, y } = clampPan(
         framingRef.current.x,
         framingRef.current.y,
         zoom,
         w,
         h,
+        fitMode,
+        naturalWidth,
+        naturalHeight,
       );
-      const next = { x, y, zoom };
+      const next = { x, y, zoom, fitMode };
+      apply(next);
+      persist(next);
+    },
+    [apply, persist, naturalWidth, naturalHeight],
+  );
+
+  // Switching the base fit changes what the current pan/zoom mean, so the
+  // toggle resets to the new mode's centred baseline — the user always knows
+  // exactly what they're getting ('Fit' = whole image, 'Fill' = cover).
+  const applyFitMode = useCallback(
+    (fitMode: SlotFitMode) => {
+      if (fitMode === framingRef.current.fitMode) return;
+      const next = { x: 0, y: 0, zoom: 1, fitMode };
       apply(next);
       persist(next);
     },
     [apply, persist],
   );
+
+  const resetFraming = useCallback(() => {
+    const next = { x: 0, y: 0, zoom: 1, fitMode: framingRef.current.fitMode };
+    apply(next);
+    persist(next);
+  }, [apply, persist]);
 
   // Native, non-passive wheel listener so we can preventDefault on scroll-zoom.
   useEffect(() => {
@@ -413,14 +478,18 @@ function FramingSlot({
       baseY: framingRef.current.y,
     };
     function move(ev: PointerEvent) {
+      const { zoom, fitMode } = framingRef.current;
       const { x, y } = clampPan(
         start.baseX + (ev.clientX - start.px),
         start.baseY + (ev.clientY - start.py),
-        framingRef.current.zoom,
+        zoom,
         rect!.width,
         rect!.height,
+        fitMode,
+        naturalWidth,
+        naturalHeight,
       );
-      apply({ x, y, zoom: framingRef.current.zoom });
+      apply({ x, y, zoom, fitMode });
     }
     function up() {
       window.removeEventListener("pointermove", move);
@@ -436,7 +505,7 @@ function FramingSlot({
       try {
         if (writeTimer.current) clearTimeout(writeTimer.current);
         const f = framingRef.current;
-        await updateSlotFraming(slot.id, f.x, f.y, f.zoom);
+        await updateSlotFraming(slot.id, f.x, f.y, f.zoom, f.fitMode);
         await lockSlot(slot.id);
         setLockConfirm(false);
         router.refresh();
@@ -450,7 +519,11 @@ function FramingSlot({
 
   function handleLock() {
     const f = framingRef.current;
-    if (f.x === 0 && f.y === 0 && f.zoom === 1) setLockConfirm(true);
+    // "Untouched" = default pan/zoom AND the mode the slot arrived with —
+    // choosing Fit/Fill is itself a deliberate framing decision.
+    const untouched =
+      f.x === 0 && f.y === 0 && f.zoom === 1 && f.fitMode === initialFitMode;
+    if (untouched) setLockConfirm(true);
     else doLock();
   }
 
@@ -482,7 +555,7 @@ function FramingSlot({
           transformOrigin: "center",
           width: "100%",
           height: "100%",
-          objectFit: "cover",
+          objectFit: slotImageObjectFit(framing.fitMode),
           cursor: "grab",
           userSelect: "none",
           touchAction: "none",
@@ -518,6 +591,41 @@ function FramingSlot({
           >
             <Plus className="size-4" />
           </button>
+          <button
+            type="button"
+            onClick={resetFraming}
+            aria-label="Reset framing"
+            title="Reset framing"
+            className="text-foreground flex size-7 items-center justify-center rounded-md bg-white/90 transition-colors hover:bg-white"
+          >
+            <RotateCcw className="size-3.5" />
+          </button>
+
+          {/* Fit / Fill — per-slot base fit. Fit shows the WHOLE image
+              (letterboxed); Fill covers the slot, cropping overflow. */}
+          <div className="ml-1 flex overflow-hidden rounded-md bg-white/90">
+            {(["fit", "fill"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => applyFitMode(mode)}
+                aria-pressed={framing.fitMode === mode}
+                title={
+                  mode === "fit"
+                    ? "Fit: show the whole image, letterboxed"
+                    : "Fill: cover the slot, cropping overflow"
+                }
+                className={cn(
+                  "px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  framing.fitMode === mode
+                    ? "bg-foreground text-background"
+                    : "text-foreground hover:bg-white",
+                )}
+              >
+                {mode === "fit" ? "Fit" : "Fill"}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <AssetPicker
@@ -937,14 +1045,27 @@ function AnnotationSlot({
       if (!asset || size.width === 0 || size.height === 0) return null;
       return sampleColourAtPoint(
         { file_url: asset.file_url, width: asset.width, height: asset.height },
-        { crop_x: slot.crop_x, crop_y: slot.crop_y, zoom: slot.zoom },
+        {
+          crop_x: slot.crop_x,
+          crop_y: slot.crop_y,
+          zoom: slot.zoom,
+          fit_mode: slot.fit_mode,
+        },
         size.width,
         size.height,
         xFraction,
         yFraction,
       );
     },
-    [slot.asset, slot.crop_x, slot.crop_y, slot.zoom, size.width, size.height],
+    [
+      slot.asset,
+      slot.crop_x,
+      slot.crop_y,
+      slot.zoom,
+      slot.fit_mode,
+      size.width,
+      size.height,
+    ],
   );
 
   // Called by an open colourway editor's "Re-sample" button — arm pick-mode; the
@@ -1181,7 +1302,7 @@ function AnnotationSlot({
           transformOrigin: "center",
           width: "100%",
           height: "100%",
-          objectFit: "cover",
+          objectFit: slotImageObjectFit(normaliseFitMode(slot.fit_mode)),
           pointerEvents: "none",
         }}
       />
