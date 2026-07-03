@@ -1,4 +1,9 @@
 import { layerForType } from "@/components/canvas/layers";
+import {
+  brandingLabelTypeLabel,
+  formatDimensionsMm,
+  readBrandingLabelData,
+} from "@/components/canvas/branding-label-data";
 import { readColourwayData } from "@/components/canvas/colourway-data";
 import { readConstructionData } from "@/components/canvas/construction-data";
 import {
@@ -120,6 +125,33 @@ export function getAnnotationSummary(
     return {
       title: d.name ?? "Untitled measurement",
       detail: formatMeasurementValue(d.value, d.unit) ?? "No value yet",
+    };
+  }
+
+  if (layer?.key === "branding_labels") {
+    const d = readBrandingLabelData(annotation.data);
+    // Same principle as trims: B/L codes are plain, so the specific type
+    // ("Embroidery", "Care label") identifies the row — it titles the pin
+    // when no library item is linked ("B1 — Embroidery — left chest —
+    // 30×26mm"), otherwise leads the detail line. A linked item's image
+    // fills the leading-icon slot, like Construction's stitch diagrams.
+    const type = brandingLabelTypeLabel(d);
+    const title =
+      d.library_item_name ??
+      type ??
+      (annotation.layer_type === "branding"
+        ? "Untitled branding"
+        : "Untitled label");
+    const detailParts = [
+      title === type ? null : type,
+      d.colour,
+      d.placement,
+      formatDimensionsMm(d.width_mm, d.height_mm),
+    ].filter((v): v is string => !!v);
+    return {
+      title,
+      detail: detailParts.length > 0 ? detailParts.join(" · ") : d.notes,
+      icon: d.library_item_image_url,
     };
   }
 

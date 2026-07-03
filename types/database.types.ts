@@ -663,7 +663,9 @@ export type Database = {
         | "measurement"
         | "construction_note"
         | "detail_callout"
-        | "colourway";
+        | "colourway"
+        | "branding"
+        | "label";
     };
     CompositeTypes: {
       [_ in never]: never;

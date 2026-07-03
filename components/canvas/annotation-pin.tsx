@@ -18,6 +18,7 @@ import {
 } from "@/components/canvas/colourway-pin-editor";
 import { ConstructionPinEditor } from "@/components/canvas/construction-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
+import { BrandingLabelPinEditor } from "@/components/canvas/branding-label-pin-editor";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
 import { useLayerColours } from "@/components/canvas/layer-colours-context";
@@ -195,6 +196,7 @@ function LeaderLine({
  * Fabrics & Trim pins (layer_type fabric/trim) open the dedicated
  * `FabricTrimPinEditor`, Colourway pins the `ColourwayPinEditor`,
  * Construction pins (stitch/construction_note) the `ConstructionPinEditor`,
+ * Branding & Labels pins (branding/label) the `BrandingLabelPinEditor`,
  * and Measurement pins the `MeasurementPinEditor`. This component renders
  * POINT pins only — measurement LINE pins (`pin_type === 'line'`) are
  * dispatched to `MeasurementLinePin` by the slot's pin mapping in
@@ -274,8 +276,13 @@ export function AnnotationPin({
   const isColourway = layerKey === "colourway";
   const isConstruction = layerKey === "construction";
   const isMeasurement = layerKey === "measurement";
+  const isBrandingLabel = layerKey === "branding_labels";
   const hasDedicatedEditor =
-    isFabricFamily || isColourway || isConstruction || isMeasurement;
+    isFabricFamily ||
+    isColourway ||
+    isConstruction ||
+    isMeasurement ||
+    isBrandingLabel;
 
   // Draft field state for the colourway editor, owned HERE (not inside
   // ColourwayPinEditor) so it survives the editor Dialog fully closing during
@@ -597,6 +604,20 @@ export function AnnotationPin({
         ) : isMeasurement ? (
           <MeasurementPinEditor
             annotation={annotation}
+            onSaved={(data) => {
+              setOpen(false);
+              onUpdated?.(annotation.id, data);
+            }}
+            onDeleted={() => {
+              setOpen(false);
+              onDeleted?.(annotation.id);
+            }}
+          />
+        ) : isBrandingLabel ? (
+          <BrandingLabelPinEditor
+            mode="edit"
+            annotation={annotation}
+            libraryItems={libraryItems}
             onSaved={(data) => {
               setOpen(false);
               onUpdated?.(annotation.id, data);

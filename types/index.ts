@@ -209,6 +209,65 @@ export type MeasurementAnnotationData = {
 };
 
 /**
+ * The Branding family's sub-types (`layer_type` = 'branding', prefix B) —
+ * decorative/applied branded elements. Stored as `data.branding_type`, shown
+ * in the editor/list panel, NEVER encoded in the reference code (same
+ * principle as `TrimKind`).
+ */
+export type BrandingType =
+  | "screen_print"
+  | "heat_transfer"
+  | "embroidery"
+  | "woven_badge"
+  | "silicone_badge"
+  | "reflective"
+  | "sublimation"
+  | "deboss_emboss"
+  | "applique"
+  | "other";
+
+/**
+ * The Labels family's sub-types (`layer_type` = 'label', prefix L) —
+ * functional garment labels. Stored as `data.label_type`, never in the code.
+ */
+export type LabelType =
+  | "brand_label"
+  | "care_label"
+  | "size_tab"
+  | "woven_label"
+  | "heat_transfer_label"
+  | "origin_label"
+  | "content_label"
+  | "rfid_label"
+  | "other";
+
+/**
+ * Structured `data` jsonb shape for Branding & Labels annotations
+ * (`layer_type` in branding/label — the fifth canvas layer). Exactly one of
+ * `branding_type`/`label_type` is set, matching the pin's layer_type; both
+ * stay editable after creation (descriptive fields, not part of the B/L
+ * reference codes). The library link is OPTIONAL — an attached Master Library
+ * artwork/label item denormalises `library_item_id`/`_name`/`_image_url`
+ * (list panel + future PDF need no join back), but every spec field can be
+ * filled directly without one. `width_mm`/`height_mm` carry the exact
+ * physical dimensions real tech packs specify for placements (60×7.5mm
+ * labels, 30×26mm embroidery); `colour` is manual thread/print/Pantone entry
+ * (same manual-accuracy reasoning as Colourways' Pantone).
+ */
+export type BrandingLabelAnnotationData = {
+  branding_type: BrandingType | null;
+  label_type: LabelType | null;
+  library_item_id: string | null;
+  library_item_name: string | null;
+  library_item_image_url: string | null;
+  width_mm: number | null;
+  height_mm: number | null;
+  placement: string | null;
+  colour: string | null;
+  notes: string | null;
+};
+
+/**
  * A colourway plus the annotations placed in it, ordered for the grouped list
  * panel. Built product-side (never in the panel component) and passed down —
  * Colourways is the only layer that renders grouped, so this stays specific to
@@ -233,8 +292,10 @@ export const LAYER_PREFIX: Record<CanvasLayerType, string> = {
   trim: "T",
   hardware: "H", // retired — see RETIRED_LAYER_TYPES
   elastic: "E", // retired — see RETIRED_LAYER_TYPES
-  label_component: "L",
-  print: "P",
+  branding: "B",
+  label: "L",
+  label_component: "L", // superseded by `label` — see RETIRED_LAYER_TYPES
+  print: "P", // superseded by `branding` — see RETIRED_LAYER_TYPES
   stitch: "S",
   thread: "Th",
   packaging: "Pk",
@@ -246,12 +307,19 @@ export const LAYER_PREFIX: Record<CanvasLayerType, string> = {
 
 /**
  * Layer types still physically present in the `canvas_layer_type` DB enum but
- * no longer used anywhere (0023 restructure: hardware/elastic pins became
- * `trim` pins carrying `data.trim_kind`). Postgres can't cheaply drop enum
- * values, so they stay in the enum; this list is what keeps them out of the
- * app — `createAnnotation` rejects them and no UI offers them.
+ * NOT accepted for new pins (Postgres can't cheaply drop enum values, so they
+ * stay; this list is what keeps them out of the app — `createAnnotation`
+ * rejects them and no UI offers them):
+ *   - hardware/elastic — retired in the 0023 restructure (their pins became
+ *     `trim` pins carrying `data.trim_kind`).
+ *   - label_component/print — original reserved headroom for exactly the
+ *     layer 0024 shipped as `branding`/`label`; superseded, never used, and
+ *     `label_component` shares the L prefix with `label`, so blocking it
+ *     guarantees one L sequence.
  */
 export const RETIRED_LAYER_TYPES: readonly CanvasLayerType[] = [
   "hardware",
   "elastic",
+  "label_component",
+  "print",
 ];

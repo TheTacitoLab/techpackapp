@@ -30,6 +30,7 @@ import {
   type SlotFitMode,
 } from "@/lib/cover-geometry";
 import { sampleColourAtPoint } from "@/lib/colour-sample";
+import { BrandingLabelPinEditor } from "@/components/canvas/branding-label-pin-editor";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { MeasurementLinePin } from "@/components/canvas/measurement-line-pin";
 import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
@@ -1071,6 +1072,77 @@ function DraftConstructionPin({
   );
 }
 
+// ---- Draft pin (Branding & Labels: pick family + type BEFORE creating) ------
+
+/**
+ * A new Branding & Labels pin defers `createAnnotation` until the editor is
+ * saved, exactly like Fabrics & Trim: the family chosen in the editor
+ * (Branding/Labels) IS the pin's `layer_type`, which determines its B/L
+ * reference-code prefix and is immutable after creation. Same pulsing-marker
+ * pattern; dismissing without saving never touches the server.
+ */
+function DraftBrandingLabelPin({
+  x,
+  y,
+  slotWidth,
+  slotHeight,
+  slotId,
+  libraryItems,
+  onCreated,
+  onCancel,
+}: {
+  x: number;
+  y: number;
+  slotWidth: number;
+  slotHeight: number;
+  slotId: string;
+  libraryItems: ResolvedLibraryItem[];
+  onCreated: (result: {
+    id: string;
+    referenceCode: string;
+    layerType: CanvasLayerType;
+    data: Record<string, unknown>;
+  }) => void;
+  onCancel: () => void;
+}) {
+  const color = useLayerColours().colourFor("branding_labels");
+  return (
+    <>
+      {/* Pending-placement marker at the click point (see DraftFabricPin). */}
+      <span
+        aria-hidden
+        className="absolute -translate-x-1/2 -translate-y-1/2 animate-pulse"
+        style={{ left: x * slotWidth, top: y * slotHeight }}
+      >
+        <span
+          className="block size-1.5 rounded-full ring-2 ring-white"
+          style={{ backgroundColor: color }}
+        />
+      </span>
+      <PinEditorDialog
+        open
+        onOpenChange={(next) => !next && onCancel()}
+        title="New Branding & Labels pin"
+        header={
+          <div className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            New Branding &amp; Labels pin
+          </div>
+        }
+      >
+        <BrandingLabelPinEditor
+          mode="create"
+          slotId={slotId}
+          x={x}
+          y={y}
+          libraryItems={libraryItems}
+          onCreated={onCreated}
+          onCancel={onCancel}
+        />
+      </PinEditorDialog>
+    </>
+  );
+}
+
 // ---- Annotation slot (filled, locked) ---------------------------------------
 
 function AnnotationSlot({
@@ -1322,14 +1394,19 @@ function AnnotationSlot({
     // point-create path (and its [TIMING] instrumentation) is gone, along with
     // the latency it was investigating; nothing placed a bare pin on click
     // anymore once Measurements moved to two-click:
-    //  • Fabrics & Trim / Construction defer creation to their editor (the
-    //    chosen sub-type decides the immutable reference-code prefix).
+    //  • Fabrics & Trim / Construction / Branding & Labels defer creation to
+    //    their editor (the chosen sub-type/family decides the immutable
+    //    reference-code prefix).
     //  • Colourways samples the clicked pixel first, then defers likewise.
     //  • Measurements arms the two-click line draw — the FIRST click only
     //    records the start point; the second is captured by the dedicated
     //    drawing overlay (never this handler), so the two placement styles
     //    can't interfere.
-    if (activeLayerKey === "fabric" || activeLayerKey === "construction") {
+    if (
+      activeLayerKey === "fabric" ||
+      activeLayerKey === "construction" ||
+      activeLayerKey === "branding_labels"
+    ) {
       setDraftPoint({ x, y, hex: null });
       return;
     }
@@ -1539,6 +1616,19 @@ function AnnotationSlot({
 
       {draftPoint && activeLayerKey === "construction" && (
         <DraftConstructionPin
+          x={draftPoint.x}
+          y={draftPoint.y}
+          slotWidth={size.width}
+          slotHeight={size.height}
+          slotId={slot.id}
+          libraryItems={libraryItems}
+          onCreated={handleDraftCreated}
+          onCancel={() => setDraftPoint(null)}
+        />
+      )}
+
+      {draftPoint && activeLayerKey === "branding_labels" && (
+        <DraftBrandingLabelPin
           x={draftPoint.x}
           y={draftPoint.y}
           slotWidth={size.width}

@@ -2,7 +2,7 @@ import { isValidHex } from "@/components/canvas/colourway-data";
 import type { CanvasLayerType } from "@/types";
 
 /**
- * The four annotation layers of Technical Details — the single source of truth
+ * The five annotation layers of Technical Details — the single source of truth
  * for layer buttons, per-layer pin colours, and annotation count dots. Each
  * layer owns a family of `canvas_layer_type`s; new pins placed while a layer is
  * active default to that layer's `primaryType` (the pin editor can still switch
@@ -16,9 +16,14 @@ import type { CanvasLayerType } from "@/types";
  * `useLayerColours()` (layer-colours-context.tsx) / `resolveLayerColour` —
  * never read `defaultColor` directly for drawing.
  */
-export type LayerKey = "colourway" | "fabric" | "measurement" | "construction";
+export type LayerKey =
+  | "colourway"
+  | "fabric"
+  | "measurement"
+  | "construction"
+  | "branding_labels";
 
-export type LayerIconName = "Palette" | "Layers" | "Ruler" | "Hammer";
+export type LayerIconName = "Palette" | "Layers" | "Ruler" | "Hammer" | "Award";
 
 export interface AnnotationLayer {
   key: LayerKey;
@@ -68,6 +73,18 @@ export const ANNOTATION_LAYERS: readonly AnnotationLayer[] = [
     defaultColor: "#8B5CF6",
     types: ["construction_note", "stitch"],
     primaryType: "construction_note",
+  },
+  {
+    // Two families like Fabrics & Trim: Branding (B — applied branded
+    // elements) and Labels (L — functional labels); the specific type within
+    // each family is `data.branding_type`/`data.label_type`, never a separate
+    // layer_type. Teal — distinct from the four existing layer hues.
+    key: "branding_labels",
+    label: "Branding & Labels",
+    icon: "Award",
+    defaultColor: "#14B8A6",
+    types: ["branding", "label"],
+    primaryType: "branding",
   },
 ] as const;
 
@@ -161,6 +178,7 @@ export function countByLayer(
     fabric: 0,
     measurement: 0,
     construction: 0,
+    branding_labels: 0,
   };
   for (const t of layerTypes) {
     const layer = layerForType(t);

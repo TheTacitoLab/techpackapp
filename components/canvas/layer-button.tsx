@@ -1,6 +1,6 @@
 "use client";
 
-import { Hammer, Layers, Palette, Ruler, type LucideIcon } from "lucide-react";
+import { Award, Hammer, Layers, Palette, Ruler, type LucideIcon } from "lucide-react";
 
 import { useLayerColours } from "@/components/canvas/layer-colours-context";
 import type { AnnotationLayer, LayerIconName } from "@/components/canvas/layers";
@@ -12,10 +12,11 @@ export const LAYER_ICONS: Record<LayerIconName, LucideIcon> = {
   Layers,
   Ruler,
   Hammer,
+  Award,
 };
 
 /**
- * One of the four layer buttons across the top of the Page Editor. Large pill
+ * One of the five layer buttons across the top of the Page Editor. Large pill
  * (min-h 44px) with the layer's icon, label, and a global annotation count
  * badge. Active state reads the layer's LIVE workspace colour (inline style —
  * dynamic, never a Tailwind token). Only styling lives here; the parent owns

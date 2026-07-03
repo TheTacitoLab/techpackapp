@@ -1,0 +1,31 @@
+-- ============================================================================
+-- 0024 — Branding & Labels layer: new canvas_layer_type values (idempotent)
+--
+-- The fifth annotation layer adds two material families of its own:
+--   'branding' — prefix B — applied branded elements (screen print, heat
+--                transfer, embroidery, woven/silicone badge, reflective,
+--                sublimation, deboss/emboss, appliqué). Specific type lives
+--                in the annotation's data jsonb as `branding_type`.
+--   'label'    — prefix L — functional labels (brand, care, size tab, woven,
+--                tagless, origin, content, RFID). Specific type is
+--                `label_type` in the data jsonb.
+--
+-- DECISION — ADDED new values rather than reusing the original reserved
+-- headroom ('label_component', 'print'):
+--   * 'print' is semantically wrong for most of the Branding family
+--     (embroidery, badges, deboss are not prints) and was reserved with
+--     prefix P — this layer's spec requires B.
+--   * 'label_component' has the right prefix (L) but the awkward name, and
+--     pairing it with 'print' would split one UI family across two
+--     unrelated legacy values.
+--   * Clean add mirrors how fabric/trim name their families. The old
+--     headroom values stay in the enum (removal isn't cheap in Postgres,
+--     and they're harmless) but the app now REJECTS them for new pins
+--     (see RETIRED_LAYER_TYPES in types/index.ts) so 'label_component'
+--     can never mint L-prefixed codes colliding with 'label''s sequence.
+--
+-- ADD VALUE IF NOT EXISTS is safe to re-run; no rows are touched.
+-- ============================================================================
+
+alter type public.canvas_layer_type add value if not exists 'branding';
+alter type public.canvas_layer_type add value if not exists 'label';
