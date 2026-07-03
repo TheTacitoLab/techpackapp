@@ -6,6 +6,7 @@ import { LayoutGrid, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { TemplatePickerDialog } from "@/components/canvas/canvas-templates";
+import { useLayerColours } from "@/components/canvas/layer-colours-context";
 import {
   ANNOTATION_LAYERS,
   countByLayer,
@@ -215,6 +216,8 @@ function PageCard({
     page.slots.flatMap((s) => s.annotations.map((a) => a.layer_type)),
   );
   const activeLayers = ANNOTATION_LAYERS.filter((l) => counts[l.key] > 0);
+  // Live workspace colours so the overview dots match the pins they count.
+  const { colourFor } = useLayerColours();
 
   return (
     <div
@@ -251,7 +254,7 @@ function PageCard({
           <span key={layer.key} className="flex items-center gap-1">
             <span
               className="size-2 rounded-full"
-              style={{ backgroundColor: layer.color }}
+              style={{ backgroundColor: colourFor(layer.key) }}
             />
             <span className="text-muted-foreground text-xs font-medium">
               {counts[layer.key as LayerKey]}

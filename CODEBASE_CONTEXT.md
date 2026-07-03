@@ -208,7 +208,7 @@ First implementation faded the open pin-editor popover (opacity + `pointer-event
 - `useColourwayDraftFields`/`useColourwaySelectionDraft` — per-editor-instance draft state, described above.
 
 ### Styling conventions in this module
-- Per-layer colour is **inline `style`**, never a Tailwind token (`ANNOTATION_LAYERS[].color` in `layers.ts`, e.g. Colourways = `#EC4899`) — explicitly because `bg-brand`/lime is reserved app-wide for progress/completion/active-state only.
+- Per-layer colour is **inline `style`**, never a Tailwind token — explicitly because `bg-brand`/lime is reserved app-wide for progress/completion/active-state only. Since the workspace marker-colours feature, `ANNOTATION_LAYERS[].defaultColor` in `layers.ts` (e.g. Colourways = `#EC4899`) is only the BUILT-IN FALLBACK: the workspace can override each layer's colour (`workspaces.layer_colours` jsonb, migration `0020`), and every render-time consumer resolves through `useLayerColours()` (`layer-colours-context.tsx`, provided in the `(app)` layout) — edited from the Settings "Marker Colours" tab or the canvas toolbar's settings cog, both rendering the shared `components/settings/layer-colours-editor.tsx`.
 - Popover content: `w-80 space-y-3` for dedicated editors (vs `w-64` for the generic label/notes fallback).
 - Field pattern: `<Label className="text-xs">` + control, wrapped in `space-y-1.5`; buttons use `size="sm"`.
 - Hex field: native `<input type="color">` swatch (`size-9 rounded border`) + text `<Input className="w-32 font-mono uppercase" maxLength={7}>`, side by side.

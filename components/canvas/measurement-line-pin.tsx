@@ -7,10 +7,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
 import { usePointerDrag } from "@/components/canvas/annotation-pin";
 import { clientToFraction } from "@/components/canvas/coords";
-import {
-  colourForLayerType,
-  readableTextOn,
-} from "@/components/canvas/layers";
+import { useLayerColours } from "@/components/canvas/layer-colours-context";
+import { readableTextOn } from "@/components/canvas/layers";
 import {
   formatMeasurementValue,
   readMeasurementData,
@@ -131,7 +129,10 @@ export function MeasurementLinePin({
   const [open, setOpen] = useState(false);
   const pillRef = useRef<HTMLSpanElement>(null);
 
-  const color = colourForLayerType(annotation.layer_type);
+  // Resolved live from the workspace's layer colours — the line, arrowheads
+  // and pill all recolour instantly when the measurement colour is changed.
+  const { colourForType } = useLayerColours();
+  const color = colourForType(annotation.layer_type);
   const textColor = readableTextOn(color);
 
   // Defensive: a line pin always carries end coordinates, but fall back to a

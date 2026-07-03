@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BrandsTab } from "@/components/settings/brands-tab";
 import { LabelsTab } from "@/components/settings/labels-tab";
 import { LibraryTab } from "@/components/settings/library-tab";
+import { MarkerColoursTab } from "@/components/settings/marker-colours-tab";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import {
   isSettingsTabKey,
@@ -110,6 +111,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
             />
           ),
           labels: <LabelsTab labels={labelsWithUsage} />,
+          markers: <MarkerColoursTab />,
           library: <LibraryTab items={libraryItems} />,
           workspace: <WorkspaceTab />,
         }}

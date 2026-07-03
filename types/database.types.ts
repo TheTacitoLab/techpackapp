@@ -23,18 +23,21 @@ export type Database = {
           id: string;
           name: string;
           owner_id: string;
+          layer_colours: Json;
           created_at: string;
         };
         Insert: {
           id?: string;
           name: string;
           owner_id: string;
+          layer_colours?: Json;
           created_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
           owner_id?: string;
+          layer_colours?: Json;
           created_at?: string;
         };
         Relationships: [];
@@ -612,6 +615,10 @@ export type Database = {
       is_platform_admin: {
         Args: Record<PropertyKey, never>;
         Returns: boolean;
+      };
+      update_layer_colours: {
+        Args: { colours: Json };
+        Returns: undefined;
       };
     };
     Enums: {

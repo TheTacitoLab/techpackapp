@@ -20,11 +20,8 @@ import { ConstructionPinEditor } from "@/components/canvas/construction-pin-edit
 import { clientToFraction } from "@/components/canvas/coords";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
-import {
-  colourForLayerType,
-  layerForType,
-  readableTextOn,
-} from "@/components/canvas/layers";
+import { useLayerColours } from "@/components/canvas/layer-colours-context";
+import { layerForType, readableTextOn } from "@/components/canvas/layers";
 import {
   deleteAnnotation,
   moveAnnotation,
@@ -261,7 +258,10 @@ export function AnnotationPin({
   const [isDeleting, startDelete] = useTransition();
   const wrapperRef = useRef<HTMLSpanElement>(null);
 
-  const color = colourForLayerType(annotation.layer_type);
+  // Resolved live from the workspace's layer colours: changing the setting
+  // instantly recolours this pin — nothing colour-related is stored per pin.
+  const { colourForType } = useLayerColours();
+  const color = colourForType(annotation.layer_type);
   const textColor = readableTextOn(color);
   const layerKey = layerForType(annotation.layer_type)?.key;
   const isFabricFamily = layerKey === "fabric";

@@ -9,7 +9,11 @@ import type { CanvasLayerType } from "@/types";
  *
  * Colours are per-layer brand-neutral hues applied via inline `style` (they are
  * intentionally NOT Tailwind tokens — lime/`brand` stays reserved for UI accent
- * such as the active page border, never a layer colour).
+ * such as the active page border, never a layer colour). `defaultColor` is only
+ * the BUILT-IN FALLBACK: the workspace can override each layer's marker colour
+ * (workspaces.layer_colours), so render-time consumers must resolve through
+ * `useLayerColours()` (layer-colours-context.tsx) / `resolveLayerColour` —
+ * never read `defaultColor` directly for drawing.
  */
 export type LayerKey = "colourway" | "fabric" | "measurement" | "construction";
 
@@ -19,7 +23,8 @@ export interface AnnotationLayer {
   key: LayerKey;
   label: string;
   icon: LayerIconName;
-  color: string;
+  /** Built-in marker colour — the fallback when the workspace has no override. */
+  defaultColor: string;
   /** Every `layer_type` this button owns (pins of any count toward it). */
   types: CanvasLayerType[];
   /** The `layer_type` a new pin gets when this layer is the active one. */
@@ -31,7 +36,7 @@ export const ANNOTATION_LAYERS: readonly AnnotationLayer[] = [
     key: "colourway",
     label: "Colourways",
     icon: "Palette",
-    color: "#EC4899",
+    defaultColor: "#EC4899",
     types: ["colourway"],
     primaryType: "colourway",
   },
@@ -39,7 +44,7 @@ export const ANNOTATION_LAYERS: readonly AnnotationLayer[] = [
     key: "fabric",
     label: "Fabrics & Trim",
     icon: "Layers",
-    color: "#3B82F6",
+    defaultColor: "#3B82F6",
     types: ["fabric", "trim", "hardware", "elastic"],
     primaryType: "fabric",
   },
@@ -47,7 +52,7 @@ export const ANNOTATION_LAYERS: readonly AnnotationLayer[] = [
     key: "measurement",
     label: "Measurements",
     icon: "Ruler",
-    color: "#F59E0B",
+    defaultColor: "#F59E0B",
     types: ["measurement"],
     primaryType: "measurement",
   },
@@ -55,7 +60,7 @@ export const ANNOTATION_LAYERS: readonly AnnotationLayer[] = [
     key: "construction",
     label: "Construction",
     icon: "Hammer",
-    color: "#8B5CF6",
+    defaultColor: "#8B5CF6",
     types: ["construction_note", "stitch"],
     primaryType: "construction_note",
   },
@@ -69,9 +74,50 @@ export function layerForType(t: CanvasLayerType): AnnotationLayer | undefined {
   return ANNOTATION_LAYERS.find((layer) => layer.types.includes(t));
 }
 
+// ---- Workspace colour overrides ---------------------------------------------
+
+/**
+ * The workspace's per-layer marker colour overrides (workspaces.layer_colours):
+ * hex strings keyed by `LayerKey`, missing keys meaning "use the built-in
+ * default". Stored workspace-wide so markers look the same on every tech pack.
+ */
+export type LayerColourOverrides = Partial<Record<LayerKey, string>>;
+
+export const LAYER_COLOUR_HEX = /^#[0-9A-Fa-f]{6}$/;
+
+/**
+ * Narrow the raw `workspaces.layer_colours` jsonb into a typed override map,
+ * dropping unknown keys and anything that isn't a `#RRGGBB` string — a bad or
+ * legacy value can only ever degrade to the built-in default, never crash a
+ * render.
+ */
+export function parseLayerColours(raw: unknown): LayerColourOverrides {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const overrides: LayerColourOverrides = {};
+  for (const layer of ANNOTATION_LAYERS) {
+    const value = (raw as Record<string, unknown>)[layer.key];
+    if (typeof value === "string" && LAYER_COLOUR_HEX.test(value)) {
+      overrides[layer.key] = value.toUpperCase();
+    }
+  }
+  return overrides;
+}
+
+/** The marker colour for a layer: the workspace override, else the built-in. */
+export function resolveLayerColour(
+  key: LayerKey,
+  overrides: LayerColourOverrides,
+): string {
+  return overrides[key] ?? layerByKey(key).defaultColor;
+}
+
 /** The colour a pin of the given `layer_type` should render in. */
-export function colourForLayerType(t: CanvasLayerType): string {
-  return layerForType(t)?.color ?? FALLBACK_COLOR;
+export function resolveColourForLayerType(
+  t: CanvasLayerType,
+  overrides: LayerColourOverrides,
+): string {
+  const layer = layerForType(t);
+  return layer ? resolveLayerColour(layer.key, overrides) : FALLBACK_COLOR;
 }
 
 /** The layer config for a layer key (always defined for a valid key). */

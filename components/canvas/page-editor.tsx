@@ -10,6 +10,7 @@ import {
   Minus,
   Plus,
   RotateCcw,
+  Settings,
 } from "lucide-react";
 
 import { AnnotationListPanel } from "@/components/canvas/annotation-list-panel";
@@ -23,6 +24,13 @@ import {
 } from "@/components/canvas/layers";
 import { PageCanvas } from "@/components/canvas/page-canvas";
 import { PageThumbnailStrip } from "@/components/canvas/page-thumbnail-strip";
+import { LayerColoursEditor } from "@/components/settings/layer-colours-editor";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type {
   CanvasAnnotation,
   CanvasColourway,
@@ -96,6 +104,7 @@ export function PageEditor({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [stageZoom, setStageZoom] = useState(1);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [markerColoursOpen, setMarkerColoursOpen] = useState(false);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<
     string | null
   >(null);
@@ -312,6 +321,32 @@ export function PageEditor({
     </button>
   );
 
+  // Settings cog beside zoom/fullscreen: opens the SAME workspace marker-colour
+  // editor as the Settings tab, in a centered dialog, so colours can be tuned
+  // against the garment image in view — pins recolour live as values change.
+  const markerColoursButton = (
+    <button
+      type="button"
+      onClick={() => setMarkerColoursOpen(true)}
+      aria-label="Marker colour settings"
+      title="Marker colours"
+      className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
+    >
+      <Settings className="size-4" />
+    </button>
+  );
+
+  const markerColoursDialog = (
+    <Dialog open={markerColoursOpen} onOpenChange={setMarkerColoursOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Marker Colours</DialogTitle>
+        </DialogHeader>
+        <LayerColoursEditor />
+      </DialogContent>
+    </Dialog>
+  );
+
   const canvas = activePage ? (
     <PageCanvas
       page={activePage}
@@ -371,6 +406,7 @@ export function PageEditor({
           {layerButtons}
           <div className="ml-auto flex items-center gap-3">
             {zoomControls}
+            {markerColoursButton}
             <button
               type="button"
               onClick={onExitFullscreen}
@@ -397,6 +433,7 @@ export function PageEditor({
           {listPanel}
         </div>
         {picker}
+        {markerColoursDialog}
       </div>,
       document.body,
     );
@@ -411,6 +448,7 @@ export function PageEditor({
         {layerButtons}
         <div className="ml-auto flex items-center gap-3">
           {zoomControls}
+          {markerColoursButton}
           <button
             type="button"
             onClick={onToggleFullscreen}
@@ -438,6 +476,7 @@ export function PageEditor({
       </div>
 
       {picker}
+      {markerColoursDialog}
     </div>
   );
 }

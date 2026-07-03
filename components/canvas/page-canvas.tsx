@@ -26,8 +26,8 @@ import { sampleColourAtPoint } from "@/lib/colour-sample";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { MeasurementLinePin } from "@/components/canvas/measurement-line-pin";
 import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
+import { useLayerColours } from "@/components/canvas/layer-colours-context";
 import {
-  layerByKey,
   layerForType,
   readableTextOn,
   type LayerKey,
@@ -608,7 +608,7 @@ function DraftFabricPin({
   }) => void;
   onCancel: () => void;
 }) {
-  const color = layerByKey("fabric").color;
+  const color = useLayerColours().colourFor("fabric");
   return (
     <>
       {/* Pending-placement marker at the click point. The editor opens centered
@@ -694,7 +694,7 @@ function DraftColourwayPin({
   }) => void;
   onCancel: () => void;
 }) {
-  const color = layerByKey("colourway").color;
+  const color = useLayerColours().colourFor("colourway");
 
   // Draft state lives here — one level above the editor Dialog — so it survives
   // the Dialog fully closing during "Re-sample" (see useColourwayDraftFields).
@@ -800,7 +800,7 @@ function DraftConstructionPin({
   }) => void;
   onCancel: () => void;
 }) {
-  const color = layerByKey("construction").color;
+  const color = useLayerColours().colourFor("construction");
   return (
     <>
       {/* Pending-placement marker at the click point (see DraftFabricPin). */}
@@ -903,7 +903,7 @@ function AnnotationSlot({
     setMeasureDraft(null);
   }
 
-  const measureColor = layerByKey("measurement").color;
+  const measureColor = useLayerColours().colourFor("measurement");
 
   // Colour pick-mode: a DISTINCT flag (not reused draft/placement state) so a
   // re-sample click can never be mistaken for placing a new pin. When set, the

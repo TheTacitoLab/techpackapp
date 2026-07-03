@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -10,6 +10,11 @@ import {
   deleteLabel,
   updateLabel,
 } from "@/app/(app)/settings/actions";
+import {
+  ColorPicker,
+  HEX_COLOUR as HEX,
+  PRESET_COLORS,
+} from "@/components/color-picker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,76 +36,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label as FieldLabel } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import type { Label } from "@/types";
 
 type LabelWithUsage = Label & { usageCount: number };
-
-const PRESET_COLORS = [
-  "#C8F000",
-  "#FF6B6B",
-  "#60B4FF",
-  "#FFB347",
-  "#B47FFF",
-  "#4ECDC4",
-  "#FF85A1",
-  "#FF8C42",
-  "#94A3B8",
-  "#4ADE80",
-  "#F87171",
-  "#A855F7",
-] as const;
-
-const HEX = /^#[0-9A-Fa-f]{6}$/;
-
-function ColorPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (color: string) => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {PRESET_COLORS.map((color) => (
-          <button
-            key={color}
-            type="button"
-            onClick={() => onChange(color)}
-            aria-label={`Select colour ${color}`}
-            className={cn(
-              "relative size-7 cursor-pointer rounded-full border transition-transform hover:scale-110",
-              value.toLowerCase() === color.toLowerCase() &&
-                "ring-foreground ring-offset-background ring-2 ring-offset-2",
-            )}
-            style={{ backgroundColor: color }}
-          >
-            {value.toLowerCase() === color.toLowerCase() && (
-              <Check className="absolute inset-0 m-auto size-3.5 text-foreground/70" />
-            )}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          value={HEX.test(value) ? value : "#000000"}
-          onChange={(e) => onChange(e.target.value.toUpperCase())}
-          aria-label="Custom colour"
-          className="size-9 cursor-pointer rounded border bg-transparent p-0.5"
-        />
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="#C8F000"
-          className="w-32 font-mono uppercase"
-          maxLength={7}
-        />
-      </div>
-    </div>
-  );
-}
 
 function EditLabelDialog({
   label,

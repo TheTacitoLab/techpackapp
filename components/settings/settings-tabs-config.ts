@@ -1,6 +1,7 @@
 import {
   CreditCard,
   Library,
+  MapPin,
   Palette,
   Tag,
   type LucideIcon,
@@ -17,6 +18,7 @@ import {
 export const SETTINGS_TABS = [
   { key: "brands", label: "Brands", icon: Palette },
   { key: "labels", label: "Labels", icon: Tag },
+  { key: "markers", label: "Marker Colours", icon: MapPin },
   { key: "library", label: "Master Library", icon: Library },
   { key: "workspace", label: "Workspace", icon: CreditCard },
 ] as const satisfies readonly { key: string; label: string; icon: LucideIcon }[];

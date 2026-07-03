@@ -5,8 +5,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
+import { useLayerColours } from "@/components/canvas/layer-colours-context";
 import {
-  colourForLayerType,
   layerByKey,
   readableTextOn,
   type LayerKey,
@@ -220,7 +220,9 @@ function ListRow({
   onSelect: (id: string) => void;
 }) {
   const summary = getAnnotationSummary(annotation);
-  const color = colourForLayerType(annotation.layer_type);
+  // Live workspace colour — the row's code badge always matches the pins.
+  const { colourForType } = useLayerColours();
+  const color = colourForType(annotation.layer_type);
   return (
     <li>
       <button

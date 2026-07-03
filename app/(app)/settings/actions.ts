@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import type { LayerColourOverrides, LayerKey } from "@/components/canvas/layers";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { LibraryCategory } from "@/types";
 
@@ -66,6 +67,42 @@ export async function deleteLabel(id: string) {
 
   revalidatePath("/settings");
   revalidatePath("/products");
+}
+
+// ---- Layer marker colours ------------------------------------------------------
+
+const LAYER_KEYS = [
+  "colourway",
+  "fabric",
+  "measurement",
+  "construction",
+] as const satisfies readonly LayerKey[];
+
+// Partial on purpose: only overridden layers carry a key; a missing key means
+// "built-in default". The map REPLACES the stored one wholesale (tiny, always
+// saved together), so resetting a layer is just saving a map without its key.
+const layerColoursSchema = z.partialRecord(
+  z.enum(LAYER_KEYS),
+  z.string().regex(HEX, "Choose a valid hex colour."),
+);
+
+/**
+ * Replace the workspace's per-layer marker colour overrides. Goes through the
+ * `update_layer_colours` SECURITY DEFINER function (scoped to
+ * auth_workspace_id(), column-only) because RLS lets only the workspace OWNER
+ * update `workspaces` rows directly, while marker colours are a member-level
+ * preference — same trust level as labels. Revalidates the whole app: the
+ * colours appear on every product's canvas and in Settings.
+ */
+export async function updateLayerColours(colours: LayerColourOverrides) {
+  const clean = layerColoursSchema.parse(colours);
+  const { supabase } = await requireActionContext();
+  const { error } = await supabase.rpc("update_layer_colours", {
+    colours: clean,
+  });
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/", "layout");
 }
 
 // ---- Product ↔ label assignment ----------------------------------------------
