@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import type { LayerColourOverrides, LayerKey } from "@/components/canvas/layers";
+import {
+  ANNOTATION_LAYERS,
+  type LayerColourOverrides,
+  type LayerKey,
+} from "@/components/canvas/layers";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { LibraryCategory } from "@/types";
 
@@ -71,12 +75,12 @@ export async function deleteLabel(id: string) {
 
 // ---- Layer marker colours ------------------------------------------------------
 
-const LAYER_KEYS = [
-  "colourway",
-  "fabric",
-  "measurement",
-  "construction",
-] as const satisfies readonly LayerKey[];
+// Derived from ANNOTATION_LAYERS so a future layer can never silently be a
+// missing key here (the tuple cast is for z.enum, which wants a literal list).
+const LAYER_KEYS = ANNOTATION_LAYERS.map((l) => l.key) as [
+  LayerKey,
+  ...LayerKey[],
+];
 
 // Partial on purpose: only overridden layers carry a key; a missing key means
 // "built-in default". The map REPLACES the stored one wholesale (tiny, always

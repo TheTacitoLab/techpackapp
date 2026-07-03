@@ -1,15 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { updateLayerColours } from "@/app/(app)/settings/actions";
+import { isValidHex } from "@/components/canvas/colourway-data";
 import { LAYER_ICONS } from "@/components/canvas/layer-button";
 import { useLayerColours } from "@/components/canvas/layer-colours-context";
 import {
   ANNOTATION_LAYERS,
-  LAYER_COLOUR_HEX,
   type AnnotationLayer,
   type LayerColourOverrides,
   type LayerKey,
@@ -39,22 +39,41 @@ const SAVE_DEBOUNCE_MS = 600;
 export function LayerColoursEditor() {
   const { overrides, applyOverrides } = useLayerColours();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The map as it stood before the current unsaved burst — restored on failure.
-  const revertTo = useRef<LayerColourOverrides | null>(null);
+  // The save the pending timer will run — also flushed on unmount, so closing
+  // the canvas cog dialog mid-debounce still persists the edit (and a leaked
+  // late save can't race a later editor instance's newer one).
+  const pendingSave = useRef<(() => void) | null>(null);
+  // The last map known to be persisted (seeded with the mount-time server
+  // truth) — the ONLY safe revert target when a save fails; a mid-flight
+  // optimistic map may itself never have reached the server.
+  const lastPersisted = useRef(overrides);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      pendingSave.current?.();
+    };
+  }, []);
 
   function scheduleSave(next: LayerColourOverrides) {
-    revertTo.current ??= overrides;
     applyOverrides(next); // live: every pin/button/dot recolours right now
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    const run = () => {
       saveTimer.current = null;
-      const prev = revertTo.current ?? {};
-      revertTo.current = null;
-      void updateLayerColours(next).catch(() => {
-        toast.error("Could not save marker colours.");
-        applyOverrides(prev);
-      });
-    }, SAVE_DEBOUNCE_MS);
+      pendingSave.current = null;
+      void updateLayerColours(next)
+        .then(() => {
+          lastPersisted.current = next;
+        })
+        .catch(() => {
+          toast.error("Could not save marker colours.");
+          // Only yank the UI back when no newer edit is queued — a pending
+          // save supersedes this one and will settle state itself.
+          if (!saveTimer.current) applyOverrides(lastPersisted.current);
+        });
+    };
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    pendingSave.current = run;
+    saveTimer.current = setTimeout(run, SAVE_DEBOUNCE_MS);
   }
 
   function handleChange(key: LayerKey, hex: string) {
@@ -122,7 +141,7 @@ function LayerColourRow({
 
   function handlePick(next: string) {
     setDraft(next);
-    if (LAYER_COLOUR_HEX.test(next)) onChange(layer.key, next);
+    if (isValidHex(next)) onChange(layer.key, next);
   }
 
   return (
@@ -132,7 +151,14 @@ function LayerColourRow({
         {layer.label}
       </span>
 
-      <Popover>
+      {/* Re-seed the draft on open: an abandoned partial hex from a previous
+          visit must not survive into the next one (the native swatch would
+          show its #000000 fallback instead of the real current colour). */}
+      <Popover
+        onOpenChange={(open) => {
+          if (open) setDraft(resolved);
+        }}
+      >
         <PopoverTrigger asChild>
           <button
             type="button"

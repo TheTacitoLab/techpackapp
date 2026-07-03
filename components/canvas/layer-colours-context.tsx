@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import {
+  ANNOTATION_LAYERS,
   resolveColourForLayerType,
   resolveLayerColour,
   type LayerColourOverrides,
@@ -50,6 +51,14 @@ const LayerColoursContext = createContext<LayerColoursValue>({
   applyOverrides: () => {},
 });
 
+/** Key-wise equality — the map has at most one entry per layer. */
+function sameOverrides(
+  a: LayerColourOverrides,
+  b: LayerColourOverrides,
+): boolean {
+  return ANNOTATION_LAYERS.every((l) => a[l.key] === b[l.key]);
+}
+
 export function LayerColoursProvider({
   initial,
   children,
@@ -61,7 +70,12 @@ export function LayerColoursProvider({
   const [synced, setSynced] = useState(initial);
   if (initial !== synced) {
     setSynced(initial);
-    setLocal(initial);
+    // Content-aware resync: `initial` is a freshly parsed object on EVERY
+    // server render of the layout, so a reference change alone (any unrelated
+    // refresh/revalidation) must not clobber an optimistic edit whose
+    // debounced save hasn't landed yet. Only genuinely different server truth
+    // (our own save round-tripping, or another session's change) resyncs.
+    if (!sameOverrides(initial, local)) setLocal(initial);
   }
 
   const value = useMemo<LayerColoursValue>(

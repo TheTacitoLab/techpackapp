@@ -1,3 +1,4 @@
+import { isValidHex } from "@/components/canvas/colourway-data";
 import type { CanvasLayerType } from "@/types";
 
 /**
@@ -83,20 +84,18 @@ export function layerForType(t: CanvasLayerType): AnnotationLayer | undefined {
  */
 export type LayerColourOverrides = Partial<Record<LayerKey, string>>;
 
-export const LAYER_COLOUR_HEX = /^#[0-9A-Fa-f]{6}$/;
-
 /**
  * Narrow the raw `workspaces.layer_colours` jsonb into a typed override map,
- * dropping unknown keys and anything that isn't a `#RRGGBB` string — a bad or
- * legacy value can only ever degrade to the built-in default, never crash a
- * render.
+ * dropping unknown keys and anything that isn't a `#RRGGBB` string (the shared
+ * `isValidHex`) — a bad or legacy value can only ever degrade to the built-in
+ * default, never crash a render.
  */
 export function parseLayerColours(raw: unknown): LayerColourOverrides {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const overrides: LayerColourOverrides = {};
   for (const layer of ANNOTATION_LAYERS) {
     const value = (raw as Record<string, unknown>)[layer.key];
-    if (typeof value === "string" && LAYER_COLOUR_HEX.test(value)) {
+    if (typeof value === "string" && isValidHex(value)) {
       overrides[layer.key] = value.toUpperCase();
     }
   }
@@ -116,8 +115,10 @@ export function resolveColourForLayerType(
   t: CanvasLayerType,
   overrides: LayerColourOverrides,
 ): string {
+  // One scan: this is the hot path (every pin/line/list row resolves through
+  // it, and all of them at once whenever a colour changes).
   const layer = layerForType(t);
-  return layer ? resolveLayerColour(layer.key, overrides) : FALLBACK_COLOR;
+  return layer ? (overrides[layer.key] ?? layer.defaultColor) : FALLBACK_COLOR;
 }
 
 /** The layer config for a layer key (always defined for a valid key). */
