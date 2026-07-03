@@ -54,11 +54,17 @@ const DRAG_THRESHOLD_PX = 4;
 const DEFAULT_OFFSET_X = 0;
 const DEFAULT_OFFSET_Y = -0.04;
 
-// Keep a dragged badge inside the slot so it can never be flung off-screen and
-// become unreachable.
+// Keep a dragged badge inside the SLOT — the slot boundary is what the PDF
+// page box will bound, so a badge (it carries the reference code) outside it
+// would be lost on export. The offset is clamped so the badge's ABSOLUTE
+// position (tip + offset) stays within [0,1] on each axis, intersected with a
+// relative ±OFFSET_LIMIT so a badge can't wander a whole slot away from its
+// pin. Purely an interaction clamp: the offset→pixel mapping is unchanged.
 const OFFSET_LIMIT = 0.9;
-function clampOffset(value: number): number {
-  return Math.min(OFFSET_LIMIT, Math.max(-OFFSET_LIMIT, value));
+function clampBadgeOffset(tipFraction: number, desired: number): number {
+  const min = Math.max(-OFFSET_LIMIT, -tipFraction);
+  const max = Math.min(OFFSET_LIMIT, 1 - tipFraction);
+  return Math.min(max, Math.max(min, desired));
 }
 
 export type DragPoint = {
@@ -322,8 +328,8 @@ export function AnnotationPin({
     ({ dx, dy }) => {
       const rect = getSlotRect();
       if (!rect) return;
-      const offsetX = clampOffset(baseOffsetX + dx / rect.width);
-      const offsetY = clampOffset(baseOffsetY + dy / rect.height);
+      const offsetX = clampBadgeOffset(annotation.x, baseOffsetX + dx / rect.width);
+      const offsetY = clampBadgeOffset(annotation.y, baseOffsetY + dy / rect.height);
       const prevX = annotation.label_offset_x;
       const prevY = annotation.label_offset_y;
       onLabelOffsetChanged?.(annotation.id, offsetX, offsetY); // optimistic
@@ -360,8 +366,14 @@ export function AnnotationPin({
   if (badgeDrag.active) {
     const rect = getSlotRect();
     if (rect) {
-      offsetX = clampOffset(baseOffsetX + badgeDrag.active.dx / rect.width);
-      offsetY = clampOffset(baseOffsetY + badgeDrag.active.dy / rect.height);
+      offsetX = clampBadgeOffset(
+        annotation.x,
+        baseOffsetX + badgeDrag.active.dx / rect.width,
+      );
+      offsetY = clampBadgeOffset(
+        annotation.y,
+        baseOffsetY + badgeDrag.active.dy / rect.height,
+      );
     }
   }
   const badgeLeft = offsetX * slotWidth;

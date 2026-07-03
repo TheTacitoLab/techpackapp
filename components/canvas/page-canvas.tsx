@@ -32,6 +32,7 @@ import { sampleColourAtPoint } from "@/lib/colour-sample";
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { MeasurementLinePin } from "@/components/canvas/measurement-line-pin";
 import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import { useLayerColours } from "@/components/canvas/layer-colours-context";
 import {
   layerForType,
@@ -365,11 +366,44 @@ function FramingSlot({
   const containerRef = useRef<HTMLDivElement>(null);
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Natural image dimensions for the exact pan clamp (nullable: legacy assets
-  // without stored dimensions fall back to the old approximate clamp).
-  const naturalWidth = slot.asset?.width ?? null;
-  const naturalHeight = slot.asset?.height ?? null;
+  // Natural image dimensions for the exact pan clamp. Prefer the DECODED
+  // <img>'s intrinsic size (set onLoad) — the browser's ground truth, and the
+  // same source the colour sampler prefers — because the stored asset
+  // dimensions are legitimately null for files the upload flow couldn't
+  // decode (SVGs, legacy rows). Relying on the DB columns alone silently
+  // dropped those slots to the crude fallback clamp, which is what made
+  // cropped-off areas (a tall jersey's collar) unreachable in Fill mode.
+  const [decodedDims, setDecodedDims] = useState<{ w: number; h: number } | null>(
+    null,
+  );
+  const naturalWidth = decodedDims?.w ?? slot.asset?.width ?? null;
+  const naturalHeight = decodedDims?.h ?? slot.asset?.height ?? null;
   const initialFitMode = normaliseFitMode(slot.fit_mode);
+
+  /**
+   * The slot's box in LOCAL layout px plus the live on-screen scale factor.
+   * The whole page grid is scaled by `stageZoom` (a CSS transform), so
+   * `getBoundingClientRect()` returns SCREEN px while `crop_x/crop_y` apply
+   * INSIDE the scaled subtree in local px. Clamping must therefore use local
+   * px (offsetWidth/offsetHeight, which ignore transforms) and pointer deltas
+   * (screen px) must be divided by the scale — mixing the two shrank the
+   * reachable pan range at stage zoom < 1 (unreachable edges) and inflated it
+   * at > 1 (blank gaps in Fill), and made the image outrun the cursor.
+   */
+  const getLocalBox = useCallback((): {
+    w: number;
+    h: number;
+    scale: number;
+  } | null => {
+    const el = containerRef.current;
+    if (!el || el.offsetWidth <= 0 || el.offsetHeight <= 0) return null;
+    const rect = el.getBoundingClientRect();
+    return {
+      w: el.offsetWidth,
+      h: el.offsetHeight,
+      scale: rect.width / el.offsetWidth,
+    };
+  }, []);
 
   const [framing, setFraming] = useState<Framing>({
     x: slot.crop_x,
@@ -409,17 +443,15 @@ function FramingSlot({
 
   const applyZoom = useCallback(
     (nextZoom: number) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      const w = rect?.width ?? 0;
-      const h = rect?.height ?? 0;
+      const box = getLocalBox();
       const zoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
       const { fitMode } = framingRef.current;
       const { x, y } = clampPan(
         framingRef.current.x,
         framingRef.current.y,
         zoom,
-        w,
-        h,
+        box?.w ?? 0,
+        box?.h ?? 0,
         fitMode,
         naturalWidth,
         naturalHeight,
@@ -428,7 +460,7 @@ function FramingSlot({
       apply(next);
       persist(next);
     },
-    [apply, persist, naturalWidth, naturalHeight],
+    [apply, persist, getLocalBox, naturalWidth, naturalHeight],
   );
 
   // Switching the base fit changes what the current pan/zoom mean, so the
@@ -469,8 +501,10 @@ function FramingSlot({
   }, []);
 
   function handlePointerDown(e: React.PointerEvent<HTMLImageElement>) {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    // Captured once per drag: stage zoom can't change mid-drag (its controls
+    // are outside the pointer capture), so box + scale stay valid throughout.
+    const box = getLocalBox();
+    if (!box) return;
     const start = {
       px: e.clientX,
       py: e.clientY,
@@ -480,11 +514,11 @@ function FramingSlot({
     function move(ev: PointerEvent) {
       const { zoom, fitMode } = framingRef.current;
       const { x, y } = clampPan(
-        start.baseX + (ev.clientX - start.px),
-        start.baseY + (ev.clientY - start.py),
+        start.baseX + (ev.clientX - start.px) / box!.scale,
+        start.baseY + (ev.clientY - start.py) / box!.scale,
         zoom,
-        rect!.width,
-        rect!.height,
+        box!.w,
+        box!.h,
         fitMode,
         naturalWidth,
         naturalHeight,
@@ -548,6 +582,13 @@ function FramingSlot({
         src={slot.asset!.file_url}
         alt={slot.asset!.name}
         onPointerDown={handlePointerDown}
+        onLoad={(e) => {
+          // Ground-truth intrinsic size for the pan clamp (see decodedDims).
+          const el = e.currentTarget;
+          if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+            setDecodedDims({ w: el.naturalWidth, h: el.naturalHeight });
+          }
+        }}
         draggable={false}
         style={{
           position: "absolute",
@@ -975,6 +1016,10 @@ function AnnotationSlot({
   const overlayRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [unlockConfirm, setUnlockConfirm] = useState(false);
+  // Per-user "don't warn me about unlocking pinned slots" preference; the
+  // checkbox state is per-dialog-open and only persists on confirm.
+  const { hideUnlockWarning, setHideUnlockWarning } = useUserPreferences();
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isUnlocking, startUnlock] = useTransition();
   // A colourway draft carries the colour auto-sampled at its click point (or null
   // if sampling wasn't possible); other layers ignore `hex`.
@@ -1285,8 +1330,14 @@ function AnnotationSlot({
   }
 
   function handleUnlock() {
-    if (slot.annotations.length > 0) setUnlockConfirm(true);
-    else doUnlock();
+    // Warn only when there are pins to misalign AND the user hasn't opted out;
+    // a pin-free slot (or a dismissed warning) unlocks silently. Unlocking
+    // itself never clears or moves pins either way.
+    if (slot.annotations.length > 0 && !hideUnlockWarning) {
+      setUnlockConfirm(true);
+    } else {
+      doUnlock();
+    }
   }
 
   return (
@@ -1565,21 +1616,39 @@ function AnnotationSlot({
         </button>
       </div>
 
-      <AlertDialog open={unlockConfirm} onOpenChange={setUnlockConfirm}>
+      <AlertDialog
+        open={unlockConfirm}
+        onOpenChange={(open) => {
+          setUnlockConfirm(open);
+          if (!open) setDontShowAgain(false); // fresh checkbox per open
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Unlock this image?</AlertDialogTitle>
             <AlertDialogDescription>
-              Re-framing this image may misalign existing annotation pins. Unlock
-              anyway?
+              This slot has annotations. Re-framing the image may move them out
+              of position — you can drag them back into place afterwards.
+              Unlock anyway?
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={dontShowAgain}
+              onChange={(e) => setDontShowAgain(e.target.checked)}
+              className="accent-foreground size-4"
+            />
+            Don&apos;t show this again
+          </label>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isUnlocking}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={isUnlocking}
               onClick={(e) => {
                 e.preventDefault();
+                // Persist the opt-out only when the user actually proceeds.
+                if (dontShowAgain) setHideUnlockWarning(true);
                 doUnlock();
               }}
             >

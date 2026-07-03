@@ -4,6 +4,10 @@ import { AppShell } from "@/components/app-shell";
 import { BrandBootstrap } from "@/components/brand-bootstrap";
 import { LayerColoursProvider } from "@/components/canvas/layer-colours-context";
 import { parseLayerColours } from "@/components/canvas/layers";
+import {
+  UserPreferencesProvider,
+  parseUserPreferences,
+} from "@/components/user-preferences-context";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -28,18 +32,22 @@ export default async function AppLayout({
   ]);
 
   return (
-    // Workspace marker colours are provided app-wide (not per-canvas): the
-    // Settings tab and every product's canvas read/write the same live map.
+    // Workspace marker colours + per-user preferences are provided app-wide:
+    // Settings and every product's canvas read/write the same live values.
     <LayerColoursProvider initial={parseLayerColours(ctx.workspace?.layer_colours)}>
-      <BrandBootstrap brands={brands ?? []} />
-      <AppShell
-        user={ctx.user}
-        profile={ctx.profile}
-        workspace={ctx.workspace}
-        collections={collections ?? []}
+      <UserPreferencesProvider
+        initial={parseUserPreferences(ctx.profile.preferences)}
       >
-        {children}
-      </AppShell>
+        <BrandBootstrap brands={brands ?? []} />
+        <AppShell
+          user={ctx.user}
+          profile={ctx.profile}
+          workspace={ctx.workspace}
+          collections={collections ?? []}
+        >
+          {children}
+        </AppShell>
+      </UserPreferencesProvider>
     </LayerColoursProvider>
   );
 }

@@ -48,6 +48,7 @@ export type Database = {
           workspace_id: string;
           full_name: string | null;
           role: Database["public"]["Enums"]["user_role"];
+          preferences: Json;
           created_at: string;
         };
         Insert: {
@@ -55,6 +56,7 @@ export type Database = {
           workspace_id: string;
           full_name?: string | null;
           role?: Database["public"]["Enums"]["user_role"];
+          preferences?: Json;
           created_at?: string;
         };
         Update: {
@@ -62,6 +64,7 @@ export type Database = {
           workspace_id?: string;
           full_name?: string | null;
           role?: Database["public"]["Enums"]["user_role"];
+          preferences?: Json;
           created_at?: string;
         };
         Relationships: [];

@@ -73,6 +73,37 @@ export async function deleteLabel(id: string) {
   revalidatePath("/products");
 }
 
+// ---- Per-user preferences ------------------------------------------------------
+
+/**
+ * Set the current user's "hide the unlock-with-annotations warning" preference
+ * (profiles.preferences.hide_unlock_warning). Read-merge-write on the caller's
+ * OWN profile row — RLS (`profiles_update_self`) enforces the scoping; other
+ * preference keys are preserved.
+ */
+export async function setHideUnlockWarning(hidden: boolean) {
+  const clean = z.boolean().parse(hidden);
+  const { supabase, userId } = await requireActionContext();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("preferences")
+    .eq("id", userId)
+    .single();
+  const raw = profile?.preferences;
+  const base =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ preferences: { ...base, hide_unlock_warning: clean } })
+    .eq("id", userId);
+  if (error) throw new Error(error.message);
+
+  // The (app) layout reads the profile for the preferences provider.
+  revalidatePath("/", "layout");
+}
+
 // ---- Layer marker colours ------------------------------------------------------
 
 // Derived from ANNOTATION_LAYERS so a future layer can never silently be a
