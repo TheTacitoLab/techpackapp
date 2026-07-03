@@ -398,7 +398,8 @@ export async function fillSlot(slotId: string, assetId: string): Promise<void> {
   // Fresh placements default to FIT — for garment work, seeing the whole
   // image (letterboxed, never chopped) is the right starting point. Existing
   // slots are untouched: the column default is 'fill', so nothing already
-  // framed shifts by even a pixel.
+  // framed shifts by even a pixel. Lock dims clear with the lock itself —
+  // they describe the previous image's frozen framing, not this one.
   const { error } = await supabase
     .from("canvas_slots")
     .update({
@@ -408,6 +409,8 @@ export async function fillSlot(slotId: string, assetId: string): Promise<void> {
       zoom: 1,
       fit_mode: "fit",
       is_locked: false,
+      lock_width: null,
+      lock_height: null,
     })
     .eq("id", input.slotId);
   if (error) throw new Error(error.message);
@@ -449,28 +452,59 @@ export async function updateSlotFraming(
   revalidatePath(`/products/${productId}`);
 }
 
-/** Lock/unlock shared by the two exported actions below. */
-async function setSlotLock(slotId: string, locked: boolean): Promise<void> {
+const lockSlotSchema = z.object({
+  slotId: z.uuid(),
+  lockWidth: z.number().positive(),
+  lockHeight: z.number().positive(),
+});
+
+/**
+ * Lock a slot for annotating, capturing its CURRENT local rendered size (px)
+ * as the frozen design-space box. The framing pan (`crop_x/crop_y`) was
+ * authored in exactly this coordinate space, and every annotation fraction
+ * will be laid out in it too — the locked renderer draws image + pins inside
+ * a fixed `lock_width × lock_height` box and uniformly scales the whole box
+ * to the live container, so the two can never drift apart on resize.
+ */
+export async function lockSlot(
+  slotId: string,
+  lockWidth: number,
+  lockHeight: number,
+): Promise<void> {
+  const input = lockSlotSchema.parse({ slotId, lockWidth, lockHeight });
+  const { supabase, workspaceId } = await requireActionContext();
+  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+
+  const { error } = await supabase
+    .from("canvas_slots")
+    .update({
+      is_locked: true,
+      lock_width: input.lockWidth,
+      lock_height: input.lockHeight,
+    })
+    .eq("id", input.slotId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${productId}`);
+}
+
+/**
+ * Unlocks a slot to re-frame; existing annotations are NOT deleted. The lock
+ * dimensions are cleared — they are only meaningful for the framing frozen at
+ * lock time, and re-locking captures a fresh pair.
+ */
+export async function unlockSlot(slotId: string): Promise<void> {
   const { slotId: id } = z.object({ slotId: z.uuid() }).parse({ slotId });
   const { supabase, workspaceId } = await requireActionContext();
   const { productId } = await getSlotContext(supabase, id, workspaceId);
 
   const { error } = await supabase
     .from("canvas_slots")
-    .update({ is_locked: locked })
+    .update({ is_locked: false, lock_width: null, lock_height: null })
     .eq("id", id);
   if (error) throw new Error(error.message);
 
   revalidatePath(`/products/${productId}`);
-}
-
-export async function lockSlot(slotId: string): Promise<void> {
-  await setSlotLock(slotId, true);
-}
-
-/** Unlocks a slot to re-frame; existing annotations are NOT deleted. */
-export async function unlockSlot(slotId: string): Promise<void> {
-  await setSlotLock(slotId, false);
 }
 
 // ============================================================================

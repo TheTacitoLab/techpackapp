@@ -491,6 +491,8 @@ export type Database = {
           zoom: number;
           fit_mode: string;
           is_locked: boolean;
+          lock_width: number | null;
+          lock_height: number | null;
           created_at: string;
         };
         Insert: {
@@ -503,6 +505,8 @@ export type Database = {
           zoom?: number;
           fit_mode?: string;
           is_locked?: boolean;
+          lock_width?: number | null;
+          lock_height?: number | null;
           created_at?: string;
         };
         Update: {
@@ -515,6 +519,8 @@ export type Database = {
           zoom?: number;
           fit_mode?: string;
           is_locked?: boolean;
+          lock_width?: number | null;
+          lock_height?: number | null;
           created_at?: string;
         };
         Relationships: [];

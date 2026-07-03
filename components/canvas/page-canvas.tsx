@@ -607,12 +607,22 @@ function FramingSlot({
   }
 
   function doLock() {
+    // The frozen design-space box: this slot's LOCAL rendered size right now
+    // (offsetWidth/offsetHeight — pre-transform px, via getLocalBox). This is
+    // the exact coordinate space the pan clamp and drag math authored
+    // crop_x/crop_y in (see getLocalBox's doc above), so freezing it makes
+    // the framing numbers meaningful at every future container size.
+    const box = getLocalBox();
+    if (!box) {
+      toast.error("Could not lock the slot.");
+      return;
+    }
     startLock(async () => {
       try {
         if (writeTimer.current) clearTimeout(writeTimer.current);
         const f = framingRef.current;
         await updateSlotFraming(slot.id, f.x, f.y, f.zoom, f.fitMode);
-        await lockSlot(slot.id);
+        await lockSlot(slot.id, box.w, box.h);
         setLockConfirm(false);
         router.refresh();
       } catch (err) {
@@ -1169,6 +1179,10 @@ function AnnotationSlot({
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
   const router = useRouter();
+  // Live slot-container box (for the design-box scale) vs the click/fraction
+  // overlay INSIDE the scaled design box (for pin coordinates) — two elements,
+  // two refs, deliberately not shared: the overlay's local size is frozen.
+  const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   // Decoded intrinsic size for the unclipped painted-box rendering (same
@@ -1230,9 +1244,11 @@ function AnnotationSlot({
     resolve: (hex: string | null | undefined) => void;
   } | null>(null);
 
-  // Track the slot's rendered size so pins position from live fractions.
+  // Track the slot CONTAINER's live size. Since the frozen design-space box
+  // (0025), this no longer sizes the annotation layout — it only drives the
+  // uniform scale `k` that fits the frozen box into the container.
   useEffect(() => {
-    const el = overlayRef.current;
+    const el = containerRef.current;
     if (!el) return;
     const update = () =>
       setSize({ width: el.offsetWidth, height: el.offsetHeight });
@@ -1242,13 +1258,36 @@ function AnnotationSlot({
     return () => observer.disconnect();
   }, []);
 
+  // ---- Frozen design-space box (the resize-drift fix, 0025) -----------------
+  // The locked layout is laid out at the slot's LOCK-TIME size — the exact
+  // local-px space the framing pan was authored in — and scaled to the live
+  // container as ONE UNIT. Pins (`fraction × design size`) and the garment
+  // (base-fit + px pan against the design size) therefore share a coordinate
+  // space that never changes; a container resize (fullscreen portal swap,
+  // smaller dashboard render) only changes the uniform `k`, the same
+  // proven-shift-free mechanism as stageZoom. The nullable columns fall back
+  // to the live size (k = 1) — exactly the pre-0025 behaviour — though after
+  // the 0025 reset every locked slot records its dims.
+  const designW = slot.lock_width ?? size.width;
+  const designH = slot.lock_height ?? size.height;
+  // Contain-fit, centred: uniform (aspect preserved), never clipped. The live
+  // box normally matches the design box's aspect (the same grid layout
+  // produced both), but fullscreen/dashboard renders can differ — any gutters
+  // are honest letterboxing of the frozen design space.
+  const k =
+    designW > 0 && designH > 0 && size.width > 0 && size.height > 0
+      ? Math.min(size.width / designW, size.height / designH)
+      : 0;
+  const boxLeft = (size.width - designW * k) / 2;
+  const boxTop = (size.height - designH * k) / 2;
+
   // Sample the true image colour at a 0–1 slot coordinate, via the shared
   // sampler that mirrors the display transform. Returns null (→ manual entry)
   // when the asset is missing, the slot isn't measured yet, or CORS blocks the read.
   const sampleAt = useCallback(
     async (xFraction: number, yFraction: number): Promise<string | null> => {
       const asset = slot.asset;
-      if (!asset || size.width === 0 || size.height === 0) return null;
+      if (!asset || designW === 0 || designH === 0) return null;
       return sampleColourAtPoint(
         { file_url: asset.file_url, width: asset.width, height: asset.height },
         {
@@ -1257,8 +1296,8 @@ function AnnotationSlot({
           zoom: slot.zoom,
           fit_mode: slot.fit_mode,
         },
-        size.width,
-        size.height,
+        designW,
+        designH,
         xFraction,
         yFraction,
       );
@@ -1269,8 +1308,8 @@ function AnnotationSlot({
       slot.crop_y,
       slot.zoom,
       slot.fit_mode,
-      size.width,
-      size.height,
+      designW,
+      designH,
     ],
   );
 
@@ -1324,8 +1363,8 @@ function AnnotationSlot({
     const draft = measureDraft;
     if (!draft) return;
     const px = Math.hypot(
-      (endX - draft.startX) * size.width,
-      (endY - draft.startY) * size.height,
+      (endX - draft.startX) * designW,
+      (endY - draft.startY) * designH,
     );
     if (px < 4) return;
     setMeasureDraft(null);
@@ -1507,7 +1546,28 @@ function AnnotationSlot({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-xl" style={{ height: "100%" }}>
+    <div
+      ref={containerRef}
+      className="relative overflow-hidden rounded-xl"
+      style={{ height: "100%" }}
+    >
+      {/* The frozen design-space box: image, pins, drafts and capture
+          overlays all live in LOCK-TIME coordinates and scale together as one
+          unit — so nothing inside can drift relative to anything else at any
+          container size. Slot chrome (toolbar, mode banners) stays outside,
+          unscaled; editor dialogs portal to document.body so an ancestor
+          transform never affects them. */}
+      <div
+        className="absolute"
+        style={{
+          left: boxLeft,
+          top: boxTop,
+          width: designW,
+          height: designH,
+          transform: `scale(${k})`,
+          transformOrigin: "top left",
+        }}
+      >
       {/* Frozen image at the locked framing — unclipped painted box so large
           locked pans render fully (and exactly as the sampler models them). */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1524,8 +1584,8 @@ function AnnotationSlot({
           ...(paintedImageStyle(
             decodedDims?.w ?? slot.asset?.width ?? null,
             decodedDims?.h ?? slot.asset?.height ?? null,
-            size.width,
-            size.height,
+            designW,
+            designH,
             slot.crop_x,
             slot.crop_y,
             slot.zoom,
@@ -1558,8 +1618,8 @@ function AnnotationSlot({
           <MeasurementLinePin
             key={annotation.id}
             annotation={annotation}
-            slotWidth={size.width}
-            slotHeight={size.height}
+            slotWidth={designW}
+            slotHeight={designH}
             interactive={
               layerForType(annotation.layer_type)?.key === activeLayerKey
             }
@@ -1578,8 +1638,8 @@ function AnnotationSlot({
           <AnnotationPin
             key={annotation.id}
             annotation={annotation}
-            slotWidth={size.width}
-            slotHeight={size.height}
+            slotWidth={designW}
+            slotHeight={designH}
             interactive={
               layerForType(annotation.layer_type)?.key === activeLayerKey
             }
@@ -1605,8 +1665,8 @@ function AnnotationSlot({
         <DraftFabricPin
           x={draftPoint.x}
           y={draftPoint.y}
-          slotWidth={size.width}
-          slotHeight={size.height}
+          slotWidth={designW}
+          slotHeight={designH}
           slotId={slot.id}
           libraryItems={libraryItems}
           onCreated={handleDraftCreated}
@@ -1618,8 +1678,8 @@ function AnnotationSlot({
         <DraftConstructionPin
           x={draftPoint.x}
           y={draftPoint.y}
-          slotWidth={size.width}
-          slotHeight={size.height}
+          slotWidth={designW}
+          slotHeight={designH}
           slotId={slot.id}
           libraryItems={libraryItems}
           onCreated={handleDraftCreated}
@@ -1631,8 +1691,8 @@ function AnnotationSlot({
         <DraftBrandingLabelPin
           x={draftPoint.x}
           y={draftPoint.y}
-          slotWidth={size.width}
-          slotHeight={size.height}
+          slotWidth={designW}
+          slotHeight={designH}
           slotId={slot.id}
           libraryItems={libraryItems}
           onCreated={handleDraftCreated}
@@ -1644,8 +1704,8 @@ function AnnotationSlot({
         <DraftColourwayPin
           x={draftPoint.x}
           y={draftPoint.y}
-          slotWidth={size.width}
-          slotHeight={size.height}
+          slotWidth={designW}
+          slotHeight={designH}
           slotId={slot.id}
           productId={productId}
           initialHex={draftPoint.hex}
@@ -1694,10 +1754,10 @@ function AnnotationSlot({
             className="pointer-events-none absolute inset-0 z-30 h-full w-full overflow-visible"
           >
             <line
-              x1={measureDraft.startX * size.width}
-              y1={measureDraft.startY * size.height}
-              x2={measureDraft.cursorX * size.width}
-              y2={measureDraft.cursorY * size.height}
+              x1={measureDraft.startX * designW}
+              y1={measureDraft.startY * designH}
+              x2={measureDraft.cursorX * designW}
+              y2={measureDraft.cursorY * designH}
               stroke={measureColor}
               strokeWidth={2}
               strokeDasharray="6 5"
@@ -1705,26 +1765,14 @@ function AnnotationSlot({
               opacity={0.85}
             />
             <circle
-              cx={measureDraft.startX * size.width}
-              cy={measureDraft.startY * size.height}
+              cx={measureDraft.startX * designW}
+              cy={measureDraft.startY * designH}
               r={3.5}
               fill={measureColor}
               stroke="#ffffff"
               strokeWidth={1.5}
             />
           </svg>
-          <div className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center px-2">
-            <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white shadow-lg">
-              <span>Click to set the end point of the measurement</span>
-              <button
-                type="button"
-                onClick={() => setMeasureDraft(null)}
-                className="font-medium underline underline-offset-2"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
         </>
       )}
 
@@ -1776,42 +1824,66 @@ function AnnotationSlot({
           an unobtrusive banner. Distinct from the place-a-pin overlay, so the two
           interactions can't be confused. */}
       {pickMode && (
-        <>
-          <div
-            className="absolute inset-0 z-30 cursor-crosshair"
-            onClick={handleSampleClick}
-            data-colour-pick="true"
-          />
-          <div className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center px-2">
-            <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white shadow-lg">
-              <span>Click anywhere on the image to sample that colour</span>
-              <button
-                type="button"
-                onClick={cancelPickMode}
-                className="font-medium underline underline-offset-2"
-              >
-                Cancel
-              </button>
-            </div>
+        <div
+          className="absolute inset-0 z-30 cursor-crosshair"
+          onClick={handleSampleClick}
+          data-colour-pick="true"
+        />
+      )}
+      </div>
+
+      {/* Mode banners — slot-level chrome, outside the scaled design box so
+          they never shrink or grow with k; as later siblings they sit above
+          the box, exactly as they sat above the capture layers before. */}
+      {measureDraft && (
+        <div className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center px-2">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white shadow-lg">
+            <span>Click to set the end point of the measurement</span>
+            <button
+              type="button"
+              onClick={() => setMeasureDraft(null)}
+              className="font-medium underline underline-offset-2"
+            >
+              Cancel
+            </button>
           </div>
-        </>
+        </div>
+      )}
+      {pickMode && (
+        <div className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center px-2">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white shadow-lg">
+            <span>Click anywhere on the image to sample that colour</span>
+            <button
+              type="button"
+              onClick={cancelPickMode}
+              className="font-medium underline underline-offset-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Toolbar */}
-      <div className="absolute top-2 right-2 flex items-center gap-2">
-        <span className="rounded-md bg-black/50 px-2 py-1 text-xs text-white">
-          Annotation mode
-        </span>
-        <button
-          type="button"
-          onClick={handleUnlock}
-          disabled={isUnlocking}
-          title="Unlock to re-frame"
-          className="text-foreground rounded-md bg-white/90 px-2 py-1 text-xs transition-colors hover:bg-white disabled:opacity-60"
-        >
-          {isUnlocking ? "Unlocking…" : "Unlock"}
-        </button>
-      </div>
+      {/* Toolbar — hidden while a capture mode is active. The capture layer
+          used to cover the whole slot (including this chrome); now that it is
+          scoped to the design box, hiding the toolbar preserves the exact
+          "the next click cannot hit slot chrome" behaviour. */}
+      {!measureDraft && !pickMode && (
+        <div className="absolute top-2 right-2 flex items-center gap-2">
+          <span className="rounded-md bg-black/50 px-2 py-1 text-xs text-white">
+            Annotation mode
+          </span>
+          <button
+            type="button"
+            onClick={handleUnlock}
+            disabled={isUnlocking}
+            title="Unlock to re-frame"
+            className="text-foreground rounded-md bg-white/90 px-2 py-1 text-xs transition-colors hover:bg-white disabled:opacity-60"
+          >
+            {isUnlocking ? "Unlocking…" : "Unlock"}
+          </button>
+        </div>
+      )}
 
       <AlertDialog
         open={unlockConfirm}
