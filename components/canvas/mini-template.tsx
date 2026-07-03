@@ -45,10 +45,12 @@ export function MiniTemplate({
               className="size-full"
               style={{
                 // Mirror the slot's fit mode so a letterboxed ('fit') slot is
-                // recognisable in the thumbnail too, not cropped differently.
+                // recognisable in the thumbnail. Deliberately NO crop/zoom
+                // transform here: crop_x/crop_y are SLOT-local pixels, which
+                // are meaningless in a ~90px thumb (a deep pan used to shove
+                // the image right out of the thumbnail, leaving it blank).
+                // The mini identifies WHICH image is placed, not its framing.
                 objectFit: slotImageObjectFit(normaliseFitMode(slot.fit_mode)),
-                transform: `translate(${slot.crop_x}px, ${slot.crop_y}px) scale(${slot.zoom})`,
-                transformOrigin: "center",
               }}
               draggable={false}
             />

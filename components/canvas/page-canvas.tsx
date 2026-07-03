@@ -24,6 +24,7 @@ import { clientToFraction } from "@/components/canvas/coords";
 import {
   displayedImageRect,
   normaliseFitMode,
+  slotImageBaseScale,
   slotImageCssTransform,
   slotImageObjectFit,
   type SlotFitMode,
@@ -347,6 +348,62 @@ function EmptySlot({
   );
 }
 
+/**
+ * Style for a slot image painted UNCLIPPED at its base-fit size: an explicit
+ * `natural × baseScale` box centred in the slot, then the framing transform.
+ *
+ * Why not `object-fit` + `width/height: 100%`: object-fit CLIPS the painted
+ * image to the element's box BEFORE the CSS transform applies, so a pan larger
+ * than `box×(zoom−1)/2` drags the clipped box (blank space behind it) out of
+ * the slot — which is exactly what made far image regions impossible to reach
+ * in Fill mode. With an explicit painted-size box there is nothing to clip:
+ * the on-screen paint equals the shared affine model (`slotSampleTransform`)
+ * at EVERY crop/zoom, the slot's own `overflow-hidden` does the only cropping,
+ * and the full extent of the image is genuinely renddered when panned to.
+ *
+ * The element's centre (pre-transform) coincides with the slot centre, so the
+ * `scale(zoom)` about the element centre is the same "about the box centre"
+ * the sampler's derivation assumes — the affine is unchanged, only clipping
+ * semantics differ. Returns null when the box or natural size isn't known yet
+ * (first paint); callers fall back to the object-fit rendering, which is
+ * visually identical within small crops.
+ */
+function paintedImageStyle(
+  naturalWidth: number | null,
+  naturalHeight: number | null,
+  boxWidth: number,
+  boxHeight: number,
+  cropX: number,
+  cropY: number,
+  zoom: number,
+  fitMode: SlotFitMode,
+): React.CSSProperties | null {
+  if (!naturalWidth || !naturalHeight || boxWidth <= 0 || boxHeight <= 0) {
+    return null;
+  }
+  const base = slotImageBaseScale(
+    naturalWidth,
+    naturalHeight,
+    boxWidth,
+    boxHeight,
+    fitMode,
+  );
+  const paintedW = naturalWidth * base;
+  const paintedH = naturalHeight * base;
+  return {
+    position: "absolute",
+    left: (boxWidth - paintedW) / 2,
+    top: (boxHeight - paintedH) / 2,
+    width: paintedW,
+    height: paintedH,
+    // Tailwind preflight sets img { max-width: 100% } — must not rescale the
+    // explicit painted box.
+    maxWidth: "none",
+    transform: slotImageCssTransform(cropX, cropY, zoom),
+    transformOrigin: "center",
+  };
+}
+
 // ---- Framing slot (filled, unlocked) ----------------------------------------
 
 type Framing = { x: number; y: number; zoom: number; fitMode: SlotFitMode };
@@ -379,6 +436,20 @@ function FramingSlot({
   const naturalWidth = decodedDims?.w ?? slot.asset?.width ?? null;
   const naturalHeight = decodedDims?.h ?? slot.asset?.height ?? null;
   const initialFitMode = normaliseFitMode(slot.fit_mode);
+
+  // Local (untransformed) slot size for the explicit painted-size rendering —
+  // offsetWidth/offsetHeight and ResizeObserver both report pre-transform px.
+  const [localSize, setLocalSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () =>
+      setLocalSize({ width: el.offsetWidth, height: el.offsetHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   /**
    * The slot's box in LOCAL layout px plus the live on-screen scale factor.
@@ -591,12 +662,24 @@ function FramingSlot({
         }}
         draggable={false}
         style={{
-          position: "absolute",
-          transform: slotImageCssTransform(framing.x, framing.y, framing.zoom),
-          transformOrigin: "center",
-          width: "100%",
-          height: "100%",
-          objectFit: slotImageObjectFit(framing.fitMode),
+          ...(paintedImageStyle(
+            naturalWidth,
+            naturalHeight,
+            localSize.width,
+            localSize.height,
+            framing.x,
+            framing.y,
+            framing.zoom,
+            framing.fitMode,
+          ) ?? {
+            // Pre-measure / unknown-dims fallback: identical within small crops.
+            position: "absolute",
+            transform: slotImageCssTransform(framing.x, framing.y, framing.zoom),
+            transformOrigin: "center",
+            width: "100%",
+            height: "100%",
+            objectFit: slotImageObjectFit(framing.fitMode),
+          }),
           cursor: "grab",
           userSelect: "none",
           touchAction: "none",
@@ -1015,6 +1098,11 @@ function AnnotationSlot({
   const router = useRouter();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  // Decoded intrinsic size for the unclipped painted-box rendering (same
+  // ground-truth-over-DB-columns chain as FramingSlot / the sampler).
+  const [decodedDims, setDecodedDims] = useState<{ w: number; h: number } | null>(
+    null,
+  );
   const [unlockConfirm, setUnlockConfirm] = useState(false);
   // Per-user "don't warn me about unlocking pinned slots" preference; the
   // checkbox state is per-dialog-open and only persists on confirm.
@@ -1342,18 +1430,36 @@ function AnnotationSlot({
 
   return (
     <div className="relative overflow-hidden rounded-xl" style={{ height: "100%" }}>
-      {/* Frozen image at the locked framing */}
+      {/* Frozen image at the locked framing — unclipped painted box so large
+          locked pans render fully (and exactly as the sampler models them). */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={slot.asset!.file_url}
         alt={slot.asset!.name}
+        onLoad={(e) => {
+          const el = e.currentTarget;
+          if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+            setDecodedDims({ w: el.naturalWidth, h: el.naturalHeight });
+          }
+        }}
         style={{
-          position: "absolute",
-          transform: slotImageCssTransform(slot.crop_x, slot.crop_y, slot.zoom),
-          transformOrigin: "center",
-          width: "100%",
-          height: "100%",
-          objectFit: slotImageObjectFit(normaliseFitMode(slot.fit_mode)),
+          ...(paintedImageStyle(
+            decodedDims?.w ?? slot.asset?.width ?? null,
+            decodedDims?.h ?? slot.asset?.height ?? null,
+            size.width,
+            size.height,
+            slot.crop_x,
+            slot.crop_y,
+            slot.zoom,
+            normaliseFitMode(slot.fit_mode),
+          ) ?? {
+            position: "absolute",
+            transform: slotImageCssTransform(slot.crop_x, slot.crop_y, slot.zoom),
+            transformOrigin: "center",
+            width: "100%",
+            height: "100%",
+            objectFit: slotImageObjectFit(normaliseFitMode(slot.fit_mode)),
+          }),
           pointerEvents: "none",
         }}
       />

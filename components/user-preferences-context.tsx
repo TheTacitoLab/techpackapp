@@ -10,27 +10,17 @@ import {
 import { toast } from "sonner";
 
 import { setHideUnlockWarning as persistHideUnlockWarning } from "@/app/(app)/settings/actions";
+import type { UserPreferences } from "@/lib/user-preferences";
 
 /**
  * Per-user UI preferences (profiles.preferences), provided app-wide from the
  * `(app)` layout — the same optimistic pattern as `LayerColoursProvider`, so
  * the canvas unlock dialog and the Settings toggle read/write ONE live value.
  * First (and so far only) preference: hiding the unlock-with-annotations
- * warning.
+ * warning. The shape + jsonb parser live in `lib/user-preferences.ts` so the
+ * SERVER layout can parse the seed value (client-module exports can't be
+ * called from the server).
  */
-export type UserPreferences = {
-  hideUnlockWarning: boolean;
-};
-
-/** Narrow the raw profiles.preferences jsonb; anything malformed → defaults. */
-export function parseUserPreferences(raw: unknown): UserPreferences {
-  const obj =
-    raw && typeof raw === "object" && !Array.isArray(raw)
-      ? (raw as Record<string, unknown>)
-      : {};
-  return { hideUnlockWarning: obj.hide_unlock_warning === true };
-}
-
 interface UserPreferencesValue extends UserPreferences {
   /** Optimistically apply + persist; reverts (with a toast) on failure. */
   setHideUnlockWarning: (hidden: boolean) => void;

@@ -4,11 +4,9 @@ import { AppShell } from "@/components/app-shell";
 import { BrandBootstrap } from "@/components/brand-bootstrap";
 import { LayerColoursProvider } from "@/components/canvas/layer-colours-context";
 import { parseLayerColours } from "@/components/canvas/layers";
-import {
-  UserPreferencesProvider,
-  parseUserPreferences,
-} from "@/components/user-preferences-context";
+import { UserPreferencesProvider } from "@/components/user-preferences-context";
 import { getCurrentUser } from "@/lib/supabase/auth";
+import { parseUserPreferences } from "@/lib/user-preferences";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
