@@ -83,30 +83,42 @@ type PendingUpload = {
 function AssetTile({
   asset,
   inUse,
+  onPreview,
   onRename,
   onDelete,
 }: {
   asset: ProductAsset;
   inUse: boolean;
+  onPreview: (asset: ProductAsset) => void;
   onRename: (asset: ProductAsset) => void;
   onDelete: (asset: ProductAsset) => void;
 }) {
   return (
     <div className="group">
       <div className="bg-muted border-border relative aspect-[3/4] overflow-hidden rounded-lg border">
-        {/* Plain <img>: the file_url is a signed URL for the private bucket, so
-            next/image (which would need remotePatterns) buys us nothing here. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={asset.file_url}
-          alt={asset.name}
-          className="size-full object-cover"
-        />
+        {/* The image itself is the preview trigger. The three-dot menu is a
+            SIBLING layered above it, so a menu click can never fall through to
+            the preview — the lightbox opens only from the picture. */}
+        <button
+          type="button"
+          onClick={() => onPreview(asset)}
+          aria-label={`Preview ${asset.name}`}
+          className="focus-visible:ring-ring block size-full cursor-zoom-in outline-none focus-visible:ring-2"
+        >
+          {/* Plain <img>: the file_url is a signed URL for the private bucket, so
+              next/image (which would need remotePatterns) buys us nothing here. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={asset.file_url}
+            alt={asset.name}
+            className="size-full object-cover"
+          />
+        </button>
 
         {inUse && (
           <Badge
             variant="secondary"
-            className="absolute top-1.5 left-1.5 shadow-sm"
+            className="pointer-events-none absolute top-1.5 left-1.5 shadow-sm"
           >
             In use
           </Badge>
@@ -119,6 +131,9 @@ function AssetTile({
               size="icon"
               className="absolute top-1.5 right-1.5 size-7 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               aria-label={`Actions for ${asset.name}`}
+              // Belt-and-braces: even if this trigger is ever nested inside the
+              // preview target, its clicks stay in the menu.
+              onClick={(e) => e.stopPropagation()}
             >
               <MoreHorizontal className="size-4" />
             </Button>
@@ -143,6 +158,45 @@ function AssetTile({
         {asset.name}
       </p>
     </div>
+  );
+}
+
+// ---- Preview lightbox ---------------------------------------------------------
+
+/**
+ * Click-to-preview: the full image at its natural aspect ratio (object-contain
+ * — never cropped, unlike the deliberately-cropped grid thumbnail), centered in
+ * a large image-first Dialog. Closes on backdrop click, the X, or Escape — all
+ * standard Dialog behaviour. Identification only: no zoom/pan/edit tools.
+ */
+function AssetPreviewDialog({
+  asset,
+  onOpenChange,
+}: {
+  asset: ProductAsset | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={asset !== null} onOpenChange={onOpenChange}>
+      <DialogContent
+        aria-describedby={undefined}
+        className="w-fit max-w-[92vw] gap-3 p-3 sm:max-w-[92vw]"
+      >
+        <DialogHeader className="pr-8">
+          <DialogTitle className="truncate text-sm font-medium">
+            {asset?.name}
+          </DialogTitle>
+        </DialogHeader>
+        {asset && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={asset.file_url}
+            alt={asset.name}
+            className="max-h-[82vh] max-w-[88vw] rounded-md object-contain"
+          />
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -340,6 +394,7 @@ export function AssetLibrary({
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingUpload[]>([]);
+  const [previewTarget, setPreviewTarget] = useState<ProductAsset | null>(null);
   const [renameTarget, setRenameTarget] = useState<ProductAsset | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProductAsset | null>(null);
 
@@ -416,7 +471,11 @@ export function AssetLibrary({
 
       <div className="mt-4">
         {hasContent ? (
-          <div className="grid grid-cols-3 gap-3">
+          // auto-fill keeps every tile the SAME fixed shape (aspect-[3/4] —
+          // garment flats are mostly portrait) while the column count adapts to
+          // the card width: compact, dense and uniform instead of three huge
+          // columns on wide screens.
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3">
             {pending.map((upload) => (
               <PendingTile
                 key={upload.tempId}
@@ -429,6 +488,7 @@ export function AssetLibrary({
                 key={asset.id}
                 asset={asset}
                 inUse={usedAssetIds.has(asset.id)}
+                onPreview={setPreviewTarget}
                 onRename={setRenameTarget}
                 onDelete={setDeleteTarget}
               />
@@ -449,6 +509,10 @@ export function AssetLibrary({
         )}
       </div>
 
+      <AssetPreviewDialog
+        asset={previewTarget}
+        onOpenChange={(open) => !open && setPreviewTarget(null)}
+      />
       <RenameDialog
         asset={renameTarget}
         onOpenChange={(open) => !open && setRenameTarget(null)}
