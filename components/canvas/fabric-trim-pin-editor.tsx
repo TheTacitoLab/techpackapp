@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,11 +17,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { FabricPicker } from "@/components/fabric-picker";
 import {
+  LibraryQuickAddForm,
+  useInlineAddedLibraryItems,
+} from "@/components/library-quick-add-form";
+import {
   FABRIC_FAMILY_LABEL,
   FABRIC_FAMILY_LIBRARY_CATEGORIES,
   TRIM_KINDS,
   TRIM_KIND_LABEL,
   fabricTrimDataFromLibraryItem,
+  libraryCategoryForTrimKind,
   libraryColourOptions,
   libraryItemSummaryLine,
   readFabricTrimData,
@@ -85,7 +89,11 @@ export function FabricTrimPinEditor(
       }
   ),
 ) {
-  const { libraryItems } = props;
+  // Server-passed library merged with anything added inline this session, so
+  // a just-created item is selectable before router.refresh() catches up.
+  const { items: libraryItems, registerCreated } = useInlineAddedLibraryItems(
+    props.libraryItems,
+  );
 
   const initial: FabricTrimAnnotationData =
     props.mode === "edit"
@@ -135,6 +143,12 @@ export function FabricTrimPinEditor(
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // Inline "add to library" sub-view: non-null while open, carrying the
+  // picker's search text to pre-fill the new item's name. The sub-view swaps
+  // this component's RENDER only — the component (and every in-progress pin
+  // field above) stays mounted, so the detour loses nothing.
+  const [inlineAddName, setInlineAddName] = useState<string | null>(null);
 
   // The Trim family's picker spans every trim-ish library category (trim +
   // fastener + elastic) in one searchable list — the Master Library keeps its
@@ -226,6 +240,24 @@ export function FabricTrimPinEditor(
     }
   }
 
+  if (inlineAddName !== null) {
+    return (
+      <LibraryQuickAddForm
+        categories={FABRIC_FAMILY_LIBRARY_CATEGORIES[subType]}
+        defaultCategory={
+          subType === "trim" ? libraryCategoryForTrimKind(trimKind) : "fabric"
+        }
+        initialName={inlineAddName}
+        onCreated={(item) => {
+          registerCreated(item);
+          handlePickLibraryItem(item.id, item);
+          setInlineAddName(null);
+        }}
+        onCancel={() => setInlineAddName(null)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       {props.mode === "create" && (
@@ -289,18 +321,10 @@ export function FabricTrimPinEditor(
           summaryLine={libraryItemSummaryLine}
           placeholder={`Select a ${FABRIC_FAMILY_LABEL[subType].toLowerCase()}…`}
           emptyMessage={
-            <>
-              No {FABRIC_FAMILY_LABEL[subType].toLowerCase()}s in your library
-              yet — add one in{" "}
-              <Link
-                href="/settings?tab=library"
-                className="text-foreground font-medium underline underline-offset-2"
-              >
-                Settings → Master Library
-              </Link>
-              .
-            </>
+            <>No {FABRIC_FAMILY_LABEL[subType].toLowerCase()}s in your library yet.</>
           }
+          onCreateNew={setInlineAddName}
+          createLabel={`Add new ${FABRIC_FAMILY_LABEL[subType].toLowerCase()} to library`}
         />
       </div>
 

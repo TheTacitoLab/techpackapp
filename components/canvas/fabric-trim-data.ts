@@ -81,6 +81,20 @@ export function trimKindFromLibraryCategory(
   return null;
 }
 
+/**
+ * The inverse, for the inline "add to library" flow: which library category a
+ * NEW item should default to, given the trim kind already chosen on the pin.
+ * Fastener/elastic kinds have their own categories; binding/drawcord/other
+ * (or no kind yet) are plain trims.
+ */
+export function libraryCategoryForTrimKind(
+  kind: TrimKind | null,
+): LibraryCategory {
+  if (kind === "fastener") return "fastener";
+  if (kind === "elastic") return "elastic";
+  return "trim";
+}
+
 function readProp(
   properties: Record<string, unknown> | null,
   key: string,

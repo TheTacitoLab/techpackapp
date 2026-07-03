@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -10,6 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FabricPicker } from "@/components/fabric-picker";
+import {
+  LibraryQuickAddForm,
+  useInlineAddedLibraryItems,
+} from "@/components/library-quick-add-form";
 import {
   CONSTRUCTION_SUBTYPE_LABEL,
   constructionDataFromLibraryItem,
@@ -27,6 +30,7 @@ import type {
   CanvasAnnotation,
   CanvasLayerType,
   ConstructionAnnotationData,
+  LibraryCategory,
   ResolvedLibraryItem,
 } from "@/types";
 
@@ -34,6 +38,9 @@ const CONSTRUCTION_SUBTYPE_KEYS: readonly ConstructionSubType[] = [
   "stitch",
   "construction_note",
 ];
+
+/** The one library category the stitch picker (and its inline add) covers. */
+const STITCH_CATEGORIES: readonly LibraryCategory[] = ["stitch_type"];
 
 type CreatedResult = {
   id: string;
@@ -81,7 +88,11 @@ export function ConstructionPinEditor(
       }
   ),
 ) {
-  const { libraryItems } = props;
+  // Server-passed library merged with anything added inline this session, so
+  // a just-created stitch type is selectable before router.refresh() catches up.
+  const { items: libraryItems, registerCreated } = useInlineAddedLibraryItems(
+    props.libraryItems,
+  );
 
   const initial: ConstructionAnnotationData =
     props.mode === "edit"
@@ -135,6 +146,11 @@ export function ConstructionPinEditor(
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // Inline "add to library" sub-view: non-null while open, carrying the
+  // picker's search text to pre-fill the new stitch type's name. Swaps this
+  // component's render only — every in-progress pin field stays mounted.
+  const [inlineAddName, setInlineAddName] = useState<string | null>(null);
 
   const stitchItems = libraryItems.filter((i) => i.category === "stitch_type");
   const selectedItem = libraryItems.find((i) => i.id === libraryItemId) ?? null;
@@ -210,6 +226,22 @@ export function ConstructionPinEditor(
     }
   }
 
+  if (inlineAddName !== null) {
+    return (
+      <LibraryQuickAddForm
+        categories={STITCH_CATEGORIES}
+        defaultCategory="stitch_type"
+        initialName={inlineAddName}
+        onCreated={(item) => {
+          registerCreated(item);
+          handlePickLibraryItem(item.id, item);
+          setInlineAddName(null);
+        }}
+        onCancel={() => setInlineAddName(null)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       {props.mode === "create" ? (
@@ -249,18 +281,9 @@ export function ConstructionPinEditor(
               summaryLine={stitchSummaryLine}
               thumbnailUrl={(item) => item.image_url}
               placeholder="Select a stitch…"
-              emptyMessage={
-                <>
-                  No stitch types in your library yet — add one in{" "}
-                  <Link
-                    href="/settings?tab=library"
-                    className="text-foreground font-medium underline underline-offset-2"
-                  >
-                    Settings → Master Library
-                  </Link>
-                  .
-                </>
-              }
+              emptyMessage={<>No stitch types in your library yet.</>}
+              onCreateNew={setInlineAddName}
+              createLabel="Add new stitch type to library"
             />
           </div>
 

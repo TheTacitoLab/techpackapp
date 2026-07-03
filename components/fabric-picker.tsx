@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,15 @@ function gsm(item: ResolvedLibraryItem): string | null {
  * Construction editor passes `thumbnailUrl` so each stitch row leads with its
  * SVG diagram. Searches both name and the summary line, and flags global
  * TechPackApp catalogue items with a small chip.
+ *
+ * `onCreateNew` (optional) adds the inline "add to library" entry point: a
+ * pinned action below the result list — always visible, so it works both when
+ * a search finds nothing and when the user simply wants a new item — that
+ * reports the CURRENT SEARCH TEXT so the caller can pre-fill the new item's
+ * name with what was typed. When the library is empty it renders as a plain
+ * button in place of the dead-end empty box. The picker itself opens nothing:
+ * the caller owns the quick-add form (it knows the category and what to do
+ * with the created item).
  */
 export function FabricPicker({
   fabrics,
@@ -72,6 +81,8 @@ export function FabricPicker({
   summaryLine,
   thumbnailUrl,
   emptyMessage,
+  onCreateNew,
+  createLabel = "Add new item to library",
 }: {
   fabrics: ResolvedLibraryItem[];
   value: string | null;
@@ -86,13 +97,47 @@ export function FabricPicker({
   thumbnailUrl?: (item: ResolvedLibraryItem) => string | null;
   /** Overrides the default "No fabrics yet…" empty-state copy. */
   emptyMessage?: React.ReactNode;
+  /**
+   * Show the inline-add action; called with the search text typed so far (may
+   * be empty) so the new item's name can be pre-filled with it.
+   */
+  onCreateNew?: (searchText: string) => void;
+  /** Label for the inline-add action when nothing has been typed. */
+  createLabel?: string;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
   const selected = fabrics.find((f) => f.id === value) ?? null;
   const selectedThumb = selected ? (thumbnailUrl?.(selected) ?? null) : null;
   const summary = summaryLine ?? composition;
 
+  function handleCreateNew() {
+    const text = search.trim();
+    setOpen(false);
+    setSearch("");
+    onCreateNew?.(text);
+  }
+
   if (fabrics.length === 0) {
+    if (onCreateNew) {
+      return (
+        <div className="space-y-1.5">
+          {emptyMessage && (
+            <div className="bg-muted text-muted-foreground rounded-md px-3 py-2.5 text-sm">
+              {emptyMessage}
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-start font-normal"
+            onClick={handleCreateNew}
+          >
+            <Plus className="size-4" /> {createLabel}
+          </Button>
+        </div>
+      );
+    }
     return (
       <div className="bg-muted text-muted-foreground rounded-md px-3 py-2.5 text-sm">
         {emptyMessage ?? (
@@ -109,7 +154,13 @@ export function FabricPicker({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearch("");
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -141,7 +192,11 @@ export function FabricPicker({
         align="start"
       >
         <Command>
-          <CommandInput placeholder="Search by name or composition…" />
+          <CommandInput
+            placeholder="Search by name or composition…"
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
             <CommandEmpty>No matching items.</CommandEmpty>
             <CommandGroup>
@@ -194,6 +249,26 @@ export function FabricPicker({
               })}
             </CommandGroup>
           </CommandList>
+          {onCreateNew && (
+            /* Pinned BELOW the list (not a CommandItem) so cmdk's filtering
+               can never hide it — reachable with or without matches. */
+            <button
+              type="button"
+              onClick={handleCreateNew}
+              className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 border-t px-3 py-2.5 text-sm transition-colors"
+            >
+              <Plus className="size-4 shrink-0" />
+              <span className="truncate">
+                {search.trim() ? (
+                  <>
+                    Add &ldquo;<span className="text-foreground font-medium">{search.trim()}</span>&rdquo; to library
+                  </>
+                ) : (
+                  createLabel
+                )}
+              </span>
+            </button>
+          )}
         </Command>
       </PopoverContent>
     </Popover>

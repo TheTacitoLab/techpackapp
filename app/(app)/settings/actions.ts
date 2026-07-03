@@ -9,7 +9,7 @@ import {
   type LayerKey,
 } from "@/components/canvas/layers";
 import { requireActionContext } from "@/lib/supabase/action-context";
-import type { LibraryCategory } from "@/types";
+import type { LibraryCategory, LibraryItem } from "@/types";
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 
@@ -222,12 +222,19 @@ const libraryItemSchema = z.object({
   properties: z.record(z.string(), z.unknown()).default({}),
 });
 
+/**
+ * Create a WORKSPACE library item — the one creation path for both the
+ * Settings Master Library form and the annotation editors' inline quick-add
+ * (`library-quick-add-form.tsx`). Returns the full inserted row so the inline
+ * flow can auto-select the new item immediately, without waiting for the
+ * route refresh to deliver the refreshed library.
+ */
 export async function createLibraryItem(
   category: LibraryCategory,
   name: string,
   description: string,
   properties: Record<string, unknown>,
-) {
+): Promise<LibraryItem> {
   const parsed = libraryItemSchema.parse({
     category,
     name,
@@ -246,13 +253,13 @@ export async function createLibraryItem(
       properties: parsed.properties as never,
       created_by: userId,
     })
-    .select("id")
+    .select("*")
     .single();
   if (error || !data)
     throw new Error(error?.message ?? "Could not create library item.");
 
   revalidatePath("/settings");
-  return { id: data.id };
+  return data;
 }
 
 const libraryUpdateSchema = libraryItemSchema.omit({ category: true });
