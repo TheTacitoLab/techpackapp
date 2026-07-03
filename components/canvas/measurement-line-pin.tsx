@@ -21,53 +21,57 @@ import { moveAnnotation } from "@/app/(app)/products/[id]/canvas-actions";
 import { cn } from "@/lib/utils";
 import type { CanvasAnnotation } from "@/types";
 
-// Arrowhead wing length (px) and half-angle — the classic dimension-arrow
-// look. Wings are longer than the endpoint handles' radius so the arrowheads
-// stay visible past the grab dots sitting on the line ends.
-const ARROW_LENGTH = 12;
-const ARROW_ANGLE = Math.PI / 7;
+// Fine dimension-line weights — thin enough to read as a precise spec-sheet
+// callout against a garment sketch, nudged up slightly when selected.
+const LINE_WIDTH = 1.25;
+const LINE_WIDTH_SELECTED = 1.75;
+
+// Solid-fill arrowhead proportions (px): tip sits EXACTLY on the endpoint —
+// the arrow tips themselves are the precise markers of what's being measured
+// (no visible dots covering them any more) — spreading back along the line.
+const ARROW_LENGTH = 7;
+const ARROW_HALF_WIDTH = 2.5;
 
 // The label pill floats this many px off the line's midpoint, along the
 // perpendicular that points "upward" on screen, so it never sits on the line.
 const PILL_OFFSET = 14;
 
-/** Rotate the unit vector (ux, uy) by `angle` radians. */
-function rotate(ux: number, uy: number, angle: number): [number, number] {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [ux * cos - uy * sin, ux * sin + uy * cos];
-}
-
 /**
- * SVG path for a straight double-headed dimension arrow from (sx, sy) to
- * (ex, ey) in slot pixels: the line itself plus two wing strokes at each end,
- * computed explicitly from the line's direction rather than SVG `<marker>`
- * defs — marker ids are document-global, and one annotation per SVG would need
- * unique ids per pin; explicit wings have no such hazard and track live drags
- * for free. Degenerate (zero-length) lines get no wings, just the dot-like line.
+ * SVG path for the two small solid-filled triangular arrowheads of a dimension
+ * line from (sx, sy) to (ex, ey) in slot pixels — tip at each endpoint, base
+ * spreading back along the line. Computed explicitly from the line's direction
+ * rather than SVG `<marker>` defs (marker ids are document-global; one SVG per
+ * annotation would need unique ids per pin) — and explicit geometry tracks
+ * live drags for free. Returns null for degenerate (near-zero-length) lines,
+ * which render as just the bare line.
  */
-function dimensionArrowPath(
+function arrowheadsPath(
   sx: number,
   sy: number,
   ex: number,
   ey: number,
-): string {
+): string | null {
   const dx = ex - sx;
   const dy = ey - sy;
   const len = Math.hypot(dx, dy);
-  let d = `M ${sx} ${sy} L ${ex} ${ey}`;
-  if (len < 1) return d;
+  if (len < 1) return null;
   const ux = dx / len;
   const uy = dy / len;
-  // Wings at the END point back toward the start; at the START, toward the end.
-  for (const [px, py, wx, wy] of [
+  let d = "";
+  // Each head: tip at the endpoint, base back along the line's inward
+  // direction, spread by the unit normal.
+  for (const [px, py, ix, iy] of [
     [ex, ey, -ux, -uy],
     [sx, sy, ux, uy],
   ] as const) {
-    for (const sign of [1, -1] as const) {
-      const [rx, ry] = rotate(wx, wy, ARROW_ANGLE * sign);
-      d += ` M ${px} ${py} L ${px + rx * ARROW_LENGTH} ${py + ry * ARROW_LENGTH}`;
-    }
+    const bx = px + ix * ARROW_LENGTH;
+    const by = py + iy * ARROW_LENGTH;
+    const nx = -iy;
+    const ny = ix;
+    d +=
+      `M ${px} ${py} ` +
+      `L ${bx + nx * ARROW_HALF_WIDTH} ${by + ny * ARROW_HALF_WIDTH} ` +
+      `L ${bx - nx * ARROW_HALF_WIDTH} ${by - ny * ARROW_HALF_WIDTH} Z `;
   }
   return d;
 }
@@ -245,6 +249,7 @@ export function MeasurementLinePin({
     }
   }, [isSelected]);
 
+  const heads = arrowheadsPath(sx, sy, ex, ey);
   const arrow = (
     <svg
       aria-hidden
@@ -252,12 +257,13 @@ export function MeasurementLinePin({
       style={{ left: 0, top: 0, width: 1, height: 1 }}
     >
       <path
-        d={dimensionArrowPath(sx, sy, ex, ey)}
+        d={`M ${sx} ${sy} L ${ex} ${ey}`}
         stroke={color}
-        strokeWidth={isSelected ? 2.5 : 2}
+        strokeWidth={isSelected ? LINE_WIDTH_SELECTED : LINE_WIDTH}
         strokeLinecap="round"
         fill="none"
       />
+      {heads && <path d={heads} fill={color} stroke="none" />}
     </svg>
   );
 
@@ -286,7 +292,13 @@ export function MeasurementLinePin({
       <span className="absolute" style={{ left: 0, top: 0 }}>
         {arrow}
 
-        {/* Endpoint handles — small draggable dots on each end of the line. */}
+        {/* Endpoint hit targets — the drag interaction survives the visible
+            dots' removal: each end keeps an INVISIBLE 16px grab area (bigger
+            than the old 8px dot, so it's easier to catch), with a subtle 6px
+            dot revealed only on hover/keyboard-focus, mid-drag, or while the
+            line is selected. The rest of the time the solid arrow tips alone
+            mark the precise measured points. Drag wiring (usePointerDrag →
+            moveAnnotation, fraction math) is unchanged. */}
         {(
           [
             ["start", sx, sy, startDrag] as const,
@@ -304,11 +316,21 @@ export function MeasurementLinePin({
               if (e.detail === 0) setOpen(true);
             }}
             className={cn(
-              "absolute block size-2 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full ring-2 ring-white outline-none",
+              "group/handle absolute flex size-4 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-full outline-none",
               drag.active ? "cursor-grabbing" : "cursor-grab",
             )}
-            style={{ left, top, backgroundColor: color }}
-          />
+            style={{ left, top }}
+          >
+            <span
+              className={cn(
+                "block size-1.5 rounded-full ring-1 ring-white/80 transition-opacity",
+                drag.active || isSelected
+                  ? "opacity-100"
+                  : "opacity-0 group-hover/handle:opacity-100 group-focus-visible/handle:opacity-100",
+              )}
+              style={{ backgroundColor: color }}
+            />
+          </button>
         ))}
 
         {/* Midpoint pill — the reference code + value, and the click target. */}
