@@ -566,6 +566,33 @@ export async function fillSlot(slotId: string, assetId: string): Promise<void> {
   revalidatePath(`/products/${productId}`);
 }
 
+const updateSlotNameSchema = z.object({
+  slotId: z.uuid(),
+  name: z.string().trim().max(60),
+});
+
+/**
+ * Rename a slot ("Front", "Back neck"). Shown as the slot's box label on the
+ * PDF and the callout column's per-slot group header. An empty name clears
+ * back to null (falls back to the asset name, then "Slot N").
+ */
+export async function updateSlotName(
+  slotId: string,
+  name: string,
+): Promise<void> {
+  const input = updateSlotNameSchema.parse({ slotId, name });
+  const { supabase, workspaceId } = await requireActionContext();
+  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+
+  const { error } = await supabase
+    .from("canvas_slots")
+    .update({ name: input.name.length > 0 ? input.name : null })
+    .eq("id", input.slotId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${productId}`);
+}
+
 const framingSchema = z.object({
   slotId: z.uuid(),
   cropX: z.number(),

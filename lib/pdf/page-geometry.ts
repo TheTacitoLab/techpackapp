@@ -37,14 +37,27 @@ export const CALLOUT_W = 216;
 export const ZONE_GAP = 12;
 
 /**
- * The notes band (per-canvas-page notes + ruled handwriting lines) lives at
- * the BOTTOM of the slots zone, so the callout column is untouched. It is
- * always present: at least ~20mm tall (slots scale to respect it), at most a
- * third of the zone (a small slot never produces a half-page of rules).
+ * The canvas zone splits into a FIXED-height image area on top and a notes band
+ * beneath — the SAME split on every exported page regardless of the layout, so
+ * imagery (the most-used part of a tech pack) always commands the same large,
+ * consistent space and a Single view fills exactly the region a Quad grid does.
+ *
+ * Proportions of the slots zone height: the notes band is a fixed quarter
+ * (≈25%, floored at ~20mm so it always has room for a few ruled lines) and the
+ * image area takes the rest (≈73% after the gap) — a generous, layout-invariant
+ * majority. The callout column is untouched and still runs the full zone
+ * height to the right.
  */
 export const NOTES_MIN_H = 56.7; // ≈20mm in points
-export const NOTES_MAX_FRACTION = 1 / 3;
+export const NOTES_BAND_FRACTION = 1 / 4;
 export const NOTES_GAP = 10;
+
+/**
+ * Inset applied to each grid cell before the frozen slot box is fitted into it,
+ * so the clipped image can never paint over the cell's border stroke
+ * (@react-pdf clips at the border box and draws children above the stroke).
+ */
+export const CELL_INSET = 3;
 
 /** The main (slots) zone rectangle on the page. */
 export function slotsZone(): PdfRect {
@@ -115,7 +128,7 @@ export type SlotFramingInput = {
 };
 
 export type PdfSlotGeometry = {
-  /** The slot's drawn box in page points — the lock box scaled by k, top-aligned in its cell. */
+  /** The slot's drawn box in page points — the lock box scaled by k, centred in its cell. */
   box: PdfRect;
   /** The uniform lock-space → PDF scale factor. */
   k: number;
@@ -129,15 +142,13 @@ export type PdfSlotGeometry = {
  * Lay one slot out inside its cell.
  *
  * With frozen lock dims: the slot box is the lock box contain-fitted into the
- * cell (uniform k) — the PDF is "yet another container size". The box adopts
- * the slot's frozen ASPECT (it IS the bordered box on the page — the image
- * fills it edge-to-edge, never letterboxed inside a border), top-aligned so
- * boxes in a row share a common top edge and horizontally centred so spare
- * cell space falls around boxes as clean page spacing. Without lock dims
- * (never-filled slots, or slots locked before migration 0022): the CELL is
- * used as the reference box (k = 1 against itself) — fractions-based pins are
- * still exact; only the pixel crop offsets are approximate until the slot is
- * re-locked. Flagged via `approximate`.
+ * cell (uniform k) and CENTRED — the PDF is "yet another container size". The
+ * image fills that box edge-to-edge preserving its framing/aspect; any spare
+ * cell space from aspect differences sits cleanly inside the cell's border
+ * around the box. Without lock dims (never-filled slots, or slots locked
+ * before migration 0022): the CELL is used as the reference box (k = 1 against
+ * itself) — fractions-based pins are still exact; only the pixel crop offsets
+ * are approximate until the slot is re-locked. Flagged via `approximate`.
  */
 export function slotGeometry(
   cell: PdfRect,
@@ -165,7 +176,7 @@ export function slotGeometry(
   const boxH = lockH * k;
   const box: PdfRect = {
     left: cell.left + (cell.width - boxW) / 2,
-    top: cell.top,
+    top: cell.top + (cell.height - boxH) / 2,
     width: boxW,
     height: boxH,
   };
@@ -201,54 +212,72 @@ export type SlotLayoutInput = {
   naturalHeight: number | null;
 };
 
+export type CanvasSlotLayout = {
+  /** The fixed grid cell — the bordered box drawn on the page. */
+  cell: PdfRect;
+  /** The frozen slot box + image/pin geometry, contain-fitted and centred inside the cell. */
+  geo: PdfSlotGeometry;
+};
+
 export type CanvasZoneLayout = {
-  /** Per-slot geometry in slots order; null when the template has no cell for that index. */
-  slots: (PdfSlotGeometry | null)[];
-  /** The always-present notes band at the bottom of the slots zone. */
+  /** Per-slot cell+geometry in slots order; null when the template has no cell for that index. */
+  slots: (CanvasSlotLayout | null)[];
+  /** The fixed-height image area subdivided into the cells (same on every layout). */
+  imageArea: PdfRect;
+  /** The always-present notes band beneath the image area. */
   notesBox: PdfRect;
 };
 
 /**
- * Lay the whole canvas zone out: the notes band first reserves its minimum
- * height at the bottom, the remaining slot area is divided into the
- * template's cells, and each slot is aspect-fitted into its cell
- * (`slotGeometry`). Whatever vertical space the aspect-fitted boxes leave
- * unused then grows the notes band, up to its cap — beyond the cap the spare
- * space stays as clean spacing between the slots and the band.
+ * Lay the whole canvas zone out with a FIXED-height image area on top and the
+ * notes band beneath — the split is identical on every layout, so only the
+ * internal subdivision (1 / 2-across / 3-across / 2×2) changes. The image area
+ * is then divided into the template's equal cells, and each slot's frozen box
+ * is contain-fitted and centred inside its cell (`slotGeometry`), inset from
+ * the cell border so the clipped image never touches the stroke.
  */
 export function canvasZoneLayout(
   template: CanvasTemplate,
   slots: readonly SlotLayoutInput[],
 ): CanvasZoneLayout {
   const zone = slotsZone();
-  const slotArea: PdfRect = {
-    ...zone,
-    height: zone.height - NOTES_MIN_H - NOTES_GAP,
+  // Fixed split: a quarter (floored at the ~20mm minimum) for the notes band,
+  // the rest for the image area — same on Single / Split / Triple / Quad.
+  const notesHeight = Math.max(zone.height * NOTES_BAND_FRACTION, NOTES_MIN_H);
+  const imageArea: PdfRect = {
+    left: zone.left,
+    top: zone.top,
+    width: zone.width,
+    height: zone.height - notesHeight - NOTES_GAP,
   };
-  const cells = templateCells(template, slotArea);
+  const cells = templateCells(template, imageArea);
 
-  const geometries = slots.map((slot, i) => {
+  const slotLayouts = slots.map((slot, i): CanvasSlotLayout | null => {
     const cell = cells[i];
-    return cell
-      ? slotGeometry(cell, slot.framing, slot.naturalWidth, slot.naturalHeight)
-      : null;
+    if (!cell) return null;
+    const inner: PdfRect = {
+      left: cell.left + CELL_INSET,
+      top: cell.top + CELL_INSET,
+      width: cell.width - CELL_INSET * 2,
+      height: cell.height - CELL_INSET * 2,
+    };
+    return {
+      cell,
+      geo: slotGeometry(
+        inner,
+        slot.framing,
+        slot.naturalWidth,
+        slot.naturalHeight,
+      ),
+    };
   });
 
-  const slotsBottom = geometries.reduce(
-    (max, geo) => (geo ? Math.max(max, geo.box.top + geo.box.height) : max),
-    slotArea.top,
-  );
-  const zoneBottom = zone.top + zone.height;
-  const notesHeight = Math.min(
-    Math.max(zoneBottom - slotsBottom - NOTES_GAP, NOTES_MIN_H),
-    zone.height * NOTES_MAX_FRACTION,
-  );
-
   return {
-    slots: geometries,
+    slots: slotLayouts,
+    imageArea,
     notesBox: {
       left: zone.left,
-      top: zoneBottom - notesHeight,
+      top: imageArea.top + imageArea.height + NOTES_GAP,
       width: zone.width,
       height: notesHeight,
     },

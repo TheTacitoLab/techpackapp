@@ -492,6 +492,7 @@ export type Database = {
           page_id: string;
           slot_index: number;
           asset_id: string | null;
+          name: string | null;
           crop_x: number;
           crop_y: number;
           zoom: number;
@@ -506,6 +507,7 @@ export type Database = {
           page_id: string;
           slot_index: number;
           asset_id?: string | null;
+          name?: string | null;
           crop_x?: number;
           crop_y?: number;
           zoom?: number;
@@ -520,6 +522,7 @@ export type Database = {
           page_id?: string;
           slot_index?: number;
           asset_id?: string | null;
+          name?: string | null;
           crop_x?: number;
           crop_y?: number;
           zoom?: number;

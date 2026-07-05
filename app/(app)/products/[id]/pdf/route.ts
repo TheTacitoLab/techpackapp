@@ -189,6 +189,7 @@ export async function GET(
         naturalWidth: asset?.width ?? svgSize?.width ?? null,
         naturalHeight: asset?.height ?? svgSize?.height ?? null,
         assetName: asset?.name ?? null,
+        name: slot.name,
         // Distinguishes a never-filled slot (clean empty box) from an asset
         // whose image fetch failed ("Image unavailable").
         hasAsset: asset !== null,

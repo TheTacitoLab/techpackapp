@@ -56,6 +56,10 @@ export type PdfSlotData = {
   naturalWidth: number | null;
   naturalHeight: number | null;
   assetName: string | null;
+  /** The user's editable slot name ("Front", "Back neck") — the PDF box label
+   * and the callout column's per-slot sub-header. Null falls back to the asset
+   * name, then "Slot N". */
+  name: string | null;
   /** Whether the slot has an asset at all — a never-filled slot renders as a
    * clean empty box; only a slot WITH an asset whose image could not be
    * fetched/rendered shows the "Image unavailable" failure text. */
@@ -293,27 +297,52 @@ function PdfMeasurementLine({
   );
 }
 
+/** The label shown on a slot's box and as its callout sub-header: the user's
+ *  name, else the asset name, else "Slot N". Null only for a never-filled,
+ *  unnamed slot (a clean empty cell with no label). */
+function slotLabel(slot: PdfSlotData, index: number): string | null {
+  if (slot.name) return slot.name;
+  if (slot.hasAsset) return slot.assetName ?? `Slot ${index + 1}`;
+  return null;
+}
+
 function PdfSlot({
   slot,
+  cell,
   geo,
   colour,
   index,
 }: {
   slot: PdfSlotData;
+  cell: PdfRect;
   geo: PdfSlotGeometry;
   colour: string;
   index: number;
 }) {
   const { box } = geo;
+  const label = slotLabel(slot, index);
 
-  // The bordered box IS the frozen slot box (aspect-matched to the screen) —
-  // the image fills it edge-to-edge, so the border is drawn as a separate
-  // sibling ABOVE the clipped content: Step 0 found react-pdf clips at the
-  // BORDER box and paints children over the border stroke, so a border on the
-  // content view itself would be overpainted at the image's edges.
+  // The bordered box is the fixed grid CELL; the frozen slot box is contain-
+  // fitted and centred inside it (inset from the border by CELL_INSET), so the
+  // clipped image never touches the stroke and spare space from aspect
+  // differences sits as clean padding inside the cell.
   return (
     <>
-      {/* Clipped content — image + pins live in here, sharing the one k. */}
+      {/* Bordered grid cell. */}
+      <View
+        style={{
+          position: "absolute",
+          left: cell.left,
+          top: cell.top,
+          width: cell.width,
+          height: cell.height,
+          borderWidth: 1,
+          borderColor: HAIRLINE,
+          borderRadius: 4,
+          backgroundColor: BOX_BG,
+        }}
+      />
+      {/* The frozen slot box, clipped — image + pins live in here, sharing k. */}
       <View
         style={{
           position: "absolute",
@@ -321,8 +350,6 @@ function PdfSlot({
           top: box.top,
           width: box.width,
           height: box.height,
-          borderRadius: 4,
-          backgroundColor: BOX_BG,
           overflow: "hidden",
         }}
       >
@@ -367,33 +394,18 @@ function PdfSlot({
           ),
         )}
       </View>
-      {/* Border stroke above the edge-to-edge content. */}
-      <View
-        style={{
-          position: "absolute",
-          left: box.left,
-          top: box.top,
-          width: box.width,
-          height: box.height,
-          borderWidth: 1,
-          borderColor: HAIRLINE,
-          borderRadius: 4,
-        }}
-      />
-      {/* Slot label, top-left corner of the box. A never-filled slot has no
-          asset name and gets NO text at all — "Slot N" would read as a
-          placeholder in a box that is deliberately, cleanly empty. */}
-      {slot.hasAsset && (
+      {/* Slot label, top-left corner of the cell. */}
+      {label && (
         <Text
           style={{
             position: "absolute",
-            left: box.left + 5,
-            top: box.top + 4,
+            left: cell.left + 5,
+            top: cell.top + 4,
             fontSize: 6,
             color: MUTED,
           }}
         >
-          {slot.assetName ?? `Slot ${index + 1}`}
+          {label}
         </Text>
       )}
     </>
@@ -507,25 +519,111 @@ function byReferenceCode(a: CanvasAnnotation, b: CanvasAnnotation): number {
   });
 }
 
-// The fixed callout column fits roughly this many rows before it would paint
-// past its border (react-pdf does not clip without overflow hidden); beyond it
-// the list truncates with an explicit "+N more" line — never silent.
+// The fixed callout column fits roughly this many annotation rows before it
+// would paint past its border (react-pdf does not clip without overflow
+// hidden); beyond it the list truncates with an explicit "+N more" line —
+// never silent. Per-slot sub-headers are cheap and not counted against this.
 const CALLOUT_MAX_ROWS = 18;
+
+/** A callout column grouped by the slot its pins sit on. */
+type CalloutGroup = { header: string; annotations: CanvasAnnotation[] };
+
+/** One annotation row: reference-code badge, optional swatch, title + detail. */
+function CalloutRow({
+  annotation,
+  colour,
+  textColour,
+}: {
+  annotation: CanvasAnnotation;
+  colour: string;
+  textColour: string;
+}) {
+  const summary = getAnnotationSummary(annotation);
+  return (
+    <View
+      style={{ flexDirection: "row", marginBottom: 5, alignItems: "flex-start" }}
+    >
+      <View
+        style={{
+          width: 14,
+          height: 10,
+          borderRadius: 5,
+          backgroundColor: colour,
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: 4,
+          marginTop: 0.5,
+        }}
+      >
+        <Text
+          style={{ fontSize: 5, fontFamily: "Helvetica-Bold", color: textColour }}
+        >
+          {annotation.reference_code}
+        </Text>
+      </View>
+      {/* Colourway rows get their sampled swatch; stitch SVG icons are a
+          flagged follow-up (react-pdf Image doesn't take SVG sources). */}
+      {summary.swatch && (
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 2,
+            backgroundColor: summary.swatch,
+            borderWidth: 0.5,
+            borderColor: HAIRLINE,
+            marginRight: 3,
+            marginTop: 1,
+          }}
+        />
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold" }}>
+          {summary.title}
+        </Text>
+        {summary.detail && (
+          <Text style={{ fontSize: 6.5, color: MUTED, marginTop: 1 }}>
+            {summary.detail}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
 
 function CalloutColumn({
   zone,
-  annotations,
+  groups,
+  total,
   colour,
   layerLabel,
 }: {
   zone: PdfRect;
-  annotations: CanvasAnnotation[];
+  groups: CalloutGroup[];
+  total: number;
   colour: string;
   layerLabel: string;
 }) {
   const textColour = readableTextOn(colour);
-  const shown = annotations.slice(0, CALLOUT_MAX_ROWS);
-  const hidden = annotations.length - shown.length;
+  // Budget annotation rows across all groups, keeping each group's rows
+  // together under its slot sub-header (no outer mutable — the running total is
+  // derived from the accumulator each step; group count is tiny).
+  const rendered = groups.reduce<{ header: string; rows: CanvasAnnotation[] }[]>(
+    (acc, g) => {
+      // Each rendered group costs its rows PLUS one line for its sub-header, so
+      // the vertical budget accounts for headers too and truncation stays
+      // honest ("+N more" is never silently clipped by overflow:hidden).
+      const used = acc.reduce((n, x) => n + x.rows.length + 1, 0);
+      const remaining = CALLOUT_MAX_ROWS - used;
+      if (remaining <= 0) return acc;
+      const rows = g.annotations.slice(0, remaining);
+      return rows.length > 0 ? [...acc, { header: g.header, rows }] : acc;
+    },
+    [],
+  );
+  const shownCount = rendered.reduce((n, g) => n + g.rows.length, 0);
+  const hidden = total - shownCount;
+
   return (
     <View
       style={{
@@ -550,76 +648,40 @@ function CalloutColumn({
           textTransform: "uppercase",
         }}
       >
-        {layerLabel} — {annotations.length}{" "}
-        {annotations.length === 1 ? "callout" : "callouts"}
+        {layerLabel} — {total} {total === 1 ? "callout" : "callouts"}
       </Text>
-      {annotations.length === 0 && (
+      {total === 0 && (
         <Text style={{ fontSize: 7, color: MUTED }}>
           No annotations on this layer.
         </Text>
       )}
-      {shown.map((a) => {
-        const summary = getAnnotationSummary(a);
-        return (
-          <View
-            key={a.id}
+      {rendered.map((group, gi) => (
+        <View key={gi} style={{ marginBottom: 4 }}>
+          {/* Slot sub-header — groups this slot's pins ("Front", "Back neck"). */}
+          <Text
             style={{
-              flexDirection: "row",
-              marginBottom: 5,
-              alignItems: "flex-start",
+              fontSize: 6.5,
+              fontFamily: "Helvetica-Bold",
+              color: INK,
+              textTransform: "uppercase",
+              letterSpacing: 0.3,
+              marginBottom: 3,
             }}
           >
-            <View
-              style={{
-                width: 14,
-                height: 10,
-                borderRadius: 5,
-                backgroundColor: colour,
-                alignItems: "center",
-                justifyContent: "center",
-                marginRight: 4,
-                marginTop: 0.5,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 5,
-                  fontFamily: "Helvetica-Bold",
-                  color: textColour,
-                }}
-              >
-                {a.reference_code}
-              </Text>
-            </View>
-            {/* Colourway rows get their sampled swatch; stitch SVG icons are a
-                flagged follow-up (react-pdf Image doesn't take SVG sources). */}
-            {summary.swatch && (
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 2,
-                  backgroundColor: summary.swatch,
-                  borderWidth: 0.5,
-                  borderColor: HAIRLINE,
-                  marginRight: 3,
-                  marginTop: 1,
-                }}
+            {group.header}
+          </Text>
+          <View style={{ paddingLeft: 4 }}>
+            {group.rows.map((a) => (
+              <CalloutRow
+                key={a.id}
+                annotation={a}
+                colour={colour}
+                textColour={textColour}
               />
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold" }}>
-                {summary.title}
-              </Text>
-              {summary.detail && (
-                <Text style={{ fontSize: 6.5, color: MUTED, marginTop: 1 }}>
-                  {summary.detail}
-                </Text>
-              )}
-            </View>
+            ))}
           </View>
-        );
-      })}
+        </View>
+      ))}
       {hidden > 0 && (
         <Text style={{ fontSize: 6.5, color: MUTED, marginTop: 2 }}>
           +{hidden} more — see the online tech pack for the full list.
@@ -739,9 +801,21 @@ function Footer({ data }: { data: PdfPageData }) {
 
 export function TechPackPage({ data }: { data: PdfPageData }) {
   const layout = canvasZoneLayout(data.template, data.slots);
-  const allAnnotations = data.slots
-    .flatMap((s) => s.annotations)
-    .sort(byReferenceCode);
+
+  // Callouts grouped by the slot their pins sit on, in slot order; each slot's
+  // pins are reference-code sorted, and slots with no pins on this layer are
+  // omitted. The sub-header matches the slot's box label so the factory can
+  // cross-reference box ↔ list.
+  const calloutGroups: CalloutGroup[] = data.slots
+    .map((slot, i) => ({
+      header: slotLabel(slot, i) ?? `Slot ${i + 1}`,
+      annotations: [...slot.annotations].sort(byReferenceCode),
+    }))
+    .filter((g) => g.annotations.length > 0);
+  const calloutTotal = calloutGroups.reduce(
+    (n, g) => n + g.annotations.length,
+    0,
+  );
 
   return (
     <Document
@@ -751,12 +825,13 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
       <Page size={[PAGE_W, PAGE_H]} style={styles.page}>
         <Header data={data} />
         {data.slots.map((slot, i) => {
-          const geo = layout.slots[i];
-          return geo ? (
+          const sl = layout.slots[i];
+          return sl ? (
             <PdfSlot
               key={i}
               slot={slot}
-              geo={geo}
+              cell={sl.cell}
+              geo={sl.geo}
               colour={data.layerColour}
               index={i}
             />
@@ -765,7 +840,8 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
         <NotesBox box={layout.notesBox} notes={data.notes} />
         <CalloutColumn
           zone={calloutZone()}
-          annotations={allAnnotations}
+          groups={calloutGroups}
+          total={calloutTotal}
           colour={data.layerColour}
           layerLabel={data.layerLabel}
         />

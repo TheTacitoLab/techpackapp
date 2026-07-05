@@ -34,6 +34,7 @@ import { BrandingLabelPinEditor } from "@/components/canvas/branding-label-pin-e
 import { FabricTrimPinEditor } from "@/components/canvas/fabric-trim-pin-editor";
 import { MeasurementLinePin } from "@/components/canvas/measurement-line-pin";
 import { MeasurementPinEditor } from "@/components/canvas/measurement-pin-editor";
+import { SlotNameEditor } from "@/components/canvas/slot-name-editor";
 import { useUserPreferences } from "@/components/user-preferences-context";
 import { useLayerColours } from "@/components/canvas/layer-colours-context";
 import {
@@ -85,10 +86,15 @@ type ColourwayContext = {
   onColourwayUsed: (colourwayId: string) => void;
 };
 
-// Zoom 1 is the mode's own baseline (cover fills, contain shows everything);
-// below 1 'fill' would show blank gaps and 'fit' would just shrink inside its
-// letterbox, so the framing floor is 1 in both modes.
-const ZOOM_MIN = 1;
+// Zoom 1 is each mode's own baseline (cover fills, contain shows everything).
+// The floor drops to 0.25 so a garment can be deliberately shrunk within its
+// box, with clean padding around it — chosen over pinning fill mode at
+// full-coverage (option a): below 1, both modes simply centre the smaller
+// image and the surrounding space reads as intentional padding (clampPan
+// already centres any axis where the scaled image is smaller than the slot, so
+// no blank-edge artefacts and nothing can be dragged off-centre). Pin
+// coordinates are fractions of the slot box and are unaffected by image zoom.
+const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.25;
 
@@ -718,8 +724,9 @@ function FramingSlot({
         }}
       />
 
-      {/* Framing mode indicator */}
-      <div className="absolute top-2 left-2">
+      {/* Slot name + framing mode indicator */}
+      <div className="absolute top-2 left-2 flex items-center gap-2">
+        <SlotNameEditor slotId={slot.id} name={slot.name} />
         <span className="rounded-md bg-black/50 px-2 py-1 text-xs text-white">
           Framing
         </span>
@@ -1912,6 +1919,15 @@ function AnnotationSlot({
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Slot name chip — top-left, above the design box. Hidden with the rest
+          of the editing chrome during capture modes and in the read-only
+          All-layers preview. */}
+      {!allLayers && !measureDraft && !pickMode && (
+        <div className="absolute top-2 left-2 z-40">
+          <SlotNameEditor slotId={slot.id} name={slot.name} />
         </div>
       )}
 
