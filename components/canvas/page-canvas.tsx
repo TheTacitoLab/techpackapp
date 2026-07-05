@@ -753,7 +753,7 @@ function FramingSlot({
   return (
     <div
       ref={containerRef}
-      className="relative overflow-hidden rounded-xl"
+      className="@container relative overflow-hidden rounded-xl"
       style={{ height: "100%" }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -802,9 +802,13 @@ function FramingSlot({
         </span>
       </div>
 
-      {/* Framing toolbar */}
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/40 to-transparent p-3">
-        <div className="flex items-center gap-1.5">
+      {/* Framing toolbar. Wraps and condenses inside its @container so ALL
+          controls stay fully visible at every box size — a small Quad box in
+          the standard editor gets a compact, wrapped bar (icon-only actions);
+          a large box (Single, or any layout in fullscreen) gets the full bar
+          with labels. Nothing is ever clipped. */}
+      <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-1.5 bg-gradient-to-t from-black/40 to-transparent p-2">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"
             onClick={() => applyZoom(framing.zoom - ZOOM_STEP)}
@@ -813,7 +817,7 @@ function FramingSlot({
           >
             <Minus className="size-4" />
           </button>
-          <span className="w-10 text-center text-xs font-medium text-white">
+          <span className="w-9 text-center text-xs font-medium text-white">
             {Math.round(framing.zoom * 100)}%
           </span>
           <button
@@ -836,7 +840,7 @@ function FramingSlot({
 
           {/* Fit / Fill — per-slot base fit. Fit shows the WHOLE image
               (letterboxed); Fill covers the slot, cropping overflow. */}
-          <div className="ml-1 flex overflow-hidden rounded-md bg-white/90">
+          <div className="flex overflow-hidden rounded-md bg-white/90">
             {(["fit", "fill"] as const).map((mode) => (
               <button
                 key={mode}
@@ -849,7 +853,7 @@ function FramingSlot({
                     : "Fill: cover the slot, cropping overflow"
                 }
                 className={cn(
-                  "px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  "px-2 py-1.5 text-xs font-medium transition-colors",
                   framing.fitMode === mode
                     ? "bg-foreground text-background"
                     : "text-foreground hover:bg-white",
@@ -860,7 +864,7 @@ function FramingSlot({
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <AssetPicker
             assets={assets}
             productId={productId}
@@ -869,9 +873,11 @@ function FramingSlot({
             trigger={
               <button
                 type="button"
-                className="text-foreground rounded-lg bg-white/90 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white"
+                title="Change image"
+                className="text-foreground flex items-center gap-1.5 rounded-lg bg-white/90 px-2 py-1.5 text-sm font-medium transition-colors hover:bg-white"
               >
-                Change image
+                <ImagePlus className="size-4 shrink-0" />
+                <span className="hidden @[22rem]:inline">Change image</span>
               </button>
             }
           />
@@ -879,10 +885,14 @@ function FramingSlot({
             type="button"
             onClick={handleLock}
             disabled={isLocking}
-            className="bg-brand text-brand-foreground flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+            title="Lock & Annotate"
+            className="bg-brand text-brand-foreground flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium disabled:opacity-60"
           >
-            <Lock className="size-3.5" />
-            {isLocking ? "Locking…" : "Lock & Annotate"}
+            <Lock className="size-3.5 shrink-0" />
+            <span className="hidden @[22rem]:inline">
+              {isLocking ? "Locking…" : "Lock & Annotate"}
+            </span>
+            <span className="@[22rem]:hidden">{isLocking ? "…" : "Lock"}</span>
           </button>
         </div>
       </div>

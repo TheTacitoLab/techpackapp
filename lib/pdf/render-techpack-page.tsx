@@ -435,39 +435,36 @@ function PdfSlot({
   );
 }
 
-// Notes band anatomy: rule rows sized for handwriting (~5mm), typed text at
-// fontSize 7 with lineHeight 2 (react-pdf multiplies by fontSize → 14pt rows)
-// so typed lines sit ON the rules like writing on ruled paper.
-const NOTES_RULE_SPACING = 14;
+// Notes band anatomy: a clean bordered box with the label and the typed notes
+// — no ruled guide lines. Comfortable line spacing; the text truncates with an
+// ellipsis rather than overflowing the box.
 const NOTES_PAD_X = 8;
 const NOTES_LABEL_H = 14;
 const NOTES_PAD_BOTTOM = 4;
 const NOTES_TEXT_SIZE = 7;
-// react-pdf places a line's baseline one font-ascent (Helvetica: 0.9em) below
-// the top of its line box; shift the text block down by the remainder of a
-// rule row so every typed line's BASELINE lands exactly on its rule.
-const NOTES_TEXT_TOP_OFFSET = NOTES_RULE_SPACING - NOTES_TEXT_SIZE * 0.9;
-/** Lighter than the box hairline so the rules read as guide lines, not chrome. */
-const RULE_COLOUR = "#E7E5E4";
+const NOTES_LINE_HEIGHT = 1.35;
 
 /**
  * The per-canvas-page notes box, spanning the CANVAS ZONE's width only (the
- * callout column keeps its full-height run). Ruled blank lines ALWAYS render
- * — deliberately, so a printed copy gives the factory somewhere to handwrite;
- * typed notes (when present) sit on the top rules and truncate with an
- * ellipsis rather than overflow.
+ * callout column keeps its full-height run). A clean bordered box: the "PAGE
+ * NOTES" label plus the typed notes (when present), truncated with an ellipsis.
+ * With no notes it is simply the labelled empty box.
  */
 function NotesBox({ box, notes }: { box: PdfRect; notes: string | null }) {
   const text = notes?.trim() ?? "";
-  const rulesTop = box.top + NOTES_LABEL_H;
-  const ruleCount = Math.floor(
-    (box.top + box.height - NOTES_PAD_BOTTOM - rulesTop) / NOTES_RULE_SPACING,
+  const textTop = box.top + NOTES_LABEL_H;
+  // How many lines of typed text fit between the label and the bottom padding.
+  const maxLines = Math.max(
+    1,
+    Math.floor(
+      (box.top + box.height - NOTES_PAD_BOTTOM - textTop) /
+        (NOTES_TEXT_SIZE * NOTES_LINE_HEIGHT),
+    ),
   );
 
   return (
     <>
-      {/* White-backed bordered box — a writing surface, unlike the tinted
-          slot boxes. */}
+      {/* White-backed bordered box — clean, no ruled lines. */}
       <View
         style={{
           position: "absolute",
@@ -493,38 +490,17 @@ function NotesBox({ box, notes }: { box: PdfRect; notes: string | null }) {
       >
         PAGE NOTES
       </Text>
-      <Svg
-        style={{ position: "absolute", left: box.left, top: box.top }}
-        width={box.width}
-        height={box.height}
-        viewBox={`0 0 ${box.width} ${box.height}`}
-      >
-        {Array.from({ length: ruleCount }, (_, i) => {
-          const y = rulesTop - box.top + (i + 1) * NOTES_RULE_SPACING;
-          return (
-            <Line
-              key={i}
-              x1={NOTES_PAD_X}
-              y1={y}
-              x2={box.width - NOTES_PAD_X}
-              y2={y}
-              stroke={RULE_COLOUR}
-              strokeWidth={0.6}
-            />
-          );
-        })}
-      </Svg>
       {text.length > 0 && (
         <Text
           style={{
             position: "absolute",
             left: box.left + NOTES_PAD_X,
-            top: rulesTop + NOTES_TEXT_TOP_OFFSET,
+            top: textTop,
             width: box.width - NOTES_PAD_X * 2,
             fontSize: NOTES_TEXT_SIZE,
-            lineHeight: 2,
+            lineHeight: NOTES_LINE_HEIGHT,
             color: INK,
-            maxLines: ruleCount,
+            maxLines,
             textOverflow: "ellipsis",
           }}
         >
