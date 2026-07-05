@@ -183,10 +183,25 @@ export default async function ProductDetailPage({ params }: PageProps) {
       ?.data as IdentitySectionData | null) ?? null;
 
   const templateByKey = new Map((templates ?? []).map((t) => [t.key, t]));
-  const resolved: ResolvedSection[] = (sections ?? []).map((section) => {
-    const tmpl = templateByKey.get(section.section_key);
-    return { ...section, label: tmpl?.label ?? section.section_key, icon: tmpl?.icon ?? "Component" };
-  });
+  const resolved: ResolvedSection[] = (sections ?? [])
+    .map((section) => {
+      const tmpl = templateByKey.get(section.section_key);
+      return { ...section, label: tmpl?.label ?? section.section_key, icon: tmpl?.icon ?? "Component" };
+    })
+    // Deterministic order. Some products (created before migration 0016 renamed
+    // `canvas`→`technical_details`) carry a stale sort_order tie between
+    // `assets` and `technical_details` (both 20), which left the section order
+    // non-deterministic when ordering by sort_order alone. Break ties by the
+    // template's default_sort_order (the intended order: assets 20 before
+    // technical_details 30), then by key — so the sections never swap. Migration
+    // 0030 also realigns the stored sort_order at the data source.
+    .sort((a, b) => {
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      const ad = templateByKey.get(a.section_key)?.default_sort_order ?? 0;
+      const bd = templateByKey.get(b.section_key)?.default_sort_order ?? 0;
+      if (ad !== bd) return ad - bd;
+      return a.section_key.localeCompare(b.section_key);
+    });
   const statuses: SectionStatus[] = resolved.map((s) => s.status);
 
   // Per-section body renderer. Identity, Asset Upload and Technical Details are
