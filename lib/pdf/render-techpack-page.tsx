@@ -105,7 +105,7 @@ export type PdfPageData = {
   layerColours: LayerColourOverrides;
   shareToken: string;
   /** Per-CANVAS-page notes: the same text renders on every layer-page
-   * exported from that canvas page. Null still renders the ruled box. */
+   * exported from that canvas page. Null still renders the labelled box. */
   notes: string | null;
   slots: PdfSlotData[];
 };
