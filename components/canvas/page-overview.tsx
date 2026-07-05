@@ -14,6 +14,7 @@ import {
 } from "@/components/canvas/layers";
 import { MiniTemplate } from "@/components/canvas/mini-template";
 import { PageNameEditor } from "@/components/canvas/page-name-editor";
+import { PdfExportSpike } from "@/components/canvas/pdf-export-spike";
 import { EmptyState } from "@/components/empty-state";
 import {
   AlertDialog,
@@ -128,7 +129,12 @@ export function PageOverview({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-3">
+          {/* Spike-quality PDF export trigger — real export UI comes later. */}
+          <div className="flex justify-end">
+            <PdfExportSpike productId={productId} pages={pages} />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
           {pages.map((page, index) => (
             <PageCard
               key={page.id}
@@ -150,6 +156,7 @@ export function PageOverview({
             <Plus className="size-8" />
             <span className="text-sm font-medium">Add Page</span>
           </button>
+          </div>
         </div>
       )}
 

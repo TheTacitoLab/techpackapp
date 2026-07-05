@@ -447,28 +447,55 @@ export async function updateSlotFraming(
   revalidatePath(`/products/${productId}`);
 }
 
-/** Lock/unlock shared by the two exported actions below. */
-async function setSlotLock(slotId: string, locked: boolean): Promise<void> {
+const lockSchema = z.object({
+  slotId: z.uuid(),
+  lockWidth: z.number().positive().nullable(),
+  lockHeight: z.number().positive().nullable(),
+});
+
+/**
+ * Lock a slot for annotation, freezing the box it was framed in:
+ * `lock_width`/`lock_height` (the slot's rendered CSS-px size at lock time)
+ * are the design space every other renderer — the PDF export first — lays the
+ * image and pins out in before scaling uniformly to its own container. Null
+ * dims (a zero-sized rect mid-layout) simply leave the previous capture.
+ */
+export async function lockSlot(
+  slotId: string,
+  lockWidth: number | null,
+  lockHeight: number | null,
+): Promise<void> {
+  const input = lockSchema.parse({ slotId, lockWidth, lockHeight });
+  const { supabase, workspaceId } = await requireActionContext();
+  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+
+  const { error } = await supabase
+    .from("canvas_slots")
+    .update({
+      is_locked: true,
+      ...(input.lockWidth !== null && input.lockHeight !== null
+        ? { lock_width: input.lockWidth, lock_height: input.lockHeight }
+        : {}),
+    })
+    .eq("id", input.slotId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${productId}`);
+}
+
+/** Unlocks a slot to re-frame; existing annotations are NOT deleted. */
+export async function unlockSlot(slotId: string): Promise<void> {
   const { slotId: id } = z.object({ slotId: z.uuid() }).parse({ slotId });
   const { supabase, workspaceId } = await requireActionContext();
   const { productId } = await getSlotContext(supabase, id, workspaceId);
 
   const { error } = await supabase
     .from("canvas_slots")
-    .update({ is_locked: locked })
+    .update({ is_locked: false })
     .eq("id", id);
   if (error) throw new Error(error.message);
 
   revalidatePath(`/products/${productId}`);
-}
-
-export async function lockSlot(slotId: string): Promise<void> {
-  await setSlotLock(slotId, true);
-}
-
-/** Unlocks a slot to re-frame; existing annotations are NOT deleted. */
-export async function unlockSlot(slotId: string): Promise<void> {
-  await setSlotLock(slotId, false);
 }
 
 // ============================================================================

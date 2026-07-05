@@ -165,6 +165,7 @@ export type Database = {
           wholesale_price: number | null;
           retail_price: number | null;
           status: Database["public"]["Enums"]["product_status"];
+          share_token: string;
           created_at: string;
           updated_at: string;
           archived_at: string | null;
@@ -189,6 +190,7 @@ export type Database = {
           wholesale_price?: number | null;
           retail_price?: number | null;
           status?: Database["public"]["Enums"]["product_status"];
+          share_token?: string;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -213,6 +215,7 @@ export type Database = {
           wholesale_price?: number | null;
           retail_price?: number | null;
           status?: Database["public"]["Enums"]["product_status"];
+          share_token?: string;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -490,6 +493,8 @@ export type Database = {
           crop_y: number;
           zoom: number;
           fit_mode: string;
+          lock_width: number | null;
+          lock_height: number | null;
           is_locked: boolean;
           created_at: string;
         };
@@ -502,6 +507,8 @@ export type Database = {
           crop_y?: number;
           zoom?: number;
           fit_mode?: string;
+          lock_width?: number | null;
+          lock_height?: number | null;
           is_locked?: boolean;
           created_at?: string;
         };
@@ -514,6 +521,8 @@ export type Database = {
           crop_y?: number;
           zoom?: number;
           fit_mode?: string;
+          lock_width?: number | null;
+          lock_height?: number | null;
           is_locked?: boolean;
           created_at?: string;
         };

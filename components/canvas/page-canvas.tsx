@@ -610,8 +610,16 @@ function FramingSlot({
       try {
         if (writeTimer.current) clearTimeout(writeTimer.current);
         const f = framingRef.current;
+        // Freeze the box the user framed in — the design space the PDF (and
+        // any future renderer) reproduces before scaling to its own container.
+        // LOCAL layout px (offsetWidth/Height), NOT getBoundingClientRect:
+        // crop_x/crop_y apply inside the stage-zoom-scaled subtree, so the
+        // frozen box must be in the same pre-transform pixel space.
+        const el = containerRef.current;
+        const lockW = el && el.offsetWidth > 0 ? el.offsetWidth : null;
+        const lockH = el && el.offsetHeight > 0 ? el.offsetHeight : null;
         await updateSlotFraming(slot.id, f.x, f.y, f.zoom, f.fitMode);
-        await lockSlot(slot.id);
+        await lockSlot(slot.id, lockW, lockH);
         setLockConfirm(false);
         router.refresh();
       } catch (err) {
