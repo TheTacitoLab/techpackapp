@@ -27,8 +27,12 @@ export function PdfExportSpike({
   productId: string;
   pages: ResolvedCanvasPage[];
 }) {
-  const lockedPages = pages.filter((p) => p.slots.some((s) => s.is_locked));
-  const [pageId, setPageId] = useState<string>(lockedPages[0]?.id ?? "");
+  // Keep each page's index in the FULL page list so fallback labels match the
+  // "Page X of Y" numbering the PDF itself prints.
+  const lockedPages = pages
+    .map((p, index) => ({ page: p, index }))
+    .filter(({ page }) => page.slots.some((s) => s.is_locked));
+  const [pageId, setPageId] = useState<string>(lockedPages[0]?.page.id ?? "");
   const [layer, setLayer] = useState<LayerKey>("fabric");
 
   if (lockedPages.length === 0) return null;
@@ -40,9 +44,9 @@ export function PdfExportSpike({
           <SelectValue placeholder="Page" />
         </SelectTrigger>
         <SelectContent>
-          {lockedPages.map((p, i) => (
-            <SelectItem key={p.id} value={p.id}>
-              {p.label ?? `Page ${i + 1}`}
+          {lockedPages.map(({ page, index }) => (
+            <SelectItem key={page.id} value={page.id}>
+              {page.label ?? `Page ${index + 1}`}
             </SelectItem>
           ))}
         </SelectContent>

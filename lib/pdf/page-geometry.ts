@@ -128,6 +128,12 @@ export function slotGeometry(
 
   const lockW = hasLockDims ? framing.lock_width! : cell.width;
   const lockH = hasLockDims ? framing.lock_height! : cell.height;
+  // Without frozen dims the crop offsets are CSS px in an unknown box — they
+  // are meaningless against the pt-sized cell and can shove the image far out
+  // of view. Zero them (zoom is dimensionless and kept): the slot renders its
+  // centred base fit, honest if unrefined, until the slot is re-locked.
+  const cropX = hasLockDims ? framing.crop_x : 0;
+  const cropY = hasLockDims ? framing.crop_y : 0;
 
   const k = Math.min(cell.width / lockW, cell.height / lockH);
   const boxW = lockW * k;
@@ -148,8 +154,8 @@ export function slotGeometry(
       naturalHeight,
       lockW,
       lockH,
-      framing.crop_x,
-      framing.crop_y,
+      cropX,
+      cropY,
       framing.zoom,
       normaliseFitMode(framing.fit_mode),
     );

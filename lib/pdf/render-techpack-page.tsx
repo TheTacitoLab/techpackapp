@@ -51,7 +51,6 @@ import type { CanvasAnnotation, CanvasTemplate } from "@/types";
 
 export type PdfSlotData = {
   framing: SlotFramingInput;
-  isLocked: boolean;
   naturalWidth: number | null;
   naturalHeight: number | null;
   assetName: string | null;
@@ -402,6 +401,11 @@ function byReferenceCode(a: CanvasAnnotation, b: CanvasAnnotation): number {
   });
 }
 
+// The fixed callout column fits roughly this many rows before it would paint
+// past its border (react-pdf does not clip without overflow hidden); beyond it
+// the list truncates with an explicit "+N more" line — never silent.
+const CALLOUT_MAX_ROWS = 18;
+
 function CalloutColumn({
   zone,
   annotations,
@@ -414,6 +418,8 @@ function CalloutColumn({
   layerLabel: string;
 }) {
   const textColour = readableTextOn(colour);
+  const shown = annotations.slice(0, CALLOUT_MAX_ROWS);
+  const hidden = annotations.length - shown.length;
   return (
     <View
       style={{
@@ -426,6 +432,7 @@ function CalloutColumn({
         borderColor: HAIRLINE,
         borderRadius: 4,
         padding: 8,
+        overflow: "hidden",
       }}
     >
       <Text
@@ -445,7 +452,7 @@ function CalloutColumn({
           No annotations on this layer.
         </Text>
       )}
-      {annotations.map((a) => {
+      {shown.map((a) => {
         const summary = getAnnotationSummary(a);
         return (
           <View
@@ -507,6 +514,11 @@ function CalloutColumn({
           </View>
         );
       })}
+      {hidden > 0 && (
+        <Text style={{ fontSize: 6.5, color: MUTED, marginTop: 2 }}>
+          +{hidden} more — see the online tech pack for the full list.
+        </Text>
+      )}
     </View>
   );
 }
