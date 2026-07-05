@@ -34,9 +34,13 @@ import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
 import {
   LAYER_PREFIX,
+  MAX_ANNOTATIONS_PER_PAGE,
+  PAGE_ANNOTATION_LIMIT_MESSAGE,
   RETIRED_LAYER_TYPES,
+  TEMPLATE_SLOT_COUNT,
   type CanvasColourway,
   type CanvasLayerType,
+  type CanvasTemplate,
   type ColourwayAnnotationData,
 } from "@/types";
 
@@ -50,16 +54,14 @@ const LAYER_TYPES = (Object.keys(LAYER_PREFIX) as CanvasLayerType[]).filter(
 ) as [CanvasLayerType, ...CanvasLayerType[]];
 const layerTypeSchema = z.enum(LAYER_TYPES);
 const pinTypeSchema = z.enum(["point", "line"]);
-const templateSchema = z.enum(["single", "split", "quad"]);
+const templateSchema = z.enum(["single", "split", "triple", "quad"]);
 const dataSchema = z.record(z.string(), z.unknown());
 const fraction = z.number().min(0).max(1); // 0.0–1.0 slot-relative coordinate
 const idSchema = z.object({ id: z.uuid() });
 
-const SLOT_COUNT: Record<z.infer<typeof templateSchema>, number> = {
-  single: 1,
-  split: 2,
-  quad: 4,
-};
+// Slot count per template — the shared source of truth (single=1, split=2,
+// triple=3, quad=4), imported so page creation and the layout never drift.
+const SLOT_COUNT = TEMPLATE_SLOT_COUNT;
 
 // ---- Internal helpers (NOT exported — keeps the action surface minimal) ------
 
@@ -91,27 +93,56 @@ async function getSlotContext(
   supabase: ActionCtx["supabase"],
   slotId: string,
   workspaceId: string,
-): Promise<{ productId: string }> {
+): Promise<{ productId: string; pageId: string }> {
   // The generated Database type has no FK `Relationships` metadata for these
   // tables (confirmed against types/database.types.ts — every table lists
   // `Relationships: []`), so postgrest-js can't infer the embedded shape and
   // types it as a SelectQueryError even though the join is valid at the DB
   // level (FK confirmed in supabase/migrations/0013_canvas_schema.sql:
   // canvas_slots.page_id -> canvas_pages.id). overrideTypes corrects the
-  // inferred shape without touching runtime behaviour.
+  // inferred shape without touching runtime behaviour. `page_id` is a plain
+  // column on canvas_slots (no join needed) — carried out for the per-page
+  // annotation-cap count.
   const { data } = await supabase
     .from("canvas_slots")
-    .select("id, canvas_pages!inner(product_id, workspace_id)")
+    .select("id, page_id, canvas_pages!inner(product_id, workspace_id)")
     .eq("id", slotId)
     .eq("canvas_pages.workspace_id", workspaceId)
     .single()
     .overrideTypes<
-      { id: string; canvas_pages: { product_id: string; workspace_id: string } },
+      {
+        id: string;
+        page_id: string;
+        canvas_pages: { product_id: string; workspace_id: string };
+      },
       { merge: false }
     >();
   if (!data) throw new Error("Not found in your workspace.");
 
-  return { productId: data.canvas_pages.product_id };
+  return { productId: data.canvas_pages.product_id, pageId: data.page_id };
+}
+
+/**
+ * Enforce the per-page annotation cap (authoritative, defence-in-depth beyond
+ * the client's friendly counter): count annotations across ALL slots of the
+ * page — every layer_type and both pin types — and reject a new one at the
+ * cap. Deleting a pin frees a slot again immediately; editing/moving never
+ * routes through here. Pages already over the cap (legacy data) are tolerated —
+ * this only blocks ADDING beyond it.
+ */
+async function assertPageUnderAnnotationCap(
+  supabase: ActionCtx["supabase"],
+  pageId: string,
+  workspaceId: string,
+): Promise<void> {
+  const { count } = await supabase
+    .from("canvas_annotations")
+    .select("id, canvas_slots!inner(page_id)", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .eq("canvas_slots.page_id", pageId);
+  if ((count ?? 0) >= MAX_ANNOTATIONS_PER_PAGE) {
+    throw new Error(PAGE_ANNOTATION_LIMIT_MESSAGE);
+  }
 }
 
 // ============================================================================
@@ -251,7 +282,7 @@ const createPageSchema = z.object({
  */
 export async function createCanvasPage(
   productId: string,
-  template: "single" | "split" | "quad",
+  template: CanvasTemplate,
 ): Promise<{ id: string }> {
   const input = createPageSchema.parse({ productId, template });
   const { supabase, workspaceId } = await requireActionContext();
@@ -287,6 +318,89 @@ export async function createCanvasPage(
 
   revalidatePath(`/products/${input.productId}`);
   return { id: page.id };
+}
+
+/**
+ * Duplicate a canvas page onto a fresh annotation surface: same template, the
+ * label suffixed " (copy)", the page notes carried over (context travels with
+ * the drawing), and every slot cloned with its asset + framing + fit mode +
+ * lock state + frozen lock dimensions. Deliberately copies NO annotations —
+ * the whole point is the same garment, ready to be annotated anew. Appended
+ * after the product's last page. Returns the new page id.
+ */
+export async function duplicateCanvasPage(
+  pageId: string,
+): Promise<{ id: string }> {
+  const input = z.object({ pageId: z.uuid() }).parse({ pageId });
+  const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: page } = await supabase
+    .from("canvas_pages")
+    .select("id, product_id, template, label, notes")
+    .eq("id", input.pageId)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (!page) throw new Error("Not found in your workspace.");
+
+  const { data: slots, error: slotsError } = await supabase
+    .from("canvas_slots")
+    .select(
+      "slot_index, asset_id, crop_x, crop_y, zoom, fit_mode, is_locked, lock_width, lock_height",
+    )
+    .eq("page_id", input.pageId)
+    .order("slot_index", { ascending: true });
+  if (slotsError) throw new Error(slotsError.message);
+
+  const { data: last } = await supabase
+    .from("canvas_pages")
+    .select("sort_order")
+    .eq("product_id", page.product_id)
+    .eq("workspace_id", workspaceId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextSort = last && last.length > 0 ? last[0].sort_order + 1 : 0;
+
+  // A named page becomes "{name} (copy)" (clamped to the rename limit); an
+  // unnamed page stays null so the copy shows its own "Page N" default rather
+  // than freezing a positional number into a label.
+  const copyLabel = page.label ? `${page.label} (copy)`.slice(0, 60) : null;
+
+  const { data: newPage, error } = await supabase
+    .from("canvas_pages")
+    .insert({
+      product_id: page.product_id,
+      workspace_id: workspaceId,
+      template: page.template,
+      label: copyLabel,
+      notes: page.notes,
+      sort_order: nextSort,
+    })
+    .select("id")
+    .single();
+  if (error || !newPage) {
+    throw new Error(error?.message ?? "Failed to duplicate page.");
+  }
+
+  if (slots && slots.length > 0) {
+    const { error: insertError } = await supabase.from("canvas_slots").insert(
+      slots.map((slot) => ({
+        page_id: newPage.id,
+        slot_index: slot.slot_index,
+        asset_id: slot.asset_id,
+        crop_x: slot.crop_x,
+        crop_y: slot.crop_y,
+        zoom: slot.zoom,
+        fit_mode: slot.fit_mode,
+        is_locked: slot.is_locked,
+        lock_width: slot.lock_width,
+        lock_height: slot.lock_height,
+      })),
+    );
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  revalidatePath(`/products/${page.product_id}`);
+  return { id: newPage.id };
 }
 
 export async function deleteCanvasPage(id: string): Promise<void> {
@@ -593,8 +707,15 @@ export async function createAnnotation(
 
   // 1 round-trip: collapsed slot->page embedded-filter query.
   console.time("[createAnnotation] getSlotContext (slot+page, 1 query)");
-  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+  const { productId, pageId } = await getSlotContext(
+    supabase,
+    input.slotId,
+    workspaceId,
+  );
   console.timeEnd("[createAnnotation] getSlotContext (slot+page, 1 query)");
+
+  // Authoritative per-page cap — before allocating a code or inserting.
+  await assertPageUnderAnnotationCap(supabase, pageId, workspaceId);
 
   // Single round-trip: join canvas_annotations -> canvas_slots -> canvas_pages
   // via PostgREST's embedded-resource filter syntax and count matches scoped to
@@ -933,7 +1054,15 @@ export async function createColourwayAnnotation(
     data,
   });
   const { supabase, workspaceId, userId } = await requireActionContext();
-  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+  const { productId, pageId } = await getSlotContext(
+    supabase,
+    input.slotId,
+    workspaceId,
+  );
+
+  // Authoritative per-page cap — before resolving/auto-creating a colourway so
+  // a blocked pin never leaves a stray "Colourway 1" behind.
+  await assertPageUnderAnnotationCap(supabase, pageId, workspaceId);
 
   // Resolve the target colourway (explicit → most-recent → auto-create).
   let colourway: CanvasColourway;

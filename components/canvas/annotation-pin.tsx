@@ -222,6 +222,7 @@ export function AnnotationPin({
   slotWidth,
   slotHeight,
   interactive = true,
+  dimmed = true,
   isSelected = false,
   libraryItems,
   colourways,
@@ -237,6 +238,9 @@ export function AnnotationPin({
   slotWidth: number;
   slotHeight: number;
   interactive?: boolean;
+  /** Non-interactive rendering: dimmed context (true) vs full-opacity preview
+   * (false, the All-layers composite). Ignored when `interactive`. */
+  dimmed?: boolean;
   isSelected?: boolean;
   libraryItems: ResolvedLibraryItem[];
   colourways: CanvasColourway[];
@@ -402,14 +406,16 @@ export function AnnotationPin({
     }
   }, [isSelected]);
 
-  // Inactive-layer pins are context only: dimmed and non-interactive (no
-  // popover, no drag) — but they still honour a persisted custom badge offset.
+  // Non-interactive pins are read-only (no popover, no drag) but still honour a
+  // persisted custom badge offset. Inactive-layer context pins render dimmed;
+  // the All-layers composite preview renders them at full opacity (`dimmed`
+  // false) so it shows exactly what the PDF page will.
   if (!interactive) {
     return (
       <span
         aria-hidden
         className="absolute -translate-x-1/2 -translate-y-1/2"
-        style={{ left, top, opacity: 0.3, pointerEvents: "none" }}
+        style={{ left, top, opacity: dimmed ? 0.3 : 1, pointerEvents: "none" }}
       >
         <span className="absolute top-1/2 left-1/2">
           <LeaderLine toX={badgeLeft} toY={badgeTop} color={color} />

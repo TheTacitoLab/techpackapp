@@ -102,6 +102,7 @@ export function MeasurementLinePin({
   slotWidth,
   slotHeight,
   interactive = true,
+  dimmed = true,
   isSelected = false,
   getSlotRect,
   onUpdated,
@@ -113,6 +114,9 @@ export function MeasurementLinePin({
   slotWidth: number;
   slotHeight: number;
   interactive?: boolean;
+  /** Non-interactive rendering: dimmed context (true) vs full-opacity preview
+   * (false, the All-layers composite). Ignored when `interactive`. */
+  dimmed?: boolean;
   isSelected?: boolean;
   getSlotRect: () => DOMRect | null;
   onUpdated?: (id: string, data: Record<string, unknown>) => void;
@@ -268,13 +272,15 @@ export function MeasurementLinePin({
     </svg>
   );
 
-  // Inactive-layer lines are context only: dimmed, no handles, no editor.
+  // Non-interactive lines are read-only: no handles, no editor. Inactive-layer
+  // context lines render dimmed; the All-layers composite preview renders them
+  // at full opacity (`dimmed` false).
   if (!interactive) {
     return (
       <span
         aria-hidden
         className="absolute"
-        style={{ left: 0, top: 0, opacity: 0.3, pointerEvents: "none" }}
+        style={{ left: 0, top: 0, opacity: dimmed ? 0.3 : 1, pointerEvents: "none" }}
       >
         {arrow}
         <span

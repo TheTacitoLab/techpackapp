@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  HelpCircle,
+  Layers3,
   Maximize2,
   Minimize2,
   Minus,
@@ -12,8 +14,10 @@ import {
   RotateCcw,
   Settings,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { AnnotationListPanel } from "@/components/canvas/annotation-list-panel";
+import { CanvasHelpDialog } from "@/components/canvas/canvas-help-dialog";
 import { TemplatePickerDialog } from "@/components/canvas/canvas-templates";
 import { LayerButton } from "@/components/canvas/layer-button";
 import {
@@ -32,13 +36,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type {
-  CanvasAnnotation,
-  CanvasColourway,
-  ColourwayGroup,
-  ProductAsset,
-  ResolvedCanvasPage,
-  ResolvedLibraryItem,
+import { duplicateCanvasPage } from "@/app/(app)/products/[id]/canvas-actions";
+import { cn } from "@/lib/utils";
+import {
+  ANNOTATION_CAP_AMBER_FROM,
+  MAX_ANNOTATIONS_PER_PAGE,
+  PAGE_ANNOTATION_LIMIT_MESSAGE,
+  type CanvasAnnotation,
+  type CanvasColourway,
+  type ColourwayGroup,
+  type ProductAsset,
+  type ResolvedCanvasPage,
+  type ResolvedLibraryItem,
 } from "@/types";
 
 const STAGE_ZOOM_MIN = 0.5;
@@ -69,6 +78,7 @@ export function PageEditor({
   pages,
   pageId,
   activeLayer,
+  viewAllLayers,
   isFullscreen,
   libraryItems,
   colourways,
@@ -77,6 +87,7 @@ export function PageEditor({
   onColourwayUsed,
   onColourwayRenamed,
   onLayerChange,
+  onViewAllLayers,
   onSelectPage,
   onBackToOverview,
   onToggleFullscreen,
@@ -88,6 +99,8 @@ export function PageEditor({
   pages: ResolvedCanvasPage[];
   pageId: string;
   activeLayer: LayerKey;
+  /** The read-only All-layers composite is active (no single layer selected). */
+  viewAllLayers: boolean;
   isFullscreen: boolean;
   libraryItems: ResolvedLibraryItem[];
   colourways: CanvasColourway[];
@@ -96,6 +109,7 @@ export function PageEditor({
   onColourwayUsed: (colourwayId: string) => void;
   onColourwayRenamed: (id: string, name: string) => void;
   onLayerChange: (layer: LayerKey) => void;
+  onViewAllLayers: () => void;
   onSelectPage: (pageId: string) => void;
   onBackToOverview: () => void;
   onToggleFullscreen: () => void;
@@ -106,6 +120,7 @@ export function PageEditor({
   const [stageZoom, setStageZoom] = useState(1);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   const [markerColoursOpen, setMarkerColoursOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<
     string | null
   >(null);
@@ -260,23 +275,97 @@ export function PageEditor({
           }))
       : undefined;
 
+  // Total annotations on the ACTIVE page (all layers, all pin types) — drives
+  // the per-page cap counter and gates placement client-side.
+  const pageAnnotationCount = activePage
+    ? activePage.slots.reduce((n, s) => n + s.annotations.length, 0)
+    : 0;
+  const atAnnotationCap = pageAnnotationCount >= MAX_ANNOTATIONS_PER_PAGE;
+
   function handleCreated(newPageId: string) {
     router.refresh();
     onSelectPage(newPageId);
   }
 
+  function handleDuplicatePage(sourcePageId: string) {
+    void duplicateCanvasPage(sourcePageId)
+      .then(({ id }) => {
+        router.refresh();
+        onSelectPage(id);
+      })
+      .catch(() => toast.error("Could not duplicate the page."));
+  }
+
+  // Placement blocked by the cap: a friendly toast that offers Duplicate right
+  // there (the recommended next step), plus the shared authoritative message.
+  function handleCapBlocked() {
+    if (!activePage) return;
+    toast.error(PAGE_ANNOTATION_LIMIT_MESSAGE, {
+      action: {
+        label: "Duplicate page",
+        onClick: () => handleDuplicatePage(activePage.id),
+      },
+    });
+  }
+
   const layerButtons = (
     <div className="flex flex-wrap items-center gap-2">
+      {/* All-layers composite — read-only preview of the whole PDF page.
+          Visually distinct from the five real layers (outline, stacked icon). */}
+      <button
+        type="button"
+        onClick={onViewAllLayers}
+        aria-pressed={viewAllLayers}
+        title="Preview every layer at once — exactly what the PDF page will show"
+        className={cn(
+          "flex min-h-11 items-center gap-2 rounded-lg border-2 border-dashed px-3 py-2 text-sm transition-colors",
+          viewAllLayers
+            ? "border-foreground/40 text-foreground bg-muted font-semibold"
+            : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+      >
+        <Layers3 className="size-4 shrink-0" />
+        <span className="whitespace-nowrap">All layers</span>
+      </button>
       {ANNOTATION_LAYERS.map((layer) => (
         <LayerButton
           key={layer.key}
           layer={layer}
-          active={layer.key === activeLayer}
+          active={!viewAllLayers && layer.key === activeLayer}
           count={layerCounts[layer.key]}
           onClick={() => onLayerChange(layer.key)}
         />
       ))}
     </div>
+  );
+
+  // Per-page annotation counter — neutral up to 9, amber 10–11, red at 12.
+  const annotationCounter = (
+    <span
+      title="Annotations on this page (max 12)"
+      className={cn(
+        "inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold tabular-nums",
+        atAnnotationCap
+          ? "bg-destructive/10 text-destructive"
+          : pageAnnotationCount >= ANNOTATION_CAP_AMBER_FROM
+            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+            : "bg-muted text-muted-foreground",
+      )}
+    >
+      {pageAnnotationCount}/{MAX_ANNOTATIONS_PER_PAGE}
+    </span>
+  );
+
+  const helpButton = (
+    <button
+      type="button"
+      onClick={() => setHelpOpen(true)}
+      aria-label="How pages work"
+      title="How pages work"
+      className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
+    >
+      <HelpCircle className="size-4" />
+    </button>
   );
 
   const zoomControls = (
@@ -355,6 +444,9 @@ export function PageEditor({
       productId={productId}
       workspaceId={workspaceId}
       activeLayerKey={activeLayer}
+      allLayers={viewAllLayers}
+      atAnnotationCap={atAnnotationCap}
+      onAnnotationCapBlocked={handleCapBlocked}
       stageZoom={stageZoom}
       heightClassName={isFullscreen ? "min-h-[calc(100vh-120px)]" : "h-[500px]"}
       libraryItems={libraryItems}
@@ -432,7 +524,9 @@ export function PageEditor({
           {backButton}
           {layerButtons}
           <div className="ml-auto flex items-center gap-3">
+            {annotationCounter}
             {zoomControls}
+            {helpButton}
             {markerColoursButton}
             <button
               type="button"
@@ -464,6 +558,7 @@ export function PageEditor({
         </div>
         {picker}
         {markerColoursDialog}
+        <CanvasHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       </div>,
       document.body,
     );
@@ -477,7 +572,9 @@ export function PageEditor({
         {backButton}
         {layerButtons}
         <div className="ml-auto flex items-center gap-3">
+          {annotationCounter}
           {zoomControls}
+          {helpButton}
           {markerColoursButton}
           <button
             type="button"
@@ -512,6 +609,7 @@ export function PageEditor({
 
       {picker}
       {markerColoursDialog}
+      <CanvasHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }

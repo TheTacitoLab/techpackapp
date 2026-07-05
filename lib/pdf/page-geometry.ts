@@ -83,6 +83,17 @@ export function templateCells(template: CanvasTemplate, zone: PdfRect): PdfRect[
       { left: zone.left + w + CELL_GAP, top: zone.top, width: w, height: zone.height },
     ];
   }
+  if (template === "triple") {
+    // Three equal columns across, gutters between — mirrors the on-screen
+    // grid-cols-3 template.
+    const w = (zone.width - CELL_GAP * 2) / 3;
+    return [0, 1, 2].map((i) => ({
+      left: zone.left + i * (w + CELL_GAP),
+      top: zone.top,
+      width: w,
+      height: zone.height,
+    }));
+  }
   // quad — 2×2
   const w = (zone.width - CELL_GAP) / 2;
   const h = (zone.height - CELL_GAP) / 2;

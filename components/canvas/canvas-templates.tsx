@@ -20,6 +20,7 @@ import type { CanvasTemplate } from "@/types";
 export const GRID_CLASS: Record<CanvasTemplate, string> = {
   single: "grid-cols-1",
   split: "grid-cols-2",
+  triple: "grid-cols-3",
   quad: "grid-cols-2 grid-rows-2",
 };
 
@@ -48,6 +49,15 @@ export function TemplateIcon({
       </svg>
     );
   }
+  if (template === "triple") {
+    return (
+      <svg {...common} viewBox="0 0 20 16">
+        <rect x="1" y="1" width="5.33" height="14" rx="1.5" fill={rect} />
+        <rect x="7.33" y="1" width="5.33" height="14" rx="1.5" fill={rect} />
+        <rect x="13.66" y="1" width="5.33" height="14" rx="1.5" fill={rect} />
+      </svg>
+    );
+  }
   return (
     <svg {...common} viewBox="0 0 20 16">
       <rect x="1" y="1" width="8" height="6.5" rx="1.5" fill={rect} />
@@ -72,6 +82,11 @@ const TEMPLATE_OPTIONS: {
     template: "split",
     label: "Split View",
     description: "Two images side by side. Good for front + back together.",
+  },
+  {
+    template: "triple",
+    label: "Triple View",
+    description: "Three images across. Good for front, side and back.",
   },
   {
     template: "quad",

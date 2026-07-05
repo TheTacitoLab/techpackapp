@@ -184,6 +184,9 @@ export function PageCanvas({
   productId,
   workspaceId,
   activeLayerKey,
+  allLayers,
+  atAnnotationCap,
+  onAnnotationCapBlocked,
   stageZoom,
   heightClassName,
   libraryItems,
@@ -201,6 +204,12 @@ export function PageCanvas({
   productId: string;
   workspaceId: string;
   activeLayerKey: LayerKey;
+  /** Read-only composite: every layer's pins at full opacity, no placement. */
+  allLayers: boolean;
+  /** The page is at the annotation cap — placement is blocked. */
+  atAnnotationCap: boolean;
+  /** Invoked when a placement click is blocked by the cap. */
+  onAnnotationCapBlocked: () => void;
   stageZoom: number;
   heightClassName: string;
   libraryItems: ResolvedLibraryItem[];
@@ -223,6 +232,9 @@ export function PageCanvas({
               productId={productId}
               workspaceId={workspaceId}
               activeLayerKey={activeLayerKey}
+              allLayers={allLayers}
+              atAnnotationCap={atAnnotationCap}
+              onAnnotationCapBlocked={onAnnotationCapBlocked}
               libraryItems={libraryItems}
               colourwayContext={colourwayContext}
               selectedAnnotationId={selectedAnnotationId}
@@ -247,6 +259,9 @@ function SlotView({
   productId,
   workspaceId,
   activeLayerKey,
+  allLayers,
+  atAnnotationCap,
+  onAnnotationCapBlocked,
   libraryItems,
   colourwayContext,
   selectedAnnotationId,
@@ -262,6 +277,9 @@ function SlotView({
   productId: string;
   workspaceId: string;
   activeLayerKey: LayerKey;
+  allLayers: boolean;
+  atAnnotationCap: boolean;
+  onAnnotationCapBlocked: () => void;
   libraryItems: ResolvedLibraryItem[];
   colourwayContext: ColourwayContext;
   selectedAnnotationId: string | null;
@@ -282,6 +300,9 @@ function SlotView({
         slot={slot}
         productId={productId}
         activeLayerKey={activeLayerKey}
+        allLayers={allLayers}
+        atAnnotationCap={atAnnotationCap}
+        onAnnotationCapBlocked={onAnnotationCapBlocked}
         workspaceId={workspaceId}
         libraryItems={libraryItems}
         colourwayContext={colourwayContext}
@@ -1159,6 +1180,9 @@ function AnnotationSlot({
   slot,
   productId,
   activeLayerKey,
+  allLayers,
+  atAnnotationCap,
+  onAnnotationCapBlocked,
   workspaceId,
   libraryItems,
   colourwayContext,
@@ -1173,6 +1197,9 @@ function AnnotationSlot({
   slot: ResolvedSlot;
   productId: string;
   activeLayerKey: LayerKey;
+  allLayers: boolean;
+  atAnnotationCap: boolean;
+  onAnnotationCapBlocked: () => void;
   workspaceId: string;
   libraryItems: ResolvedLibraryItem[];
   colourwayContext: ColourwayContext;
@@ -1225,10 +1252,17 @@ function AnnotationSlot({
   const [justCreated, setJustCreated] = useState<CanvasAnnotation | null>(null);
 
   // Render-time adjustment (documented local-state resync pattern): switching
-  // away from the Measurements layer mid-draw discards the pending start point
-  // so returning later never resumes a stale line.
-  if (measureDraft && activeLayerKey !== "measurement") {
+  // away from the Measurements layer mid-draw — OR into the read-only
+  // All-layers composite (which leaves activeLayerKey unchanged, so the layer
+  // test alone wouldn't fire) — discards the pending start point so a stale
+  // line can never be completed where placement isn't allowed.
+  if (measureDraft && (allLayers || activeLayerKey !== "measurement")) {
     setMeasureDraft(null);
+  }
+  // Likewise discard any pending single-click draft when entering All-layers,
+  // so the composite stays strictly read-only.
+  if (draftPoint && allLayers) {
+    setDraftPoint(null);
   }
 
   const measureColor = useLayerColours().colourFor("measurement");
@@ -1420,6 +1454,15 @@ function AnnotationSlot({
   }
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+    // Per-page annotation cap: block placement (all layers, all pin types) and
+    // point the user at Duplicate page. Never blocks editing/moving/deleting —
+    // those don't route through here — and the count drops the moment a pin is
+    // deleted, re-enabling placement. Server enforces the same cap
+    // authoritatively.
+    if (atAnnotationCap) {
+      onAnnotationCapBlocked();
+      return;
+    }
     // 0–1 fractions of the slot via the shared helper — the exact same math the
     // pin tip-drag reuses on release, so a click and a drag onto the same point
     // land identically.
@@ -1602,27 +1645,36 @@ function AnnotationSlot({
         }}
       />
 
-      {/* Click overlay for placing pins — the Konva stage replaces this next session. */}
+      {/* Click overlay for placing pins — the Konva stage replaces this next
+          session. In the All-layers composite it becomes an inert layer (no
+          crosshair, no placement) so the view is a pure read-only preview. */}
       <div
         ref={overlayRef}
-        className="absolute inset-0 cursor-crosshair"
-        onClick={handleCanvasClick}
+        className={cn("absolute inset-0", allLayers ? "" : "cursor-crosshair")}
+        onClick={allLayers ? undefined : handleCanvasClick}
         data-slot-id={slot.id}
       />
 
-      {/* Existing pins — active layer interactive, others dimmed for context.
+      {/* Existing pins. Per-layer view: active-layer pins interactive, others
+          dimmed for context. All-layers composite: every pin non-interactive
+          but at FULL opacity — exactly what the PDF page will show.
           Measurement LINES (pin_type 'line') render as dimension arrows via
           MeasurementLinePin; every point pin keeps the standard AnnotationPin. */}
-      {slot.annotations.map((annotation) =>
-        annotation.pin_type === "line" ? (
+      {slot.annotations.map((annotation) => {
+        const interactive =
+          !allLayers &&
+          layerForType(annotation.layer_type)?.key === activeLayerKey;
+        // Dim only inactive-layer context pins in a per-layer view; the
+        // all-layers preview shows everything full-strength.
+        const dimmed = !allLayers && !interactive;
+        return annotation.pin_type === "line" ? (
           <MeasurementLinePin
             key={annotation.id}
             annotation={annotation}
             slotWidth={designW}
             slotHeight={designH}
-            interactive={
-              layerForType(annotation.layer_type)?.key === activeLayerKey
-            }
+            interactive={interactive}
+            dimmed={dimmed}
             isSelected={annotation.id === selectedAnnotationId}
             getSlotRect={() =>
               overlayRef.current?.getBoundingClientRect() ?? null
@@ -1640,9 +1692,8 @@ function AnnotationSlot({
             annotation={annotation}
             slotWidth={designW}
             slotHeight={designH}
-            interactive={
-              layerForType(annotation.layer_type)?.key === activeLayerKey
-            }
+            interactive={interactive}
+            dimmed={dimmed}
             isSelected={annotation.id === selectedAnnotationId}
             libraryItems={libraryItems}
             colourways={colourwayContext.colourways}
@@ -1658,8 +1709,8 @@ function AnnotationSlot({
             onDeleted={(id) => onAnnotationDeleted(slot.id, id)}
             onSelected={onSelectAnnotation}
           />
-        ),
-      )}
+        );
+      })}
 
       {draftPoint && activeLayerKey === "fabric" && (
         <DraftFabricPin
@@ -1867,8 +1918,9 @@ function AnnotationSlot({
       {/* Toolbar — hidden while a capture mode is active. The capture layer
           used to cover the whole slot (including this chrome); now that it is
           scoped to the design box, hiding the toolbar preserves the exact
-          "the next click cannot hit slot chrome" behaviour. */}
-      {!measureDraft && !pickMode && (
+          "the next click cannot hit slot chrome" behaviour. Also hidden in the
+          All-layers composite, which is a read-only preview. */}
+      {!allLayers && !measureDraft && !pickMode && (
         <div className="absolute top-2 right-2 flex items-center gap-2">
           <span className="rounded-md bg-black/50 px-2 py-1 text-xs text-white">
             Annotation mode

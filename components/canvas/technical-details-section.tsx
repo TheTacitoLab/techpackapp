@@ -42,6 +42,9 @@ export function TechnicalDetailsSection({
   const [mode, setMode] = useState<Mode>({ view: "overview" });
   // Default to Fabrics & Trim — the most-used layer, and the one that builds the BOM.
   const [activeLayer, setActiveLayer] = useState<LayerKey>("fabric");
+  // The read-only All-layers composite preview — mutually exclusive with a
+  // single active layer (selecting any real layer exits it).
+  const [viewAllLayers, setViewAllLayers] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Optimistic colourway list, owned here (above the overview/edit switch) so a
@@ -101,6 +104,7 @@ export function TechnicalDetailsSection({
       pages={pages}
       pageId={mode.pageId}
       activeLayer={activeLayer}
+      viewAllLayers={viewAllLayers}
       isFullscreen={isFullscreen}
       libraryItems={libraryItems}
       colourways={localColourways}
@@ -108,7 +112,12 @@ export function TechnicalDetailsSection({
       onColourwayCreated={handleColourwayCreated}
       onColourwayUsed={setLastUsedColourwayId}
       onColourwayRenamed={handleColourwayRenamed}
-      onLayerChange={setActiveLayer}
+      onLayerChange={(layer) => {
+        // Selecting a real layer exits the All-layers composite.
+        setActiveLayer(layer);
+        setViewAllLayers(false);
+      }}
+      onViewAllLayers={() => setViewAllLayers(true)}
       onSelectPage={(pageId) => setMode({ view: "edit", pageId })}
       onBackToOverview={backToOverview}
       onToggleFullscreen={() => setIsFullscreen((v) => !v)}

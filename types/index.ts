@@ -93,6 +93,32 @@ export type CanvasTemplate = Enums<"canvas_template">;
 export type CanvasLayerType = Enums<"canvas_layer_type">;
 
 /**
+ * Slot counts per template — the single source shared by page creation and any
+ * layout that needs to know how many slots a template has. (single=1, split=2,
+ * triple=3, quad=4 covers the 1–4 range.)
+ */
+export const TEMPLATE_SLOT_COUNT: Record<CanvasTemplate, number> = {
+  single: 1,
+  split: 2,
+  triple: 3,
+  quad: 4,
+};
+
+/**
+ * The hard cap on annotations per canvas page — counted across ALL slots and
+ * ALL layer/pin types (measurement lines included). Keeps a page
+ * factory-readable and stops the PDF callout column overflowing. Enforced
+ * authoritatively in the create-annotation server actions and surfaced in the
+ * editor as a live counter that turns amber approaching the cap.
+ */
+export const MAX_ANNOTATIONS_PER_PAGE = 12;
+/** The annotation counter turns amber from this count up to the cap. */
+export const ANNOTATION_CAP_AMBER_FROM = 10;
+/** Shown (client and server) when a create is blocked by the per-page cap. */
+export const PAGE_ANNOTATION_LIMIT_MESSAGE =
+  "This page has reached 12 annotations — duplicate the page to keep annotating this image.";
+
+/**
  * A slot resolved for rendering: the chosen asset (null when the slot is empty)
  * and the annotation pins placed on it. Assembled server-side from canvas_slots
  * + product_assets + canvas_annotations and handed to the canvas UI.

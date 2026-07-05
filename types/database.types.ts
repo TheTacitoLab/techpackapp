@@ -661,7 +661,7 @@ export type Database = {
         | "packaging"
         | "interlining";
       library_source: "global" | "workspace";
-      canvas_template: "single" | "split" | "quad";
+      canvas_template: "single" | "split" | "triple" | "quad";
       canvas_layer_type:
         | "fabric"
         | "trim"

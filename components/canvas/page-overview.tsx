@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, Plus, X } from "lucide-react";
+import { Copy, LayoutGrid, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { TemplatePickerDialog } from "@/components/canvas/canvas-templates";
@@ -29,6 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   deleteCanvasPage,
+  duplicateCanvasPage,
   reorderCanvasPages,
 } from "@/app/(app)/products/[id]/canvas-actions";
 import { cn } from "@/lib/utils";
@@ -65,6 +66,15 @@ export function PageOverview({
     // Straight into Edit mode for the new page (the refresh brings its data).
     router.refresh();
     onOpenPage(pageId);
+  }
+
+  function handleDuplicate(pageId: string) {
+    void duplicateCanvasPage(pageId)
+      .then(({ id }) => {
+        router.refresh();
+        onOpenPage(id);
+      })
+      .catch(() => toast.error("Could not duplicate the page."));
   }
 
   function confirmDelete() {
@@ -143,6 +153,7 @@ export function PageOverview({
               dragging={draggingId === page.id}
               onOpen={() => onOpenPage(page.id)}
               onDelete={() => setDeleteTarget(page)}
+              onDuplicate={() => handleDuplicate(page.id)}
               onDragStart={() => setDraggingId(page.id)}
               onDragEnd={() => setDraggingId(null)}
               onDrop={() => handleDrop(page.id)}
@@ -206,6 +217,7 @@ function PageCard({
   dragging,
   onOpen,
   onDelete,
+  onDuplicate,
   onDragStart,
   onDragEnd,
   onDrop,
@@ -215,6 +227,7 @@ function PageCard({
   dragging: boolean;
   onOpen: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   onDrop: () => void;
@@ -270,18 +283,34 @@ function PageCard({
         ))}
       </div>
 
-      {/* Delete (hover) */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        aria-label="Delete page"
-        className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground absolute top-2 right-2 flex size-6 items-center justify-center rounded-md bg-white/80 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-      >
-        <X className="size-4" />
-      </button>
+      {/* Duplicate + delete (hover) — duplicate carries images, framing, lock
+          state and notes onto a fresh annotation surface. */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDuplicate();
+          }}
+          aria-label="Duplicate page"
+          title="Duplicate page"
+          className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground flex size-6 items-center justify-center rounded-md bg-white/80 focus-visible:opacity-100"
+        >
+          <Copy className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          aria-label="Delete page"
+          title="Delete page"
+          className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground flex size-6 items-center justify-center rounded-md bg-white/80 focus-visible:opacity-100"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
     </div>
   );
 }

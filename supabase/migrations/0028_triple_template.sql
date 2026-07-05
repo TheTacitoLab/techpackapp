@@ -1,0 +1,14 @@
+-- ============================================================================
+-- 0028 — Add `triple` to the canvas_template enum (idempotent / safe to re-run)
+--
+-- Three equal columns side by side — completes the 1–4 slot range alongside
+-- single (1), split (2), quad (4). Slots are slots: nothing downstream
+-- special-cases the value; page creation reads its slot count from the shared
+-- TEMPLATE_SLOT_COUNT map and the layout grid keys off the enum.
+--
+-- NOTE: `ALTER TYPE ... ADD VALUE` must run OUTSIDE an explicit transaction
+-- block. In the Supabase SQL editor, paste and run this statement on its own
+-- (do not wrap it in a transaction with other DDL). `IF NOT EXISTS` makes it
+-- safe to re-run.
+-- ============================================================================
+alter type public.canvas_template add value if not exists 'triple';
