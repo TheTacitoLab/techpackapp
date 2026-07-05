@@ -457,6 +457,7 @@ export type Database = {
           workspace_id: string;
           template: Database["public"]["Enums"]["canvas_template"];
           label: string | null;
+          notes: string | null;
           sort_order: number;
           created_at: string;
           updated_at: string;
@@ -467,6 +468,7 @@ export type Database = {
           workspace_id: string;
           template: Database["public"]["Enums"]["canvas_template"];
           label?: string | null;
+          notes?: string | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -477,6 +479,7 @@ export type Database = {
           workspace_id?: string;
           template?: Database["public"]["Enums"]["canvas_template"];
           label?: string | null;
+          notes?: string | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;

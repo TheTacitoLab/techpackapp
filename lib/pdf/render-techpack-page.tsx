@@ -7,6 +7,9 @@
  * slot's frozen lock-space box, and pins are 0–1 fractions of that box — both
  * scaled by the single per-slot factor `k` (see `lib/pdf/page-geometry.ts`).
  * Pins and image share one scale; nothing inside a slot scales independently.
+ * The bordered box on the page IS that frozen box (the slot's on-screen
+ * aspect), so the image fills it edge-to-edge — spare canvas-zone space falls
+ * between boxes and into the always-present PAGE NOTES band at the bottom.
  *
  * Hardcoded for the spike (settings surface comes later): header field
  * selection, callout detail line (via the shared `getAnnotationSummary`),
@@ -40,11 +43,10 @@ import {
   HEADER_H,
   FOOTER_H,
   calloutZone,
+  canvasZoneLayout,
   pinPoint,
-  slotGeometry,
-  slotsZone,
-  templateCells,
   type PdfRect,
+  type PdfSlotGeometry,
   type SlotFramingInput,
 } from "@/lib/pdf/page-geometry";
 import type { CanvasAnnotation, CanvasTemplate } from "@/types";
@@ -54,8 +56,12 @@ export type PdfSlotData = {
   naturalWidth: number | null;
   naturalHeight: number | null;
   assetName: string | null;
+  /** Whether the slot has an asset at all — a never-filled slot renders as a
+   * clean empty box; only a slot WITH an asset whose image could not be
+   * fetched/rendered shows the "Image unavailable" failure text. */
+  hasAsset: boolean;
   /** Slot image as a data URI (fetched server-side; PNG and SVG both verified
-   * in Step 0); null renders an "image unavailable" box. */
+   * in Step 0); null with `hasAsset` renders an "image unavailable" box. */
   image: string | null;
   /** Already filtered to the exported layer's `types`. */
   annotations: CanvasAnnotation[];
@@ -78,6 +84,9 @@ export type PdfPageData = {
   /** Resolved via the workspace's layer_colours overrides (imported resolver). */
   layerColour: string;
   shareToken: string;
+  /** Per-CANVAS-page notes: the same text renders on every layer-page
+   * exported from that canvas page. Null still renders the ruled box. */
+  notes: string | null;
   slots: PdfSlotData[];
 };
 
@@ -286,50 +295,25 @@ function PdfMeasurementLine({
 
 function PdfSlot({
   slot,
-  cell,
+  geo,
   colour,
   index,
 }: {
   slot: PdfSlotData;
-  cell: PdfRect;
+  geo: PdfSlotGeometry;
   colour: string;
   index: number;
 }) {
-  // Inset the drawable area so the clipped image can never paint over the
-  // cell's border — Step 0 found react-pdf clips at the BORDER box and draws
-  // children above the border stroke.
-  const INSET = 3;
-  const inner: PdfRect = {
-    left: cell.left + INSET,
-    top: cell.top + INSET,
-    width: cell.width - INSET * 2,
-    height: cell.height - INSET * 2,
-  };
-  const geo = slotGeometry(
-    inner,
-    slot.framing,
-    slot.naturalWidth,
-    slot.naturalHeight,
-  );
   const { box } = geo;
 
+  // The bordered box IS the frozen slot box (aspect-matched to the screen) —
+  // the image fills it edge-to-edge, so the border is drawn as a separate
+  // sibling ABOVE the clipped content: Step 0 found react-pdf clips at the
+  // BORDER box and paints children over the border stroke, so a border on the
+  // content view itself would be overpainted at the image's edges.
   return (
     <>
-      {/* Bordered container box = the cell. */}
-      <View
-        style={{
-          position: "absolute",
-          left: cell.left,
-          top: cell.top,
-          width: cell.width,
-          height: cell.height,
-          borderWidth: 1,
-          borderColor: HAIRLINE,
-          borderRadius: 4,
-          backgroundColor: BOX_BG,
-        }}
-      />
-      {/* The frozen slot box, clipped — image + pins live in here, sharing k. */}
+      {/* Clipped content — image + pins live in here, sharing the one k. */}
       <View
         style={{
           position: "absolute",
@@ -337,38 +321,43 @@ function PdfSlot({
           top: box.top,
           width: box.width,
           height: box.height,
+          borderRadius: 4,
+          backgroundColor: BOX_BG,
           overflow: "hidden",
         }}
       >
-        {slot.image && geo.imageRect ? (
-          <Image
-            src={slot.image}
-            style={{
-              position: "absolute",
-              left: geo.imageRect.left,
-              top: geo.imageRect.top,
-              width: geo.imageRect.width,
-              height: geo.imageRect.height,
-              objectFit: "fill",
-            }}
-          />
-        ) : (
-          <View
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: box.width,
-              height: box.height,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text style={{ fontSize: 8, color: MUTED }}>
-              {slot.image ? "Image dimensions unavailable" : "Image unavailable"}
-            </Text>
-          </View>
-        )}
+        {/* A never-filled slot stays a clean empty box — the failure text is
+            reserved for a slot whose asset image could not be rendered. */}
+        {slot.hasAsset &&
+          (slot.image && geo.imageRect ? (
+            <Image
+              src={slot.image}
+              style={{
+                position: "absolute",
+                left: geo.imageRect.left,
+                top: geo.imageRect.top,
+                width: geo.imageRect.width,
+                height: geo.imageRect.height,
+                objectFit: "fill",
+              }}
+            />
+          ) : (
+            <View
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: box.width,
+                height: box.height,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ fontSize: 8, color: MUTED }}>
+                {slot.image ? "Image dimensions unavailable" : "Image unavailable"}
+              </Text>
+            </View>
+          ))}
 
         {slot.annotations.map((a) =>
           a.pin_type === "line" ? (
@@ -378,18 +367,135 @@ function PdfSlot({
           ),
         )}
       </View>
-      {/* Slot label, top-left corner of the container box. */}
+      {/* Border stroke above the edge-to-edge content. */}
+      <View
+        style={{
+          position: "absolute",
+          left: box.left,
+          top: box.top,
+          width: box.width,
+          height: box.height,
+          borderWidth: 1,
+          borderColor: HAIRLINE,
+          borderRadius: 4,
+        }}
+      />
+      {/* Slot label, top-left corner of the box. A never-filled slot has no
+          asset name and gets NO text at all — "Slot N" would read as a
+          placeholder in a box that is deliberately, cleanly empty. */}
+      {slot.hasAsset && (
+        <Text
+          style={{
+            position: "absolute",
+            left: box.left + 5,
+            top: box.top + 4,
+            fontSize: 6,
+            color: MUTED,
+          }}
+        >
+          {slot.assetName ?? `Slot ${index + 1}`}
+        </Text>
+      )}
+    </>
+  );
+}
+
+// Notes band anatomy: rule rows sized for handwriting (~5mm), typed text at
+// fontSize 7 with lineHeight 2 (react-pdf multiplies by fontSize → 14pt rows)
+// so typed lines sit ON the rules like writing on ruled paper.
+const NOTES_RULE_SPACING = 14;
+const NOTES_PAD_X = 8;
+const NOTES_LABEL_H = 14;
+const NOTES_PAD_BOTTOM = 4;
+const NOTES_TEXT_SIZE = 7;
+// react-pdf places a line's baseline one font-ascent (Helvetica: 0.9em) below
+// the top of its line box; shift the text block down by the remainder of a
+// rule row so every typed line's BASELINE lands exactly on its rule.
+const NOTES_TEXT_TOP_OFFSET = NOTES_RULE_SPACING - NOTES_TEXT_SIZE * 0.9;
+/** Lighter than the box hairline so the rules read as guide lines, not chrome. */
+const RULE_COLOUR = "#E7E5E4";
+
+/**
+ * The per-canvas-page notes box, spanning the CANVAS ZONE's width only (the
+ * callout column keeps its full-height run). Ruled blank lines ALWAYS render
+ * — deliberately, so a printed copy gives the factory somewhere to handwrite;
+ * typed notes (when present) sit on the top rules and truncate with an
+ * ellipsis rather than overflow.
+ */
+function NotesBox({ box, notes }: { box: PdfRect; notes: string | null }) {
+  const text = notes?.trim() ?? "";
+  const rulesTop = box.top + NOTES_LABEL_H;
+  const ruleCount = Math.floor(
+    (box.top + box.height - NOTES_PAD_BOTTOM - rulesTop) / NOTES_RULE_SPACING,
+  );
+
+  return (
+    <>
+      {/* White-backed bordered box — a writing surface, unlike the tinted
+          slot boxes. */}
+      <View
+        style={{
+          position: "absolute",
+          left: box.left,
+          top: box.top,
+          width: box.width,
+          height: box.height,
+          borderWidth: 1,
+          borderColor: HAIRLINE,
+          borderRadius: 4,
+        }}
+      />
+      {/* Label styled like the slot labels; "PAGE notes" deliberately — whole-
+          page context, distinct from the pins' annotation notes. */}
       <Text
         style={{
           position: "absolute",
-          left: cell.left + 5,
-          top: cell.top + 4,
+          left: box.left + 5,
+          top: box.top + 4,
           fontSize: 6,
           color: MUTED,
         }}
       >
-        {slot.assetName ?? `Slot ${index + 1}`}
+        PAGE NOTES
       </Text>
+      <Svg
+        style={{ position: "absolute", left: box.left, top: box.top }}
+        width={box.width}
+        height={box.height}
+        viewBox={`0 0 ${box.width} ${box.height}`}
+      >
+        {Array.from({ length: ruleCount }, (_, i) => {
+          const y = rulesTop - box.top + (i + 1) * NOTES_RULE_SPACING;
+          return (
+            <Line
+              key={i}
+              x1={NOTES_PAD_X}
+              y1={y}
+              x2={box.width - NOTES_PAD_X}
+              y2={y}
+              stroke={RULE_COLOUR}
+              strokeWidth={0.6}
+            />
+          );
+        })}
+      </Svg>
+      {text.length > 0 && (
+        <Text
+          style={{
+            position: "absolute",
+            left: box.left + NOTES_PAD_X,
+            top: rulesTop + NOTES_TEXT_TOP_OFFSET,
+            width: box.width - NOTES_PAD_X * 2,
+            fontSize: NOTES_TEXT_SIZE,
+            lineHeight: 2,
+            color: INK,
+            maxLines: ruleCount,
+            textOverflow: "ellipsis",
+          }}
+        >
+          {text}
+        </Text>
+      )}
     </>
   );
 }
@@ -632,8 +738,7 @@ function Footer({ data }: { data: PdfPageData }) {
 }
 
 export function TechPackPage({ data }: { data: PdfPageData }) {
-  const zone = slotsZone();
-  const cells = templateCells(data.template, zone);
+  const layout = canvasZoneLayout(data.template, data.slots);
   const allAnnotations = data.slots
     .flatMap((s) => s.annotations)
     .sort(byReferenceCode);
@@ -645,17 +750,19 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
     >
       <Page size={[PAGE_W, PAGE_H]} style={styles.page}>
         <Header data={data} />
-        {data.slots.map((slot, i) =>
-          cells[i] ? (
+        {data.slots.map((slot, i) => {
+          const geo = layout.slots[i];
+          return geo ? (
             <PdfSlot
               key={i}
               slot={slot}
-              cell={cells[i]}
+              geo={geo}
               colour={data.layerColour}
               index={i}
             />
-          ) : null,
-        )}
+          ) : null;
+        })}
+        <NotesBox box={layout.notesBox} notes={data.notes} />
         <CalloutColumn
           zone={calloutZone()}
           annotations={allAnnotations}

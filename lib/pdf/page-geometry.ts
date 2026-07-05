@@ -36,6 +36,16 @@ export const FOOTER_H = 30;
 export const CALLOUT_W = 216;
 export const ZONE_GAP = 12;
 
+/**
+ * The notes band (per-canvas-page notes + ruled handwriting lines) lives at
+ * the BOTTOM of the slots zone, so the callout column is untouched. It is
+ * always present: at least ~20mm tall (slots scale to respect it), at most a
+ * third of the zone (a small slot never produces a half-page of rules).
+ */
+export const NOTES_MIN_H = 56.7; // ≈20mm in points
+export const NOTES_MAX_FRACTION = 1 / 3;
+export const NOTES_GAP = 10;
+
 /** The main (slots) zone rectangle on the page. */
 export function slotsZone(): PdfRect {
   return {
@@ -94,7 +104,7 @@ export type SlotFramingInput = {
 };
 
 export type PdfSlotGeometry = {
-  /** The slot's drawn box in page points — the lock box scaled by k, centred in its cell. */
+  /** The slot's drawn box in page points — the lock box scaled by k, top-aligned in its cell. */
   box: PdfRect;
   /** The uniform lock-space → PDF scale factor. */
   k: number;
@@ -108,11 +118,15 @@ export type PdfSlotGeometry = {
  * Lay one slot out inside its cell.
  *
  * With frozen lock dims: the slot box is the lock box contain-fitted into the
- * cell (uniform k, centred) — the PDF is "yet another container size". Without
- * them (slots locked before migration 0022): the CELL is used as the reference
- * box (k = 1 against itself) — fractions-based pins are still exact; only the
- * pixel crop offsets are approximate until the slot is re-locked. Flagged via
- * `approximate`.
+ * cell (uniform k) — the PDF is "yet another container size". The box adopts
+ * the slot's frozen ASPECT (it IS the bordered box on the page — the image
+ * fills it edge-to-edge, never letterboxed inside a border), top-aligned so
+ * boxes in a row share a common top edge and horizontally centred so spare
+ * cell space falls around boxes as clean page spacing. Without lock dims
+ * (never-filled slots, or slots locked before migration 0022): the CELL is
+ * used as the reference box (k = 1 against itself) — fractions-based pins are
+ * still exact; only the pixel crop offsets are approximate until the slot is
+ * re-locked. Flagged via `approximate`.
  */
 export function slotGeometry(
   cell: PdfRect,
@@ -140,7 +154,7 @@ export function slotGeometry(
   const boxH = lockH * k;
   const box: PdfRect = {
     left: cell.left + (cell.width - boxW) / 2,
-    top: cell.top + (cell.height - boxH) / 2,
+    top: cell.top,
     width: boxW,
     height: boxH,
   };
@@ -168,6 +182,66 @@ export function slotGeometry(
   }
 
   return { box, k, imageRect, approximate: !hasLockDims };
+}
+
+export type SlotLayoutInput = {
+  framing: SlotFramingInput;
+  naturalWidth: number | null;
+  naturalHeight: number | null;
+};
+
+export type CanvasZoneLayout = {
+  /** Per-slot geometry in slots order; null when the template has no cell for that index. */
+  slots: (PdfSlotGeometry | null)[];
+  /** The always-present notes band at the bottom of the slots zone. */
+  notesBox: PdfRect;
+};
+
+/**
+ * Lay the whole canvas zone out: the notes band first reserves its minimum
+ * height at the bottom, the remaining slot area is divided into the
+ * template's cells, and each slot is aspect-fitted into its cell
+ * (`slotGeometry`). Whatever vertical space the aspect-fitted boxes leave
+ * unused then grows the notes band, up to its cap — beyond the cap the spare
+ * space stays as clean spacing between the slots and the band.
+ */
+export function canvasZoneLayout(
+  template: CanvasTemplate,
+  slots: readonly SlotLayoutInput[],
+): CanvasZoneLayout {
+  const zone = slotsZone();
+  const slotArea: PdfRect = {
+    ...zone,
+    height: zone.height - NOTES_MIN_H - NOTES_GAP,
+  };
+  const cells = templateCells(template, slotArea);
+
+  const geometries = slots.map((slot, i) => {
+    const cell = cells[i];
+    return cell
+      ? slotGeometry(cell, slot.framing, slot.naturalWidth, slot.naturalHeight)
+      : null;
+  });
+
+  const slotsBottom = geometries.reduce(
+    (max, geo) => (geo ? Math.max(max, geo.box.top + geo.box.height) : max),
+    slotArea.top,
+  );
+  const zoneBottom = zone.top + zone.height;
+  const notesHeight = Math.min(
+    Math.max(zoneBottom - slotsBottom - NOTES_GAP, NOTES_MIN_H),
+    zone.height * NOTES_MAX_FRACTION,
+  );
+
+  return {
+    slots: geometries,
+    notesBox: {
+      left: zone.left,
+      top: zoneBottom - notesHeight,
+      width: zone.width,
+      height: notesHeight,
+    },
+  };
 }
 
 /** A pin's tip position in points relative to the slot box (fractions × box). */

@@ -341,6 +341,40 @@ export async function renameCanvasPage(
   revalidatePath(`/products/${page.product_id}`);
 }
 
+const updatePageNotesSchema = z.object({
+  pageId: z.uuid(),
+  notes: z.string().trim().max(2000),
+});
+
+/**
+ * Save a canvas page's notes — rendered in the PDF export's "PAGE NOTES" box
+ * on every layer-page of that canvas page. Empty text clears back to null
+ * (the ruled box on the PDF renders either way).
+ */
+export async function updateCanvasPageNotes(
+  pageId: string,
+  notes: string,
+): Promise<void> {
+  const input = updatePageNotesSchema.parse({ pageId, notes });
+  const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: page } = await supabase
+    .from("canvas_pages")
+    .select("id, product_id")
+    .eq("id", input.pageId)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (!page) throw new Error("Not found in your workspace.");
+
+  const { error } = await supabase
+    .from("canvas_pages")
+    .update({ notes: input.notes.length > 0 ? input.notes : null })
+    .eq("id", input.pageId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${page.product_id}`);
+}
+
 const reorderSchema = z.object({
   productId: z.uuid(),
   orderedIds: z.array(z.uuid()),

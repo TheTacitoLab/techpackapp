@@ -189,6 +189,9 @@ export async function GET(
         naturalWidth: asset?.width ?? svgSize?.width ?? null,
         naturalHeight: asset?.height ?? svgSize?.height ?? null,
         assetName: asset?.name ?? null,
+        // Distinguishes a never-filled slot (clean empty box) from an asset
+        // whose image fetch failed ("Image unavailable").
+        hasAsset: asset !== null,
         image,
         // Only the chosen layer's pins reach the PDF at all.
         annotations: slot.canvas_annotations.filter((a) =>
@@ -219,6 +222,8 @@ export async function GET(
     // fall back to a visible placeholder rather than a "/view/undefined" link.
     shareToken:
       (product.share_token as string | undefined) ?? "preview-no-token",
+    // Per-canvas-page notes: the same text renders on every layer-page.
+    notes: page.notes,
     slots,
   };
 

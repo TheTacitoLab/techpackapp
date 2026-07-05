@@ -23,6 +23,7 @@ import {
   type LayerKey,
 } from "@/components/canvas/layers";
 import { PageCanvas } from "@/components/canvas/page-canvas";
+import { PageNotesEditor } from "@/components/canvas/page-notes-editor";
 import { PageThumbnailStrip } from "@/components/canvas/page-thumbnail-strip";
 import { LayerColoursEditor } from "@/components/settings/layer-colours-editor";
 import {
@@ -373,6 +374,32 @@ export function PageEditor({
     />
   ) : null;
 
+  // Saved notes patch localPages directly (the annotations' optimistic
+  // pattern) so a remount — the fullscreen toggle swaps the whole tree — sees
+  // current text instead of the last server round-trip's.
+  function handleNotesSaved(notesPageId: string, value: string) {
+    const trimmed = value.trim();
+    setLocalPages((prev) =>
+      prev.map((page) =>
+        page.id === notesPageId
+          ? { ...page, notes: trimmed.length > 0 ? trimmed : null }
+          : page,
+      ),
+    );
+  }
+
+  // Below the canvas in both branches — mirroring the PDF, where the PAGE
+  // NOTES box sits beneath the slots. Keyed by page id so switching pages
+  // resets the draft to that page's saved notes.
+  const pageNotes = activePage ? (
+    <PageNotesEditor
+      key={activePage.id}
+      pageId={activePage.id}
+      notes={activePage.notes}
+      onSaved={(value) => handleNotesSaved(activePage.id, value)}
+    />
+  ) : null;
+
   const listPanel = (
     <AnnotationListPanel
       annotations={activeLayerAnnotations}
@@ -429,7 +456,10 @@ export function PageEditor({
               onAddPage={() => setPickerOpen(true)}
             />
           )}
-          <div className="flex-1 overflow-auto p-4">{canvas}</div>
+          <div className="flex-1 overflow-auto p-4">
+            {canvas}
+            <div className="mt-3">{pageNotes}</div>
+          </div>
           {listPanel}
         </div>
         {picker}
@@ -474,6 +504,11 @@ export function PageEditor({
         <div className="min-w-0 flex-1 overflow-auto">{canvas}</div>
         {listPanel}
       </div>
+
+      {/* Page notes — the editor counterpart of the PDF's PAGE NOTES box */}
+      {pageNotes && (
+        <div className="border-border border-t px-3 pt-2.5 pb-3">{pageNotes}</div>
+      )}
 
       {picker}
       {markerColoursDialog}
