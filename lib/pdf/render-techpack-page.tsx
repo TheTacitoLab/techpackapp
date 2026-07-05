@@ -31,7 +31,12 @@ import {
 } from "@react-pdf/renderer";
 
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
-import { readableTextOn, type LayerKey } from "@/components/canvas/layers";
+import {
+  readableTextOn,
+  resolveColourForLayerType,
+  type LayerColourOverrides,
+  type LayerKey,
+} from "@/components/canvas/layers";
 import {
   formatMeasurementValue,
   readMeasurementData,
@@ -83,10 +88,21 @@ export type PdfPageData = {
   pageCount: number;
   pageLabel: string;
   template: CanvasTemplate;
-  layerKey: LayerKey;
+  /** Omitted for the all-layers composite (no single layer). Currently unread
+   *  by the renderer; kept for parity with the single-layer export contract. */
+  layerKey?: LayerKey;
   layerLabel: string;
-  /** Resolved via the workspace's layer_colours overrides (imported resolver). */
+  /** Resolved via the workspace's layer_colours overrides (imported resolver).
+   *  In the all-layers composite this is a neutral chrome colour; each pin
+   *  resolves its OWN layer colour from `layerColours` instead. */
   layerColour: string;
+  /** All-layers composite export — every layer's pins on one page, each in its
+   *  own colour (mirrors the on-screen "All layers" preview). Single-layer
+   *  exports leave this false and every pin uses `layerColour`. */
+  allLayers: boolean;
+  /** Workspace marker-colour overrides, used to resolve each pin's own colour
+   *  in the all-layers composite (ignored when `allLayers` is false). */
+  layerColours: LayerColourOverrides;
   shareToken: string;
   /** Per-CANVAS-page notes: the same text renders on every layer-page
    * exported from that canvas page. Null still renders the ruled box. */
@@ -310,13 +326,15 @@ function PdfSlot({
   slot,
   cell,
   geo,
-  colour,
+  colourFor,
   index,
 }: {
   slot: PdfSlotData;
   cell: PdfRect;
   geo: PdfSlotGeometry;
-  colour: string;
+  /** The colour for a given annotation — one page colour for a single-layer
+   *  export, or each pin's own layer colour in the all-layers composite. */
+  colourFor: (annotation: CanvasAnnotation) => string;
   index: number;
 }) {
   const { box } = geo;
@@ -388,9 +406,14 @@ function PdfSlot({
 
         {slot.annotations.map((a) =>
           a.pin_type === "line" ? (
-            <PdfMeasurementLine key={a.id} annotation={a} box={box} colour={colour} />
+            <PdfMeasurementLine
+              key={a.id}
+              annotation={a}
+              box={box}
+              colour={colourFor(a)}
+            />
           ) : (
-            <PdfPin key={a.id} annotation={a} box={box} colour={colour} />
+            <PdfPin key={a.id} annotation={a} box={box} colour={colourFor(a)} />
           ),
         )}
       </View>
@@ -595,16 +618,17 @@ function CalloutColumn({
   zone,
   groups,
   total,
-  colour,
+  colourFor,
   layerLabel,
 }: {
   zone: PdfRect;
   groups: CalloutGroup[];
   total: number;
-  colour: string;
+  /** Per-annotation colour — one page colour for a single layer, or each pin's
+   *  own layer colour in the all-layers composite. */
+  colourFor: (annotation: CanvasAnnotation) => string;
   layerLabel: string;
 }) {
-  const textColour = readableTextOn(colour);
   // Budget annotation rows across all groups, keeping each group's rows
   // together under its slot sub-header (no outer mutable — the running total is
   // derived from the accumulator each step; group count is tiny).
@@ -671,14 +695,17 @@ function CalloutColumn({
             {group.header}
           </Text>
           <View style={{ paddingLeft: 4 }}>
-            {group.rows.map((a) => (
-              <CalloutRow
-                key={a.id}
-                annotation={a}
-                colour={colour}
-                textColour={textColour}
-              />
-            ))}
+            {group.rows.map((a) => {
+              const rowColour = colourFor(a);
+              return (
+                <CalloutRow
+                  key={a.id}
+                  annotation={a}
+                  colour={rowColour}
+                  textColour={readableTextOn(rowColour)}
+                />
+              );
+            })}
           </View>
         </View>
       ))}
@@ -802,6 +829,14 @@ function Footer({ data }: { data: PdfPageData }) {
 export function TechPackPage({ data }: { data: PdfPageData }) {
   const layout = canvasZoneLayout(data.template, data.slots);
 
+  // One page colour for a single-layer export; each pin's OWN layer colour in
+  // the all-layers composite — the same resolver the on-screen canvas uses, so
+  // the preview matches the "All layers" view.
+  const colourFor = (annotation: CanvasAnnotation): string =>
+    data.allLayers
+      ? resolveColourForLayerType(annotation.layer_type, data.layerColours)
+      : data.layerColour;
+
   // Callouts grouped by the slot their pins sit on, in slot order; each slot's
   // pins are reference-code sorted, and slots with no pins on this layer are
   // omitted. The sub-header matches the slot's box label so the factory can
@@ -832,7 +867,7 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
               slot={slot}
               cell={sl.cell}
               geo={sl.geo}
-              colour={data.layerColour}
+              colourFor={colourFor}
               index={i}
             />
           ) : null;
@@ -842,7 +877,7 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
           zone={calloutZone()}
           groups={calloutGroups}
           total={calloutTotal}
-          colour={data.layerColour}
+          colourFor={colourFor}
           layerLabel={data.layerLabel}
         />
         <Footer data={data} />

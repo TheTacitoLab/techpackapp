@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  Eye,
   HelpCircle,
   Layers3,
   Maximize2,
@@ -19,6 +20,7 @@ import { toast } from "sonner";
 import { AnnotationListPanel } from "@/components/canvas/annotation-list-panel";
 import { CanvasHelpDialog } from "@/components/canvas/canvas-help-dialog";
 import { TemplatePickerDialog } from "@/components/canvas/canvas-templates";
+import { PagePreviewDialog } from "@/components/canvas/page-preview-dialog";
 import { LayerButton } from "@/components/canvas/layer-button";
 import {
   ANNOTATION_LAYERS,
@@ -30,6 +32,7 @@ import { PageCanvas } from "@/components/canvas/page-canvas";
 import { PageNotesEditor } from "@/components/canvas/page-notes-editor";
 import { PageThumbnailStrip } from "@/components/canvas/page-thumbnail-strip";
 import { LayerColoursEditor } from "@/components/settings/layer-colours-editor";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import {
   Dialog,
   DialogContent,
@@ -121,9 +124,13 @@ export function PageEditor({
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   const [markerColoursOpen, setMarkerColoursOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<
     string | null
   >(null);
+  // Gentle, per-user-dismissible nudge to work in fullscreen (closest on-screen
+  // scale to the printed page). Shares the profiles.preferences pattern.
+  const { hideFullscreenHint, setHideFullscreenHint } = useUserPreferences();
 
   // Live per-page annotation state, seeded from the `pages` prop and mutated
   // directly by pin create/update/delete (no router.refresh() on those, per
@@ -368,6 +375,39 @@ export function PageEditor({
     </button>
   );
 
+  // Read-only, true-WYSIWYG preview of the exact PDF page (shares the layout
+  // module + PDF renderer, not a lookalike).
+  const previewButton = (
+    <button
+      type="button"
+      onClick={() => setPreviewOpen(true)}
+      title="Preview the exact PDF page"
+      className="border-border text-muted-foreground hover:text-foreground flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium"
+    >
+      <Eye className="size-4" />
+      Preview page
+    </button>
+  );
+
+  // Gentle, dismissible fullscreen nudge — only in the in-page view (you're
+  // already fullscreen otherwise) and until the user dismisses it.
+  const fullscreenHint =
+    !hideFullscreenHint ? (
+      <div className="border-brand/30 bg-brand-muted/40 text-foreground flex items-center gap-2 rounded-full border px-3 py-1 text-xs">
+        <Maximize2 className="size-3.5 shrink-0" />
+        <span className="whitespace-nowrap">
+          Go fullscreen for a true-to-print view
+        </span>
+        <button
+          type="button"
+          onClick={() => setHideFullscreenHint(true)}
+          className="text-muted-foreground hover:text-foreground font-medium underline underline-offset-2"
+        >
+          Got it
+        </button>
+      </div>
+    ) : null;
+
   const zoomControls = (
     <div className="flex items-center gap-1">
       <button
@@ -436,6 +476,17 @@ export function PageEditor({
       </DialogContent>
     </Dialog>
   );
+
+  const previewDialog = activePage ? (
+    <PagePreviewDialog
+      open={previewOpen}
+      onOpenChange={setPreviewOpen}
+      productId={productId}
+      pageId={activePage.id}
+      activeLayer={activeLayer}
+      defaultAllLayers={viewAllLayers}
+    />
+  ) : null;
 
   const canvas = activePage ? (
     <PageCanvas
@@ -528,6 +579,7 @@ export function PageEditor({
             {zoomControls}
             {helpButton}
             {markerColoursButton}
+            {previewButton}
             <button
               type="button"
               onClick={onExitFullscreen}
@@ -558,6 +610,7 @@ export function PageEditor({
         </div>
         {picker}
         {markerColoursDialog}
+        {previewDialog}
         <CanvasHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       </div>,
       document.body,
@@ -572,10 +625,12 @@ export function PageEditor({
         {backButton}
         {layerButtons}
         <div className="ml-auto flex items-center gap-3">
+          {fullscreenHint}
           {annotationCounter}
           {zoomControls}
           {helpButton}
           {markerColoursButton}
+          {previewButton}
           <button
             type="button"
             onClick={onToggleFullscreen}
@@ -609,6 +664,7 @@ export function PageEditor({
 
       {picker}
       {markerColoursDialog}
+      {previewDialog}
       <CanvasHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );

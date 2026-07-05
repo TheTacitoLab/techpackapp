@@ -13,7 +13,10 @@ import { toast } from "sonner";
 
 import { AnnotationPin } from "@/components/canvas/annotation-pin";
 import { AssetPicker } from "@/components/canvas/asset-picker";
-import { GRID_CLASS } from "@/components/canvas/canvas-templates";
+import {
+  fitImageArea,
+  templateCellLayout,
+} from "@/lib/canvas-layout";
 import {
   ColourwayPinEditor,
   useColourwayDraftFields,
@@ -222,36 +225,103 @@ export function PageCanvas({
   colourwayContext: ColourwayContext;
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
+  // Measure the available drawing area so the page replica can be fit to it at
+  // the fixed landscape-A4 image-area aspect (letterboxed on a screen of a
+  // different shape — the "print preview" look). clientWidth/Height ignore the
+  // stageZoom transform (applied to the replica itself), so this stays stable.
+  const availRef = useRef<HTMLDivElement>(null);
+  const [avail, setAvail] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = availRef.current;
+    if (!el) return;
+    const update = () =>
+      setAvail({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const replica = fitImageArea(avail.width, avail.height);
+  // The SHARED layout module subdivides the image area into cells + inset image
+  // boxes — the very same function the PDF renderer uses, so these on-screen
+  // cells are exact proportional replicas of the PDF's slot boxes.
+  const cells = templateCellLayout(page.template, {
+    left: 0,
+    top: 0,
+    width: replica.width,
+    height: replica.height,
+  });
+  const sortedSlots = [...page.slots].sort((a, b) => a.slot_index - b.slot_index);
+
   return (
-    <div className="flex justify-center">
+    // The available area — neutral canvas background. Any letterbox space (screen
+    // isn't A4-shaped) sits cleanly here, OUTSIDE the page replica.
+    <div
+      ref={availRef}
+      className={cn("flex w-full items-center justify-center", heightClassName)}
+    >
+      {/* The page replica: the fixed image-area rectangle, centred (letterboxed)
+          and scaled by stageZoom. Its cells match the PDF boxes in proportion,
+          arrangement and gutters — a true scaled replica. */}
       <div
-        className={cn("grid w-full gap-3", GRID_CLASS[page.template], heightClassName)}
-        style={{ transform: `scale(${stageZoom})`, transformOrigin: "top center" }}
+        className="relative shrink-0"
+        style={{
+          width: replica.width,
+          height: replica.height,
+          transform: `scale(${stageZoom})`,
+          transformOrigin: "center",
+        }}
       >
-        {[...page.slots]
-          .sort((a, b) => a.slot_index - b.slot_index)
-          .map((slot) => (
-            <SlotView
+        {sortedSlots.map((slot, i) => {
+          const layout = cells[i];
+          if (!layout) return null;
+          return (
+            <div
               key={`${slot.id}-${slot.asset_id ?? "empty"}`}
-              slot={slot}
-              assets={assets}
-              productId={productId}
-              workspaceId={workspaceId}
-              activeLayerKey={activeLayerKey}
-              allLayers={allLayers}
-              atAnnotationCap={atAnnotationCap}
-              onAnnotationCapBlocked={onAnnotationCapBlocked}
-              libraryItems={libraryItems}
-              colourwayContext={colourwayContext}
-              selectedAnnotationId={selectedAnnotationId}
-              onAnnotationCreated={onAnnotationCreated}
-              onAnnotationUpdated={onAnnotationUpdated}
-              onAnnotationMoved={onAnnotationMoved}
-              onAnnotationLabelOffset={onAnnotationLabelOffset}
-              onAnnotationDeleted={onAnnotationDeleted}
-              onSelectAnnotation={onSelectAnnotation}
-            />
-          ))}
+              className="border-border/60 bg-muted/20 absolute rounded-lg border"
+              style={{
+                left: layout.cell.left,
+                top: layout.cell.top,
+                width: layout.cell.width,
+                height: layout.cell.height,
+              }}
+            >
+              {/* The inset image box — the frozen lock box maps onto exactly
+                  this region, so what fills it on screen fills the PDF box the
+                  same way. */}
+              <div
+                className="absolute"
+                style={{
+                  left: layout.inner.left - layout.cell.left,
+                  top: layout.inner.top - layout.cell.top,
+                  width: layout.inner.width,
+                  height: layout.inner.height,
+                }}
+              >
+                <SlotView
+                  slot={slot}
+                  assets={assets}
+                  productId={productId}
+                  workspaceId={workspaceId}
+                  activeLayerKey={activeLayerKey}
+                  allLayers={allLayers}
+                  atAnnotationCap={atAnnotationCap}
+                  onAnnotationCapBlocked={onAnnotationCapBlocked}
+                  libraryItems={libraryItems}
+                  colourwayContext={colourwayContext}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onAnnotationCreated={onAnnotationCreated}
+                  onAnnotationUpdated={onAnnotationUpdated}
+                  onAnnotationMoved={onAnnotationMoved}
+                  onAnnotationLabelOffset={onAnnotationLabelOffset}
+                  onAnnotationDeleted={onAnnotationDeleted}
+                  onSelectAnnotation={onSelectAnnotation}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

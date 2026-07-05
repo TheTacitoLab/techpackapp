@@ -9,7 +9,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-import { setHideUnlockWarning as persistHideUnlockWarning } from "@/app/(app)/settings/actions";
+import {
+  setHideFullscreenHint as persistHideFullscreenHint,
+  setHideUnlockWarning as persistHideUnlockWarning,
+} from "@/app/(app)/settings/actions";
 import type { UserPreferences } from "@/lib/user-preferences";
 
 /**
@@ -24,13 +27,17 @@ import type { UserPreferences } from "@/lib/user-preferences";
 interface UserPreferencesValue extends UserPreferences {
   /** Optimistically apply + persist; reverts (with a toast) on failure. */
   setHideUnlockWarning: (hidden: boolean) => void;
+  /** Optimistically apply + persist the fullscreen-hint dismissal. */
+  setHideFullscreenHint: (hidden: boolean) => void;
 }
 
-// Default (no provider): warning shown, setter a no-op — graceful for
+// Default (no provider): warning shown, setters a no-op — graceful for
 // anything rendered outside the app layout.
 const UserPreferencesContext = createContext<UserPreferencesValue>({
   hideUnlockWarning: false,
+  hideFullscreenHint: false,
   setHideUnlockWarning: () => {},
+  setHideFullscreenHint: () => {},
 });
 
 export function UserPreferencesProvider({
@@ -47,7 +54,12 @@ export function UserPreferencesProvider({
     // Content-aware resync (see LayerColoursProvider): `initial` is a fresh
     // object every server render, so only genuinely different server truth
     // may clobber an optimistic toggle that hasn't round-tripped yet.
-    if (initial.hideUnlockWarning !== local.hideUnlockWarning) setLocal(initial);
+    if (
+      initial.hideUnlockWarning !== local.hideUnlockWarning ||
+      initial.hideFullscreenHint !== local.hideFullscreenHint
+    ) {
+      setLocal(initial);
+    }
   }
 
   const value = useMemo<UserPreferencesValue>(
@@ -57,6 +69,14 @@ export function UserPreferencesProvider({
         const prev = local;
         setLocal({ ...local, hideUnlockWarning: hidden });
         void persistHideUnlockWarning(hidden).catch(() => {
+          toast.error("Could not save the preference.");
+          setLocal(prev);
+        });
+      },
+      setHideFullscreenHint: (hidden) => {
+        const prev = local;
+        setLocal({ ...local, hideFullscreenHint: hidden });
+        void persistHideFullscreenHint(hidden).catch(() => {
           toast.error("Could not save the preference.");
           setLocal(prev);
         });

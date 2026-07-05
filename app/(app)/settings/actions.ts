@@ -104,6 +104,34 @@ export async function setHideUnlockWarning(hidden: boolean) {
   revalidatePath("/", "layout");
 }
 
+/**
+ * Set the current user's "hide the fullscreen hint" preference
+ * (profiles.preferences.hide_fullscreen_hint). Same read-merge-write on the
+ * caller's OWN profile row as `setHideUnlockWarning`; other preference keys are
+ * preserved. No new column — this reuses the `preferences` jsonb from 0022.
+ */
+export async function setHideFullscreenHint(hidden: boolean) {
+  const clean = z.boolean().parse(hidden);
+  const { supabase, userId } = await requireActionContext();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("preferences")
+    .eq("id", userId)
+    .single();
+  const raw = profile?.preferences;
+  const base =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ preferences: { ...base, hide_fullscreen_hint: clean } })
+    .eq("id", userId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/", "layout");
+}
+
 // ---- Layer marker colours ------------------------------------------------------
 
 // Derived from ANNOTATION_LAYERS so a future layer can never silently be a

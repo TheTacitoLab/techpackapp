@@ -105,10 +105,13 @@ export async function GET(
 
   const url = new URL(req.url);
   const layerParam = url.searchParams.get("layer") ?? "fabric";
-  if (!isLayerKey(layerParam)) {
+  // "all" renders the all-layers composite — every layer's pins on one page,
+  // each in its own colour (the export twin of the on-screen "All layers" view).
+  const allLayers = layerParam === "all";
+  if (!allLayers && !isLayerKey(layerParam)) {
     return new Response("Unknown layer", { status: 400 });
   }
-  const layer = layerByKey(layerParam);
+  const layer = allLayers ? null : layerByKey(layerParam);
 
   const supabase = await createClient();
   const { data: product } = await supabase
@@ -159,9 +162,14 @@ export async function GET(
   ]);
 
   // The layer's marker colour: workspace override else built-in — the SAME
-  // resolution the canvas uses (imported, not reimplemented).
+  // resolution the canvas uses (imported, not reimplemented). The all-layers
+  // composite has no single colour, so its chrome uses a neutral slate and each
+  // pin resolves its own colour from `overrides` inside the renderer.
   const overrides = parseLayerColours(user.workspace?.layer_colours);
-  const layerColour = resolveLayerColour(layer.key, overrides);
+  const ALL_LAYERS_CHROME = "#475569";
+  const layerColour = allLayers
+    ? ALL_LAYERS_CHROME
+    : resolveLayerColour(layer!.key, overrides);
 
   const sortedSlots = [...page.canvas_slots].sort(
     (a, b) => a.slot_index - b.slot_index,
@@ -194,10 +202,13 @@ export async function GET(
         // whose image fetch failed ("Image unavailable").
         hasAsset: asset !== null,
         image,
-        // Only the chosen layer's pins reach the PDF at all.
-        annotations: slot.canvas_annotations.filter((a) =>
-          layer.types.includes(a.layer_type),
-        ),
+        // Single-layer export: only the chosen layer's pins. All-layers
+        // composite: every pin (each renders in its own layer colour).
+        annotations: allLayers
+          ? slot.canvas_annotations
+          : slot.canvas_annotations.filter((a) =>
+              layer!.types.includes(a.layer_type),
+            ),
       };
     }),
   );
@@ -216,9 +227,11 @@ export async function GET(
     pageCount: allPages.length,
     pageLabel: page.label ?? `Page ${pageIndex + 1}`,
     template: page.template,
-    layerKey: layer.key,
-    layerLabel: layer.label,
+    layerKey: layer?.key,
+    layerLabel: allLayers ? "All layers" : layer!.label,
     layerColour,
+    allLayers,
+    layerColours: overrides,
     // Typed non-null, but genuinely undefined until migration 0026 runs —
     // fall back to a visible placeholder rather than a "/view/undefined" link.
     shareToken:
@@ -235,7 +248,8 @@ export async function GET(
     console.error("[pdf] renderTechPackPagePdf failed:", err);
     return new Response("PDF generation failed", { status: 500 });
   }
-  const filename = `${product.name.replace(/[^\w-]+/g, "_")}_${layer.key}_p${pageIndex + 1}.pdf`;
+  const layerSlug = allLayers ? "all" : layer!.key;
+  const filename = `${product.name.replace(/[^\w-]+/g, "_")}_${layerSlug}_p${pageIndex + 1}.pdf`;
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
