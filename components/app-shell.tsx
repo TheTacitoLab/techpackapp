@@ -50,14 +50,23 @@ export function AppShell({
   const pathname = usePathname();
   const scrollPositions = useRef(new Map<string, number>());
   const isTraversal = useRef(false);
+  // The pathname currently RENDERED — popstate fires before the router
+  // re-renders, so comparing it to the traversal target's pathname tells a
+  // real page traversal from a hash/search-only one. The flag is only set
+  // when the pathname effect below will actually run to consume it; a
+  // same-pathname Back (e.g. over a hash history entry) must not leave a
+  // stuck flag that would misclassify the NEXT forward navigation.
+  const renderedPathname = useRef(pathname);
   useEffect(() => {
     const onPopState = () => {
-      isTraversal.current = true;
+      isTraversal.current =
+        window.location.pathname !== renderedPathname.current;
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
   useLayoutEffect(() => {
+    renderedPathname.current = pathname;
     const main = mainRef.current;
     if (!main) return;
     if (isTraversal.current) {
