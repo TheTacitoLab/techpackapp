@@ -112,6 +112,15 @@ export function PageNotesEditor({
         maxLength={NOTES_MAX_LENGTH}
         onChange={(e) => handleChange(e.target.value)}
         onBlur={flush}
+        // Escape leaves the FIELD (blur flushes the draft), and claiming the
+        // event keeps the fullscreen editor's exit-on-unclaimed-Escape from
+        // also firing — first Esc leaves the notes, a second exits the editor.
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
         placeholder="e.g. Wash before measuring — all tolerances ±0.5cm unless pinned"
         className="min-h-16"
       />

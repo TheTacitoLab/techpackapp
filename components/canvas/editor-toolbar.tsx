@@ -7,6 +7,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -37,6 +38,9 @@ export type EditorToolbarItem =
       visible?: boolean;
       /** Keyboard hint shown dimmed in the tooltip / menu (e.g. "Esc"). */
       shortcut?: string;
+      /** Meant to be pressed repeatedly (zoom steps): when overflowed into
+       *  the ⋯ menu, selecting it keeps the menu open for the next press. */
+      repeatable?: boolean;
     }
   | {
       kind: "readout";
@@ -56,9 +60,11 @@ export type EditorToolbarGroup = {
   pinned?: boolean;
 };
 
-/** Must equal the row's `gap-1` (px) — the measurement maths adds it back
- *  between the last visible item, the ⋯ button and the pinned block. */
-const ROW_GAP = 4;
+/** Fallback for the row gap when computed style is unreadable — matches
+ *  `gap-1` at the default 16px root. The real value is read from the measure
+ *  row's computed columnGap so a non-default root font-size can't skew the
+ *  reservation maths. */
+const ROW_GAP_FALLBACK = 4;
 
 type FlatItem = { item: EditorToolbarItem; group: string };
 
@@ -82,6 +88,12 @@ function flatten(groups: EditorToolbarGroup[], pinned: boolean): FlatItem[] {
  * the first N items that fit — the rest move into a ⋯ menu (grouped, with the
  * same labels/shortcuts) instead of wrapping or clipping. Pinned groups sit
  * after the ⋯ and never collapse.
+ *
+ * The outer div GROWS (`flex-1`): the measurement's frame of reference must be
+ * the space the header can offer, not the width of whatever is currently
+ * rendered — a shrink-to-content outer would ratchet (once collapsed, its own
+ * narrow width is all it ever measures against, and widening the window
+ * could never bring items back out of the ⋯).
  */
 export function EditorToolbar({
   groups,
@@ -130,8 +142,13 @@ export function EditorToolbar({
       // offsetLeft is relative to the (positioned) measure row, so an item's
       // right edge already includes every separator and gap before it.
       const rightEdge = (el: HTMLElement) => el.offsetLeft + el.offsetWidth;
-      const pinnedWidth = pinnedEl ? pinnedEl.offsetWidth + ROW_GAP : 0;
-      const moreWidth = (moreEl?.offsetWidth ?? 0) + ROW_GAP;
+      // The real rendered gap (gap-1 is rem-derived, so px varies with the
+      // root font-size) — reserved once before the ⋯ and once before pinned.
+      const rowGap =
+        Number.parseFloat(getComputedStyle(measure).columnGap) ||
+        ROW_GAP_FALLBACK;
+      const pinnedWidth = pinnedEl ? pinnedEl.offsetWidth + rowGap : 0;
+      const moreWidth = (moreEl?.offsetWidth ?? 0) + rowGap;
       const total =
         itemEls.length > 0 ? rightEdge(itemEls[itemEls.length - 1]) : 0;
 
@@ -171,7 +188,7 @@ export function EditorToolbar({
     <div
       ref={outerRef}
       className={cn(
-        "relative flex min-w-0 items-center justify-end overflow-hidden",
+        "relative flex min-w-0 flex-1 items-center justify-end overflow-hidden",
         className,
       )}
     >
@@ -244,7 +261,12 @@ export function EditorToolbar({
                       <DropdownMenuItem
                         key={item.key}
                         disabled={item.disabled}
-                        onSelect={() => item.onSelect()}
+                        onSelect={(event) => {
+                          // Repeatable actions (zoom steps) keep the menu
+                          // open so each press doesn't cost a reopen.
+                          if (item.repeatable) event.preventDefault();
+                          item.onSelect();
+                        }}
                       >
                         <item.icon className="size-4" />
                         {item.label}
@@ -255,9 +277,15 @@ export function EditorToolbar({
                         )}
                       </DropdownMenuItem>
                     ) : (
-                      <DropdownMenuItem key={item.key} disabled>
+                      // A label, not a disabled item — disabled items leave
+                      // keyboard navigation, which would make the value
+                      // unreachable to AT while overflowed.
+                      <DropdownMenuLabel
+                        key={item.key}
+                        className="text-muted-foreground font-normal"
+                      >
                         {item.label}: {item.text}
-                      </DropdownMenuItem>
+                      </DropdownMenuLabel>
                     ),
                   )}
                 </Fragment>
@@ -282,7 +310,7 @@ export function EditorToolbar({
 // ---- Pieces -------------------------------------------------------------------
 
 const ICON_BUTTON_CLASS =
-  "text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 flex size-8 shrink-0 items-center justify-center rounded-md transition-colors outline-none focus-visible:ring-2 disabled:opacity-50";
+  "text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 flex size-7 shrink-0 items-center justify-center rounded-md transition-colors outline-none focus-visible:ring-2 disabled:opacity-50";
 
 function GroupDivider() {
   return <div aria-hidden="true" className="bg-border mx-1 h-5 w-px shrink-0" />;
@@ -303,9 +331,11 @@ function ToolbarItemView({
     return (
       <span
         title={item.label}
-        aria-label={`${item.label}: ${item.text}`}
-        className="text-muted-foreground w-11 shrink-0 text-center text-xs font-medium tabular-nums"
+        className="text-muted-foreground w-10 shrink-0 text-center text-xs font-medium tabular-nums"
       >
+        {/* aria-label is unreliable on a generic span — a hidden text node
+            gives AT "Zoom level: 125%" via name-from-content instead. */}
+        <span className="sr-only">{item.label}: </span>
         {item.text}
       </span>
     );

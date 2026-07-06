@@ -1450,26 +1450,40 @@ function AnnotationSlot({
     setPickMode(null);
   }, [pickMode]);
 
-  // Escape leaves pick-mode without changing the hex.
+  // Escape leaves pick-mode without changing the hex. Capture phase +
+  // preventDefault, mirroring Radix's own escape handling: during pick-mode
+  // the editor popover is genuinely CLOSED (no DismissableLayer exists to
+  // claim the key), and the fullscreen editor exits on any UNCLAIMED Escape —
+  // without the claim, cancelling a sample would also eject to the launchpad
+  // and destroy the in-progress pin draft.
   useEffect(() => {
     if (!pickMode) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") cancelPickMode();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelPickMode();
+      }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKey, { capture: true });
   }, [pickMode, cancelPickMode]);
 
   // Escape mid-draw cancels the measurement line cleanly: discard the start
   // point, create nothing. (Mirrors the pick-mode escape above — separate
-  // effect because the two modes are separate flags.)
+  // effect because the two modes are separate flags; same capture-phase claim
+  // so the cancel never doubles as an exit-the-editor Escape.)
   useEffect(() => {
     if (!measureDraft) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMeasureDraft(null);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMeasureDraft(null);
+      }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKey, { capture: true });
   }, [measureDraft]);
 
   /**

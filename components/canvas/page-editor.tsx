@@ -234,9 +234,12 @@ export function PageEditor({
   }
 
   // An UNCLAIMED Escape leaves the editor for the launchpad. Radix layers
-  // (dialogs, popovers, dropdowns) call preventDefault on the Escape they
-  // consume — as does the page-name editor's cancel — so closing one never
-  // also exits the editor.
+  // (dialogs, popovers, dropdowns — and open tooltips) call preventDefault on
+  // the Escape they consume — as do the page-name editor's cancel, the notes
+  // field, and the canvas's pick-mode/measure-draft cancels — so closing one
+  // never also exits the editor. Known quirk, accepted as standard layering:
+  // an OPEN tooltip is itself a layer, so Escape while hovering a toolbar
+  // icon closes the tooltip first and a second press exits.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape" && !e.defaultPrevented) onBackToOverview();
@@ -316,10 +319,16 @@ export function PageEditor({
   }
 
   // Layer selector — compact enough for one line at typical fullscreen
-  // widths. The wrapper is a @container: below 50rem of layer-bar width the
+  // widths. The wrapper is a @container: below 54rem of layer-bar width the
   // labels condense away (icon + count remain, `title` carries the name).
+  // The 54rem reveal threshold deliberately clears the labelled row's real
+  // width (~50rem, growing with multi-digit badges) so there is no band
+  // where labels render but overflow into a header scrollbar. flex-[7] vs
+  // the toolbar's flex-[3]: the two flexible regions split free space 70/30,
+  // which keeps labels visible from ~1440px up while the toolbar holds every
+  // action inline down to ~1280px.
   const layerButtons = (
-    <div className="@container min-w-0 flex-1">
+    <div className="@container min-w-0 flex-[7]">
       <div className="flex items-center gap-1 overflow-x-auto">
         {/* All-layers composite — read-only preview of the whole PDF page.
             Visually distinct from the five real layers (outline, stacked icon). */}
@@ -336,7 +345,7 @@ export function PageEditor({
           )}
         >
           <Layers3 className="size-3.5 shrink-0" />
-          <span className="hidden whitespace-nowrap @[50rem]:inline">
+          <span className="hidden whitespace-nowrap @[54rem]:inline">
             All layers
           </span>
         </button>
@@ -578,7 +587,7 @@ export function PageEditor({
         {backButton}
         {layerButtons}
         {annotationCounter}
-        <EditorToolbar groups={toolbarGroups} />
+        <EditorToolbar groups={toolbarGroups} className="flex-[3]" />
       </div>
       <div className="flex flex-1 overflow-hidden">
         {activePage && (

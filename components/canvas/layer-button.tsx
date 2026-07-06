@@ -19,7 +19,7 @@ export const LAYER_ICONS: Record<LayerIconName, LucideIcon> = {
  * One of the five layer buttons across the top of the Page Editor. A compact
  * pill (32px) with the layer's icon, label, and a global annotation count
  * badge — sized so all five plus "All layers" fit one line at typical
- * fullscreen widths. Below 50rem of layer-bar width (@container query, set by
+ * fullscreen widths. Below 54rem of layer-bar width (@container query, set by
  * the parent's wrapper) the label condenses away and only icon + count
  * remain; `title` always carries the full name. Active state reads the
  * layer's LIVE workspace colour (inline style — dynamic, never a Tailwind
@@ -46,6 +46,9 @@ export function LayerButton({
       onClick={onClick}
       aria-pressed={active}
       title={layer.label}
+      // Explicit name: when the label condenses away (narrow layer bar) the
+      // button's content is just the count — "3" is no name for a layer.
+      aria-label={`${layer.label} (${count})`}
       style={
         active
           ? { backgroundColor: `${color}22`, borderColor: color }
@@ -59,7 +62,7 @@ export function LayerButton({
       )}
     >
       <Icon className="size-3.5 shrink-0" style={{ color }} />
-      <span className="hidden whitespace-nowrap @[50rem]:inline">
+      <span className="hidden whitespace-nowrap @[54rem]:inline">
         {layer.label}
       </span>
       <span
