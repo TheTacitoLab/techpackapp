@@ -2,20 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, LayoutGrid, Plus, X } from "lucide-react";
+import { Copy, Crop, Eye, LayoutGrid, Lock, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { TemplatePickerDialog } from "@/components/canvas/canvas-templates";
 import { useLayerColours } from "@/components/canvas/layer-colours-context";
-import {
-  ANNOTATION_LAYERS,
-  countByLayer,
-  type LayerKey,
-} from "@/components/canvas/layers";
-import { MiniTemplate } from "@/components/canvas/mini-template";
+import { ANNOTATION_LAYERS, countByLayer } from "@/components/canvas/layers";
+import { PageCompositeThumbnail } from "@/components/canvas/page-composite-thumbnail";
 import { PageNameEditor } from "@/components/canvas/page-name-editor";
-import { PdfExportSpike } from "@/components/canvas/pdf-export-spike";
-import { EmptyState } from "@/components/empty-state";
+import { PagePreviewDialog } from "@/components/canvas/page-preview-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,13 +28,20 @@ import {
   reorderCanvasPages,
 } from "@/app/(app)/products/[id]/canvas-actions";
 import { cn } from "@/lib/utils";
-import type { ProductAsset, ResolvedCanvasPage } from "@/types";
+import {
+  ANNOTATION_CAP_AMBER_FROM,
+  MAX_ANNOTATIONS_PER_PAGE,
+  type ProductAsset,
+  type ResolvedCanvasPage,
+} from "@/types";
 
 /**
- * Page Overview — the orientation view for Technical Details. A grid of page
- * cards (mini template render + editable name + per-layer annotation dots),
- * plus an Add-Page card. Empty state when there are no pages, with an extra
- * nudge to upload assets first when the product has none.
+ * The Technical Details launchpad — the section's at-rest view. See-and-enter
+ * only: a summary strip (totals, layer coverage, Preview PDF), a grid of page
+ * cards (static composite preview with pins, editable name, per-layer count
+ * dots, fill indicator, lock badge, hover actions), and Add Page. All editing
+ * lives in the focused editor a card click opens; no editing surface renders
+ * here.
  */
 export function PageOverview({
   productId,
@@ -57,6 +59,11 @@ export function PageOverview({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ResolvedCanvasPage | null>(
     null,
+  );
+  // The PDF preview dialog target. `pageId` sticks through close so the
+  // dialog can play its exit animation instead of unmounting mid-close.
+  const [preview, setPreview] = useState<{ open: boolean; pageId: string | null }>(
+    { open: false, pageId: null },
   );
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [, startReorder] = useTransition();
@@ -112,6 +119,14 @@ export function PageOverview({
     });
   }
 
+  function openPreview(pageId: string) {
+    setPreview({ open: true, pageId });
+  }
+
+  // The PDF route's own default page — preview follows the same rule.
+  const firstLockedPageId =
+    pages.find((p) => p.slots.some((s) => s.is_locked))?.id ?? null;
+
   const deleteCount = deleteTarget
     ? deleteTarget.slots.reduce((n, s) => n + s.annotations.length, 0)
     : 0;
@@ -120,17 +135,28 @@ export function PageOverview({
     <div className="bg-card shadow-card rounded-xl p-4">
       {pages.length === 0 ? (
         <div className="space-y-3">
-          <EmptyState
-            icon={LayoutGrid}
-            title="No pages yet"
-            description="Create your first page to start annotating your garment drawings."
-            action={
-              <Button onClick={() => setPickerOpen(true)}>
-                <Plus className="size-4" />
-                Add Page
-              </Button>
-            }
-          />
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="border-border hover:border-brand hover:bg-brand-muted/20 flex w-full flex-col items-center gap-4 rounded-xl border-2 border-dashed px-8 py-14 text-center transition-colors"
+          >
+            <span className="bg-brand-muted text-foreground flex size-14 items-center justify-center rounded-full">
+              <LayoutGrid className="size-7" />
+            </span>
+            <span className="space-y-1">
+              <span className="block text-lg font-semibold">
+                Add your first page
+              </span>
+              <span className="text-muted-foreground block max-w-md text-sm">
+                Upload your design and start pinning — colours, fabrics,
+                measurements, construction and branding, right on the garment.
+              </span>
+            </span>
+            <span className="bg-primary text-primary-foreground inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium">
+              <Plus className="size-4" />
+              Add page
+            </span>
+          </button>
           {assets.length === 0 && (
             <p className="text-muted-foreground text-center text-xs">
               Tip: upload your garment images in the Asset Upload section first —
@@ -139,34 +165,42 @@ export function PageOverview({
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {/* Spike-quality PDF export trigger — real export UI comes later. */}
-          <div className="flex justify-end">
-            <PdfExportSpike productId={productId} pages={pages} />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-          {pages.map((page, index) => (
-            <PageCard
-              key={page.id}
-              page={page}
-              index={index}
-              dragging={draggingId === page.id}
-              onOpen={() => onOpenPage(page.id)}
-              onDelete={() => setDeleteTarget(page)}
-              onDuplicate={() => handleDuplicate(page.id)}
-              onDragStart={() => setDraggingId(page.id)}
-              onDragEnd={() => setDraggingId(null)}
-              onDrop={() => handleDrop(page.id)}
-            />
-          ))}
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground flex min-h-52 flex-col items-center justify-center gap-2 rounded-xl transition-colors"
-          >
-            <Plus className="size-8" />
-            <span className="text-sm font-medium">Add Page</span>
-          </button>
+        <div className="space-y-4">
+          <SummaryStrip
+            pages={pages}
+            canPreview={firstLockedPageId !== null}
+            onPreviewPdf={() =>
+              firstLockedPageId && openPreview(firstLockedPageId)
+            }
+          />
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+            {pages.map((page, index) => (
+              <PageCard
+                key={page.id}
+                page={page}
+                index={index}
+                dragging={draggingId === page.id}
+                onOpen={() => onOpenPage(page.id)}
+                onPreview={
+                  page.slots.some((s) => s.is_locked)
+                    ? () => openPreview(page.id)
+                    : undefined
+                }
+                onDelete={() => setDeleteTarget(page)}
+                onDuplicate={() => handleDuplicate(page.id)}
+                onDragStart={() => setDraggingId(page.id)}
+                onDragEnd={() => setDraggingId(null)}
+                onDrop={() => handleDrop(page.id)}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground flex min-h-52 flex-col items-center justify-center gap-2 rounded-xl border border-dashed transition-colors"
+            >
+              <Plus className="size-8" />
+              <span className="text-sm font-medium">Add Page</span>
+            </button>
           </div>
         </div>
       )}
@@ -177,6 +211,15 @@ export function PageOverview({
         productId={productId}
         onCreated={handleCreated}
       />
+
+      {preview.pageId && (
+        <PagePreviewDialog
+          open={preview.open}
+          onOpenChange={(open) => setPreview((p) => ({ ...p, open }))}
+          productId={productId}
+          pageId={preview.pageId}
+        />
+      )}
 
       <AlertDialog
         open={deleteTarget !== null}
@@ -209,13 +252,111 @@ export function PageOverview({
   );
 }
 
-// ---- Page card --------------------------------------------------------------
+// ---- Summary strip ------------------------------------------------------------
+
+/**
+ * Totals, layer coverage and the Preview PDF entry. Coverage is informational
+ * only — which layers have pins anywhere on the product vs none — NOT the
+ * formal section-completion status (a separate, future feature).
+ */
+function SummaryStrip({
+  pages,
+  canPreview,
+  onPreviewPdf,
+}: {
+  pages: ResolvedCanvasPage[];
+  canPreview: boolean;
+  onPreviewPdf: () => void;
+}) {
+  const { colourFor } = useLayerColours();
+  const layerTypes = pages.flatMap((p) =>
+    p.slots.flatMap((s) => s.annotations.map((a) => a.layer_type)),
+  );
+  const counts = countByLayer(layerTypes);
+  const total = layerTypes.length;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <p className="text-muted-foreground text-sm whitespace-nowrap">
+        <span className="text-foreground font-semibold tabular-nums">
+          {total}
+        </span>{" "}
+        annotation{total === 1 ? "" : "s"}
+        <span className="mx-1.5">·</span>
+        <span className="text-foreground font-semibold tabular-nums">
+          {pages.length}
+        </span>{" "}
+        page{pages.length === 1 ? "" : "s"}
+      </p>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {ANNOTATION_LAYERS.map((layer) => {
+          const count = counts[layer.key];
+          const covered = count > 0;
+          const colour = colourFor(layer.key);
+          return (
+            <span
+              key={layer.key}
+              title={
+                covered
+                  ? `${layer.label}: ${count} pin${count === 1 ? "" : "s"}`
+                  : `${layer.label}: no pins yet`
+              }
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
+                covered
+                  ? "text-foreground"
+                  : "border-border bg-muted/40 text-muted-foreground",
+              )}
+              style={
+                covered
+                  ? {
+                      // The layer's marker colour at low alpha — lit vs greyed.
+                      borderColor: `${colour}66`,
+                      backgroundColor: `${colour}14`,
+                    }
+                  : undefined
+              }
+            >
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  !covered && "bg-muted-foreground/40",
+                )}
+                style={covered ? { backgroundColor: colour } : undefined}
+              />
+              {layer.label}
+            </span>
+          );
+        })}
+      </div>
+
+      <Button
+        size="sm"
+        className="ml-auto"
+        disabled={!canPreview}
+        title={
+          canPreview
+            ? "Preview the exact PDF export"
+            : "Lock a page's framing to preview its PDF"
+        }
+        onClick={onPreviewPdf}
+      >
+        <Eye className="size-4" />
+        Preview PDF
+      </Button>
+    </div>
+  );
+}
+
+// ---- Page card ------------------------------------------------------------------
 
 function PageCard({
   page,
   index,
   dragging,
   onOpen,
+  onPreview,
   onDelete,
   onDuplicate,
   onDragStart,
@@ -226,6 +367,8 @@ function PageCard({
   index: number;
   dragging: boolean;
   onOpen: () => void;
+  /** Absent when the page has no locked slot (nothing to export yet). */
+  onPreview?: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onDragStart: () => void;
@@ -238,6 +381,17 @@ function PageCard({
   const activeLayers = ANNOTATION_LAYERS.filter((l) => counts[l.key] > 0);
   // Live workspace colours so the overview dots match the pins they count.
   const { colourFor } = useLayerColours();
+
+  const annotationCount = page.slots.reduce(
+    (n, s) => n + s.annotations.length,
+    0,
+  );
+  // Existing slot lock state, summarised per page: any filled-but-unlocked
+  // slot means the page is still being framed; all filled slots locked means
+  // it's annotation-ready.
+  const filledSlots = page.slots.filter((s) => s.asset !== null);
+  const isFraming = filledSlots.some((s) => !s.is_locked);
+  const isLocked = filledSlots.length > 0 && !isFraming;
 
   return (
     <div
@@ -255,17 +409,49 @@ function PageCard({
         dragging && "opacity-50",
       )}
     >
-      {/* Mini template render */}
-      <MiniTemplate page={page} className="h-[140px] rounded-lg" />
+      {/* Static composite preview — real imagery, real pins, shared geometry */}
+      <div className="relative">
+        <PageCompositeThumbnail page={page} className="h-[150px] rounded-lg" />
+        {(isFraming || isLocked) && (
+          <span
+            className={cn(
+              "bg-background/85 absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold backdrop-blur-sm",
+              isFraming
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-muted-foreground",
+            )}
+          >
+            {isFraming ? (
+              <Crop className="size-3" />
+            ) : (
+              <Lock className="size-3" />
+            )}
+            {isFraming ? "Framing" : "Locked"}
+          </span>
+        )}
+      </div>
 
-      {/* Name */}
-      <div className="mt-2">
+      {/* Name + fill indicator (same thresholds as the in-editor counter) */}
+      <div className="mt-2 flex items-center justify-between gap-2">
         <PageNameEditor
           pageId={page.id}
           name={page.label}
           fallback={`Page ${index + 1}`}
-          className="w-full text-sm font-medium"
+          className="min-w-0 flex-1 text-sm font-medium"
         />
+        <span
+          title="Annotations on this page (max 12)"
+          className={cn(
+            "shrink-0 text-[11px] font-semibold tabular-nums",
+            annotationCount >= MAX_ANNOTATIONS_PER_PAGE
+              ? "text-destructive"
+              : annotationCount >= ANNOTATION_CAP_AMBER_FROM
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-muted-foreground",
+          )}
+        >
+          {annotationCount}/{MAX_ANNOTATIONS_PER_PAGE}
+        </span>
       </div>
 
       {/* Per-layer annotation count dots */}
@@ -277,15 +463,30 @@ function PageCard({
               style={{ backgroundColor: colourFor(layer.key) }}
             />
             <span className="text-muted-foreground text-xs font-medium">
-              {counts[layer.key as LayerKey]}
+              {counts[layer.key]}
             </span>
           </span>
         ))}
       </div>
 
-      {/* Duplicate + delete (hover) — duplicate carries images, framing, lock
-          state and notes onto a fresh annotation surface. */}
+      {/* Hover actions — preview (locked pages), duplicate, delete. Duplicate
+          carries images, framing, lock state and notes onto a fresh
+          annotation surface. */}
       <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        {onPreview && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPreview();
+            }}
+            aria-label="Preview PDF page"
+            title="Preview PDF page"
+            className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground flex size-6 items-center justify-center rounded-md bg-white/80 focus-visible:opacity-100"
+          >
+            <Eye className="size-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
