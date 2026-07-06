@@ -195,8 +195,9 @@ export function AppNavFooter({
   const itemBase = navItemBase(collapsed);
 
   return (
-    <div className="flex flex-col gap-1">
-      <Separator className="bg-sidebar-border mb-1" />
+    // Plain block, no gap — spacing matches the cluster's old in-nav render.
+    <div>
+      <Separator className="bg-sidebar-border mb-2" />
       <UserMenu name={userName} email={userEmail} collapsed={collapsed} />
       <Link
         href="/settings"

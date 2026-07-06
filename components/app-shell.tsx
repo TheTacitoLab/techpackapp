@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, Shirt } from "lucide-react";
@@ -37,16 +37,35 @@ export function AppShell({
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
-  // With <main> as the scroll container, the browser's route-change scroll
-  // reset (which only manages window scroll) no longer applies — reset it
-  // ourselves so a new page never opens mid-scroll. Hash navigations are left
-  // alone: the browser scrolls the anchor target into view within the
-  // container, and this must not fight it.
+  // With <main> as the scroll container, the browser manages NEITHER the
+  // route-change scroll reset NOR history scroll restoration (both are
+  // window-scroll features) — so the shell does both. Every scroll records
+  // the offset for the current path; a Back/Forward traversal (flagged by
+  // popstate, which fires before the router re-renders) restores the saved
+  // offset, while an ordinary navigation resets to top. Hash navigations are
+  // left alone: the browser scrolls the anchor into view within the
+  // container, and this must not fight it. Layout effect: the correction
+  // must land before paint, or the new page flashes at the old offset.
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
+  const scrollPositions = useRef(new Map<string, number>());
+  const isTraversal = useRef(false);
   useEffect(() => {
-    if (window.location.hash) return;
-    mainRef.current?.scrollTo(0, 0);
+    const onPopState = () => {
+      isTraversal.current = true;
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    if (isTraversal.current) {
+      isTraversal.current = false;
+      main.scrollTo(0, scrollPositions.current.get(pathname) ?? 0);
+    } else if (!window.location.hash) {
+      main.scrollTo(0, 0);
+    }
   }, [pathname]);
 
   return (
@@ -90,7 +109,7 @@ export function AppShell({
 
         {/* Pinned bottom cluster — profile + Settings stay reachable no
             matter how long the nav or the page content is. */}
-        <div className={cn("shrink-0 pb-2", collapsed ? "px-2" : "px-3")}>
+        <div className={cn("shrink-0 pb-4", collapsed ? "px-2" : "px-3")}>
           <AppNavFooter
             collapsed={collapsed}
             userName={profile.full_name}
@@ -131,7 +150,13 @@ export function AppShell({
       </aside>
 
       {/* The one scrolling region for page content. */}
-      <main ref={mainRef} className="min-w-0 flex-1 overflow-y-auto p-6">
+      <main
+        ref={mainRef}
+        onScroll={(e) =>
+          scrollPositions.current.set(pathname, e.currentTarget.scrollTop)
+        }
+        className="min-w-0 flex-1 overflow-y-auto p-6"
+      >
         {children}
       </main>
     </div>
