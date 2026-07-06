@@ -36,6 +36,16 @@ import {
 } from "@/types";
 
 /**
+ * A page the PDF preview is worth opening for: at least one slot that is both
+ * locked AND still holds its asset. `is_locked` alone is not enough — deleting
+ * an asset nulls `asset_id` but leaves the lock flag, and previewing such a
+ * page would export an empty frame.
+ */
+function pageHasExportableSlot(page: ResolvedCanvasPage): boolean {
+  return page.slots.some((s) => s.is_locked && s.asset !== null);
+}
+
+/**
  * The Technical Details launchpad — the section's at-rest view. See-and-enter
  * only: a summary strip (totals, layer coverage, Preview PDF), a grid of page
  * cards (static composite preview with pins, editable name, per-layer count
@@ -57,14 +67,18 @@ export function PageOverview({
 }) {
   const router = useRouter();
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ResolvedCanvasPage | null>(
-    null,
-  );
+  // Like `preview` below: `page` sticks through close so the confirm copy
+  // (annotation count) stays stable during the dialog's exit animation.
+  const [deleteState, setDeleteState] = useState<{
+    open: boolean;
+    page: ResolvedCanvasPage | null;
+  }>({ open: false, page: null });
   // The PDF preview dialog target. `pageId` sticks through close so the
   // dialog can play its exit animation instead of unmounting mid-close.
   const [preview, setPreview] = useState<{ open: boolean; pageId: string | null }>(
     { open: false, pageId: null },
   );
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [, startReorder] = useTransition();
   const [isDeleting, startDelete] = useTransition();
@@ -76,20 +90,32 @@ export function PageOverview({
   }
 
   function handleDuplicate(pageId: string) {
+    // One duplicate at a time — a double-click must not create two copies.
+    if (duplicatingId) return;
+    setDuplicatingId(pageId);
     void duplicateCanvasPage(pageId)
       .then(({ id }) => {
         router.refresh();
         onOpenPage(id);
       })
-      .catch(() => toast.error("Could not duplicate the page."));
+      .catch(() => toast.error("Could not duplicate the page."))
+      .finally(() => setDuplicatingId(null));
   }
 
   function confirmDelete() {
-    if (!deleteTarget) return;
+    const target = deleteState.page;
+    if (!target || !deleteState.open) return;
     startDelete(async () => {
       try {
-        await deleteCanvasPage(deleteTarget.id);
-        setDeleteTarget(null);
+        await deleteCanvasPage(target.id);
+        // Close only if the dialog still shows THIS page — Escape during the
+        // in-flight delete followed by opening the confirm for another page
+        // must not be dismissed by this completion.
+        setDeleteState((current) =>
+          current.page?.id === target.id
+            ? { ...current, open: false }
+            : current,
+        );
         router.refresh();
       } catch {
         toast.error("Could not delete the page.");
@@ -123,12 +149,13 @@ export function PageOverview({
     setPreview({ open: true, pageId });
   }
 
-  // The PDF route's own default page — preview follows the same rule.
-  const firstLockedPageId =
-    pages.find((p) => p.slots.some((s) => s.is_locked))?.id ?? null;
+  // The first page genuinely worth exporting — preview defaults to it, the
+  // same way the PDF route defaults to the first locked page.
+  const firstExportablePageId =
+    pages.find(pageHasExportableSlot)?.id ?? null;
 
-  const deleteCount = deleteTarget
-    ? deleteTarget.slots.reduce((n, s) => n + s.annotations.length, 0)
+  const deleteCount = deleteState.page
+    ? deleteState.page.slots.reduce((n, s) => n + s.annotations.length, 0)
     : 0;
 
   return (
@@ -168,12 +195,14 @@ export function PageOverview({
         <div className="space-y-4">
           <SummaryStrip
             pages={pages}
-            canPreview={firstLockedPageId !== null}
+            canPreview={firstExportablePageId !== null}
             onPreviewPdf={() =>
-              firstLockedPageId && openPreview(firstLockedPageId)
+              firstExportablePageId && openPreview(firstExportablePageId)
             }
           />
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+          {/* Fixed 3 columns: the app shell floors the layout at 1280px, so a
+              responsive breakpoint below that can never genuinely fire. */}
+          <div className="grid grid-cols-3 gap-4">
             {pages.map((page, index) => (
               <PageCard
                 key={page.id}
@@ -182,11 +211,11 @@ export function PageOverview({
                 dragging={draggingId === page.id}
                 onOpen={() => onOpenPage(page.id)}
                 onPreview={
-                  page.slots.some((s) => s.is_locked)
+                  pageHasExportableSlot(page)
                     ? () => openPreview(page.id)
                     : undefined
                 }
-                onDelete={() => setDeleteTarget(page)}
+                onDelete={() => setDeleteState({ open: true, page })}
                 onDuplicate={() => handleDuplicate(page.id)}
                 onDragStart={() => setDraggingId(page.id)}
                 onDragEnd={() => setDraggingId(null)}
@@ -222,8 +251,10 @@ export function PageOverview({
       )}
 
       <AlertDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        open={deleteState.open}
+        onOpenChange={(open) =>
+          !open && setDeleteState((p) => ({ ...p, open: false }))
+        }
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -331,20 +362,21 @@ function SummaryStrip({
         })}
       </div>
 
-      <Button
-        size="sm"
+      {/* Title lives on the wrapper: the Button's disabled:pointer-events-none
+          would otherwise kill the tooltip in exactly the state it explains. */}
+      <span
         className="ml-auto"
-        disabled={!canPreview}
         title={
           canPreview
-            ? "Preview the exact PDF export"
+            ? "Preview the exact PDF export of the first annotation-ready page"
             : "Lock a page's framing to preview its PDF"
         }
-        onClick={onPreviewPdf}
       >
-        <Eye className="size-4" />
-        Preview PDF
-      </Button>
+        <Button size="sm" disabled={!canPreview} onClick={onPreviewPdf}>
+          <Eye className="size-4" />
+          Preview PDF
+        </Button>
+      </span>
     </div>
   );
 }
@@ -395,8 +427,16 @@ function PageCard({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${page.label ?? `Page ${index + 1}`}`}
       draggable
-      onDragStart={onDragStart}
+      onDragStart={(e) => {
+        // Firefox refuses to begin an HTML5 drag unless dragstart sets data.
+        e.dataTransfer.setData("text/plain", page.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
       onDragEnd={onDragEnd}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -404,8 +444,17 @@ function PageCard({
         onDrop();
       }}
       onClick={onOpen}
+      onKeyDown={(e) => {
+        // Only when the CARD itself is focused — Enter inside the rename
+        // input (which bubbles) must not open the page.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
       className={cn(
-        "group bg-card shadow-card hover:ring-brand/40 relative cursor-pointer rounded-xl p-3 transition-shadow hover:ring-2",
+        "group bg-card shadow-card hover:ring-brand/40 focus-visible:ring-brand/40 relative cursor-pointer rounded-xl p-3 transition-shadow outline-none hover:ring-2 focus-visible:ring-2",
         dragging && "opacity-50",
       )}
     >
@@ -440,7 +489,7 @@ function PageCard({
           className="min-w-0 flex-1 text-sm font-medium"
         />
         <span
-          title="Annotations on this page (max 12)"
+          title={`Annotations on this page (max ${MAX_ANNOTATIONS_PER_PAGE})`}
           className={cn(
             "shrink-0 text-[11px] font-semibold tabular-nums",
             annotationCount >= MAX_ANNOTATIONS_PER_PAGE
@@ -471,8 +520,10 @@ function PageCard({
 
       {/* Hover actions — preview (locked pages), duplicate, delete. Duplicate
           carries images, framing, lock state and notes onto a fresh
-          annotation surface. */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          annotation surface. pointer-events gating matches the opacity: while
+          invisible the buttons must not swallow taps meant for the card
+          (touch input never hovers first). */}
+      <div className="pointer-events-none absolute top-2 right-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
         {onPreview && (
           <button
             type="button"

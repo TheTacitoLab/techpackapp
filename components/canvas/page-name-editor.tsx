@@ -84,6 +84,15 @@ export function PageNameEditor({
           }
         }}
         onClick={(e) => e.stopPropagation()}
+        // Both hosts (overview card, thumbnail-strip item) are `draggable`, so
+        // a text-selection drag inside the input would otherwise start an
+        // HTML5 drag of the card. Making the input itself the drag source and
+        // cancelling that drag restores normal text selection.
+        draggable
+        onDragStart={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
         placeholder={fallback}
         className={cn(
           "border-border bg-background w-full rounded-md border px-1.5 py-0.5 text-sm outline-none",
