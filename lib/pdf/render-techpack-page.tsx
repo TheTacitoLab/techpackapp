@@ -528,15 +528,21 @@ const CALLOUT_PAD = 8;
 const CALLOUT_INNER_H = calloutZone().height - CALLOUT_PAD * 2;
 /** Room kept for the "+N more" line so a truncation notice is never clipped. */
 const CALLOUT_MORE_H = 9;
+/** The budget when a "+N more" line WILL be shown — it reserves that line's
+ *  room. The first fit uses the full interior (no reserve); with the 12-pin
+ *  page cap that fits every case, so the notice + reserve only ever kick in as
+ *  a defensive fallback for data beyond the cap. */
 const CALLOUT_BUDGET = CALLOUT_INNER_H - CALLOUT_MORE_H;
 
-// Estimated rendered heights (points): a colour-keyed layer heading (with its
-// inter-group gap), a slot sub-header, a one-line pin row, and the extra a
-// detail line adds.
-const H_LAYER_HEADING = 14;
-const H_SLOT_SUBHEADER = 8.5;
-const H_ROW_BASE = 11.5;
-const H_ROW_DETAIL = 8;
+// Estimated rendered heights (points), each kept CONSERVATIVE — i.e. ≥ the
+// element's real rendered height — so the budget can never think content fits
+// when it doesn't and let overflow:hidden clip a row (or the "+N more" notice)
+// silently. Includes every margin: the heading's inter-group gap, the slot
+// group's own marginBottom, the row's fixed-height badge and marginBottom.
+const H_LAYER_HEADING = 15.5;
+const H_SLOT_SUBHEADER = 10.5;
+const H_ROW_BASE = 12;
+const H_ROW_DETAIL = 6.5;
 
 function rowHeight(annotation: CanvasAnnotation): number {
   return H_ROW_BASE + (getAnnotationSummary(annotation).detail ? H_ROW_DETAIL : 0);
@@ -628,7 +634,7 @@ function CalloutLayerHeading({
       style={{
         flexDirection: "row",
         alignItems: "center",
-        marginTop: 5,
+        marginTop: 4,
         marginBottom: 2,
       }}
     >
@@ -643,7 +649,7 @@ function CalloutLayerHeading({
       />
       <Text
         style={{
-          fontSize: 7.5,
+          fontSize: 7,
           fontFamily: "Helvetica-Bold",
           color: INK,
           textTransform: "uppercase",
@@ -670,7 +676,7 @@ function CalloutRow({
   const summary = getAnnotationSummary(annotation);
   return (
     <View
-      style={{ flexDirection: "row", marginBottom: 2.5, alignItems: "flex-start" }}
+      style={{ flexDirection: "row", marginBottom: 2, alignItems: "flex-start" }}
     >
       <View
         style={{
@@ -708,13 +714,13 @@ function CalloutRow({
       )}
       <View style={{ flex: 1 }}>
         <Text
-          style={{ fontSize: 7, fontFamily: "Helvetica-Bold", maxLines: 1, textOverflow: "ellipsis" }}
+          style={{ fontSize: 6.5, fontFamily: "Helvetica-Bold", maxLines: 1, textOverflow: "ellipsis" }}
         >
           {summary.title}
         </Text>
         {summary.detail && (
           <Text
-            style={{ fontSize: 6.5, color: MUTED, marginTop: 1, maxLines: 1, textOverflow: "ellipsis" }}
+            style={{ fontSize: 6, color: MUTED, marginTop: 0.5, maxLines: 1, textOverflow: "ellipsis" }}
           >
             {summary.detail}
           </Text>
@@ -733,7 +739,16 @@ function CalloutColumn({
   layers: CalloutLayerGroup[];
   total: number;
 }) {
-  const { rendered, hidden } = budgetCallouts(layers, total, CALLOUT_BUDGET);
+  // Fit against the FULL interior first (no reserve) — under the 12-per-page
+  // cap every case fits, so all pins show and no interior is wasted. Only if
+  // that overflows (defensive: data beyond the cap) do we re-fit against the
+  // reserved budget, leaving room for the "+N more" notice so it can't itself
+  // be clipped.
+  let result = budgetCallouts(layers, total, CALLOUT_INNER_H);
+  if (result.hidden > 0) {
+    result = budgetCallouts(layers, total, CALLOUT_BUDGET);
+  }
+  const { rendered, hidden } = result;
 
   return (
     <View
@@ -762,7 +777,7 @@ function CalloutColumn({
             {/* Colour-keyed layer heading. */}
             <CalloutLayerHeading label={layer.label} colour={layer.colour} />
             {layer.slots.map((slot, si) => (
-              <View key={si} style={{ marginBottom: 2, paddingLeft: 2 }}>
+              <View key={si} style={{ marginBottom: 1.5, paddingLeft: 2 }}>
                 {/* Slot sub-header — groups this layer's pins on the slot
                     ("Front", "Back neck"). */}
                 <Text
