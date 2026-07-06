@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
-import { ANNOTATION_LAYERS, type LayerKey } from "@/components/canvas/layers";
 import {
   Dialog,
   DialogContent,
@@ -11,51 +9,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
-type PreviewLayer = LayerKey | "all";
 
 /**
  * Read-only, true-WYSIWYG page preview: an inline render of the EXACT PDF this
- * page exports, via the existing `/products/{id}/pdf` route (same layout module,
- * same renderer — not a lookalike). A layer selector switches between the
- * all-layers composite and each single layer; the iframe reloads on change.
- *
- * Defaults to whatever the canvas is currently showing (the all-layers
- * composite, or the active layer) each time it opens, so "Preview page" shows
- * the view the user was working in.
+ * page exports, via the `/products/{id}/pdf` route (same layout module, same
+ * renderer — not a lookalike). A canvas page exports as ONE composed page (all
+ * layers together), so the preview shows that composed page — matching the
+ * on-screen "All layers" view and the export byte-for-byte.
  */
 export function PagePreviewDialog({
   open,
   onOpenChange,
   productId,
   pageId,
-  activeLayer,
-  defaultAllLayers,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   productId: string;
   pageId: string;
-  activeLayer: LayerKey;
-  defaultAllLayers: boolean;
 }) {
-  const [layer, setLayer] = useState<PreviewLayer>(
-    defaultAllLayers ? "all" : activeLayer,
-  );
-
-  // Re-seed the selector to the current canvas view each time the dialog opens.
-  useEffect(() => {
-    if (open) setLayer(defaultAllLayers ? "all" : activeLayer);
-  }, [open, defaultAllLayers, activeLayer]);
-
-  const src = `/products/${productId}/pdf?pageId=${pageId}&layer=${layer}`;
+  const src = `/products/${productId}/pdf?pageId=${pageId}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -63,25 +36,13 @@ export function PagePreviewDialog({
         <DialogHeader>
           <DialogTitle>Preview page</DialogTitle>
           <DialogDescription>
-            Exactly what this page exports to PDF — read-only. Framing, pins and
-            spacing match the export because both use the same layout.
+            Exactly what this page exports to PDF — all layers composed,
+            read-only. Framing, pins and spacing match the export because both
+            use the same layout.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-2">
-          <Select value={layer} onValueChange={(v) => setLayer(v as PreviewLayer)}>
-            <SelectTrigger className="h-8 w-44 text-xs">
-              <SelectValue placeholder="Layer" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All layers</SelectItem>
-              {ANNOTATION_LAYERS.map((l) => (
-                <SelectItem key={l.key} value={l.key}>
-                  {l.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center">
           <a
             href={src}
             target="_blank"
@@ -93,7 +54,7 @@ export function PagePreviewDialog({
           </a>
         </div>
 
-        {/* Key on src so switching layer/page reloads the exact PDF. */}
+        {/* Key on src so switching page reloads the exact PDF. */}
         <iframe
           key={src}
           src={src}

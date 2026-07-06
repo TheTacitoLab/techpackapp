@@ -1,12 +1,6 @@
 import type { NextRequest } from "next/server";
 
-import {
-  ANNOTATION_LAYERS,
-  layerByKey,
-  parseLayerColours,
-  resolveLayerColour,
-  type LayerKey,
-} from "@/components/canvas/layers";
+import { parseLayerColours } from "@/components/canvas/layers";
 import { renderTechPackPagePdf } from "@/lib/pdf/render-techpack-page";
 import type { PdfPageData, PdfSlotData } from "@/lib/pdf/render-techpack-page";
 import { getCurrentUser } from "@/lib/supabase/auth";
@@ -17,10 +11,6 @@ import type {
   CanvasSlot,
   ProductAsset,
 } from "@/types";
-
-function isLayerKey(value: string): value is LayerKey {
-  return ANNOTATION_LAYERS.some((l) => l.key === value);
-}
 
 /** Formats @react-pdf 4.5.1 can actually rasterise (Step 0-verified). WebP is
  * uploadable but NOT renderable by the PDF engine — it degrades to the
@@ -88,12 +78,14 @@ function svgIntrinsicSize(
 }
 
 /**
- * GET /products/{id}/pdf?pageId={uuid}&layer={colourway|fabric|measurement|construction}
+ * GET /products/{id}/pdf?pageId={uuid}
  *
- * Canvas-to-PDF spike: renders ONE canvas page for ONE layer as a landscape A4
- * PDF. Auth + workspace scoping match every other data path (product row must
- * belong to the caller's workspace; RLS guards the rest). `pageId` defaults to
- * the product's first locked page, `layer` to Fabrics & Trim.
+ * Renders ONE canvas page as a landscape-A4 PDF: a single COMPOSED page with
+ * every annotation layer's pins in their own colours and a layer→slot→pin
+ * callout column — the export twin of the on-screen "All layers" view. Auth +
+ * workspace scoping match every other data path (product row must belong to the
+ * caller's workspace; RLS guards the rest). `pageId` defaults to the product's
+ * first locked page.
  */
 export async function GET(
   req: NextRequest,
@@ -104,14 +96,6 @@ export async function GET(
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const url = new URL(req.url);
-  const layerParam = url.searchParams.get("layer") ?? "fabric";
-  // "all" renders the all-layers composite — every layer's pins on one page,
-  // each in its own colour (the export twin of the on-screen "All layers" view).
-  const allLayers = layerParam === "all";
-  if (!allLayers && !isLayerKey(layerParam)) {
-    return new Response("Unknown layer", { status: 400 });
-  }
-  const layer = allLayers ? null : layerByKey(layerParam);
 
   const supabase = await createClient();
   const { data: product } = await supabase
@@ -161,15 +145,10 @@ export async function GET(
       : Promise.resolve({ data: null }),
   ]);
 
-  // The layer's marker colour: workspace override else built-in — the SAME
-  // resolution the canvas uses (imported, not reimplemented). The all-layers
-  // composite has no single colour, so its chrome uses a neutral slate and each
-  // pin resolves its own colour from `overrides` inside the renderer.
+  // Every pin (on the imagery) and every callout layer-heading resolves its
+  // own colour from these overrides inside the renderer — the SAME resolution
+  // the on-screen canvas uses (imported, not reimplemented).
   const overrides = parseLayerColours(user.workspace?.layer_colours);
-  const ALL_LAYERS_CHROME = "#475569";
-  const layerColour = allLayers
-    ? ALL_LAYERS_CHROME
-    : resolveLayerColour(layer!.key, overrides);
 
   const sortedSlots = [...page.canvas_slots].sort(
     (a, b) => a.slot_index - b.slot_index,
@@ -202,13 +181,8 @@ export async function GET(
         // whose image fetch failed ("Image unavailable").
         hasAsset: asset !== null,
         image,
-        // Single-layer export: only the chosen layer's pins. All-layers
-        // composite: every pin (each renders in its own layer colour).
-        annotations: allLayers
-          ? slot.canvas_annotations
-          : slot.canvas_annotations.filter((a) =>
-              layer!.types.includes(a.layer_type),
-            ),
+        // A page exports COMPOSED — all of the slot's pins, every layer.
+        annotations: slot.canvas_annotations,
       };
     }),
   );
@@ -227,10 +201,6 @@ export async function GET(
     pageCount: allPages.length,
     pageLabel: page.label ?? `Page ${pageIndex + 1}`,
     template: page.template,
-    layerKey: layer?.key,
-    layerLabel: allLayers ? "All layers" : layer!.label,
-    layerColour,
-    allLayers,
     layerColours: overrides,
     // Typed non-null, but genuinely undefined until migration 0026 runs —
     // fall back to a visible placeholder rather than a "/view/undefined" link.
@@ -248,8 +218,7 @@ export async function GET(
     console.error("[pdf] renderTechPackPagePdf failed:", err);
     return new Response("PDF generation failed", { status: 500 });
   }
-  const layerSlug = allLayers ? "all" : layer!.key;
-  const filename = `${product.name.replace(/[^\w-]+/g, "_")}_${layerSlug}_p${pageIndex + 1}.pdf`;
+  const filename = `${product.name.replace(/[^\w-]+/g, "_")}_p${pageIndex + 1}.pdf`;
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

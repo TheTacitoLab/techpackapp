@@ -483,8 +483,6 @@ export function PageEditor({
       onOpenChange={setPreviewOpen}
       productId={productId}
       pageId={activePage.id}
-      activeLayer={activeLayer}
-      defaultAllLayers={viewAllLayers}
     />
   ) : null;
 

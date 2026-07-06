@@ -32,8 +32,10 @@ import {
 
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
 import {
+  ANNOTATION_LAYERS,
   readableTextOn,
   resolveColourForLayerType,
+  resolveLayerColour,
   type LayerColourOverrides,
   type LayerKey,
 } from "@/components/canvas/layers";
@@ -72,7 +74,8 @@ export type PdfSlotData = {
   /** Slot image as a data URI (fetched server-side; PNG and SVG both verified
    * in Step 0); null with `hasAsset` renders an "image unavailable" box. */
   image: string | null;
-  /** Already filtered to the exported layer's `types`. */
+  /** ALL of this slot's pins (every layer) — a canvas page exports as one
+   *  composed page, so no per-layer filtering happens on the way in. */
   annotations: CanvasAnnotation[];
 };
 
@@ -88,24 +91,12 @@ export type PdfPageData = {
   pageCount: number;
   pageLabel: string;
   template: CanvasTemplate;
-  /** Omitted for the all-layers composite (no single layer). Currently unread
-   *  by the renderer; kept for parity with the single-layer export contract. */
-  layerKey?: LayerKey;
-  layerLabel: string;
-  /** Resolved via the workspace's layer_colours overrides (imported resolver).
-   *  In the all-layers composite this is a neutral chrome colour; each pin
-   *  resolves its OWN layer colour from `layerColours` instead. */
-  layerColour: string;
-  /** All-layers composite export — every layer's pins on one page, each in its
-   *  own colour (mirrors the on-screen "All layers" preview). Single-layer
-   *  exports leave this false and every pin uses `layerColour`. */
-  allLayers: boolean;
-  /** Workspace marker-colour overrides, used to resolve each pin's own colour
-   *  in the all-layers composite (ignored when `allLayers` is false). */
+  /** Workspace marker-colour overrides. Every pin (on the imagery) and every
+   *  callout layer-heading resolves its own colour through these — the SAME
+   *  resolution the on-screen "All layers" view uses. */
   layerColours: LayerColourOverrides;
   shareToken: string;
-  /** Per-CANVAS-page notes: the same text renders on every layer-page
-   * exported from that canvas page. Null still renders the labelled box. */
+  /** Per-canvas-page notes. Null still renders the labelled box. */
   notes: string | null;
   slots: PdfSlotData[];
 };
@@ -518,16 +509,155 @@ function byReferenceCode(a: CanvasAnnotation, b: CanvasAnnotation): number {
   });
 }
 
-// The fixed callout column fits roughly this many annotation rows before it
-// would paint past its border (react-pdf does not clip without overflow
-// hidden); beyond it the list truncates with an explicit "+N more" line —
-// never silent. Per-slot sub-headers are cheap and not counted against this.
-const CALLOUT_MAX_ROWS = 18;
+// ---- Callout column: layer → slot → pins ------------------------------------
+//
+// A canvas page exports as ONE composed page, so the column groups by LAYER
+// first (canonical layer-bar order, colour-keyed heading), then by SLOT within
+// each layer (named sub-headers), pins beneath in reference-code order. Empty
+// layers/slots are absent.
+//
+// The column has a fixed height and `overflow: "hidden"`, so nothing can ever
+// paint past its border. A points budget fills it in canonical order and stops
+// at the first row that would exceed the budget, reporting the rest as an
+// explicit "+N more" line rather than a clipped half-row. Heights are
+// estimated a touch conservatively; `maxLines: 1` on titles/details keeps every
+// row exactly one or two lines so the estimate holds.
 
-/** A callout column grouped by the slot its pins sit on. */
-type CalloutGroup = { header: string; annotations: CanvasAnnotation[] };
+/** The column's interior height once its padding is removed. */
+const CALLOUT_PAD = 8;
+const CALLOUT_INNER_H = calloutZone().height - CALLOUT_PAD * 2;
+/** Room kept for the "+N more" line so a truncation notice is never clipped. */
+const CALLOUT_MORE_H = 9;
+const CALLOUT_BUDGET = CALLOUT_INNER_H - CALLOUT_MORE_H;
 
-/** One annotation row: reference-code badge, optional swatch, title + detail. */
+// Estimated rendered heights (points): a colour-keyed layer heading (with its
+// inter-group gap), a slot sub-header, a one-line pin row, and the extra a
+// detail line adds.
+const H_LAYER_HEADING = 14;
+const H_SLOT_SUBHEADER = 8.5;
+const H_ROW_BASE = 11.5;
+const H_ROW_DETAIL = 8;
+
+function rowHeight(annotation: CanvasAnnotation): number {
+  return H_ROW_BASE + (getAnnotationSummary(annotation).detail ? H_ROW_DETAIL : 0);
+}
+
+/** A slot's pins within a layer, and a layer's slots — the grouped callout tree. */
+type CalloutSlotGroup = { header: string; annotations: CanvasAnnotation[] };
+type CalloutLayerGroup = {
+  key: LayerKey;
+  label: string;
+  colour: string;
+  slots: CalloutSlotGroup[];
+  total: number;
+};
+
+type RenderedSlot = { header: string; rows: CanvasAnnotation[] };
+type RenderedLayer = {
+  key: LayerKey;
+  label: string;
+  colour: string;
+  slots: RenderedSlot[];
+};
+
+/**
+ * Greedily fit the layer→slot→pin tree into the column's vertical budget,
+ * walking in canonical order and stopping at the FIRST row that would exceed it
+ * — so the rendered prefix is contiguous (no gaps) and everything past the cut
+ * is reported as "+N more". A layer heading / slot sub-header is only charged
+ * when its first fitting row is placed, so an entirely-dropped layer or slot
+ * costs nothing.
+ */
+function budgetCallouts(
+  layers: CalloutLayerGroup[],
+  total: number,
+  budget: number,
+): { rendered: RenderedLayer[]; shown: number; hidden: number } {
+  const rendered: RenderedLayer[] = [];
+  let used = 0;
+  let shown = 0;
+  let stop = false;
+
+  for (const layer of layers) {
+    if (stop) break;
+    const slots: RenderedSlot[] = [];
+    let layerCharged = false;
+    for (const slot of layer.slots) {
+      if (stop) break;
+      const rows: CanvasAnnotation[] = [];
+      let slotCharged = false;
+      for (const annotation of slot.annotations) {
+        const startCost =
+          (layerCharged ? 0 : H_LAYER_HEADING) +
+          (slotCharged ? 0 : H_SLOT_SUBHEADER);
+        if (used + startCost + rowHeight(annotation) > budget) {
+          stop = true;
+          break;
+        }
+        used += startCost + rowHeight(annotation);
+        layerCharged = true;
+        slotCharged = true;
+        rows.push(annotation);
+        shown += 1;
+      }
+      if (rows.length > 0) slots.push({ header: slot.header, rows });
+    }
+    if (slots.length > 0) {
+      rendered.push({
+        key: layer.key,
+        label: layer.label,
+        colour: layer.colour,
+        slots,
+      });
+    }
+  }
+
+  return { rendered, shown, hidden: total - shown };
+}
+
+/** A colour-keyed layer heading: the marker-colour chip + the layer name. */
+function CalloutLayerHeading({
+  label,
+  colour,
+}: {
+  label: string;
+  colour: string;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 5,
+        marginBottom: 2,
+      }}
+    >
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 2,
+          backgroundColor: colour,
+          marginRight: 4,
+        }}
+      />
+      <Text
+        style={{
+          fontSize: 7.5,
+          fontFamily: "Helvetica-Bold",
+          color: INK,
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** One annotation row: reference-code badge, optional swatch, title + detail.
+ *  `maxLines: 1` keeps each row's height predictable for the column budget. */
 function CalloutRow({
   annotation,
   colour,
@@ -540,13 +670,13 @@ function CalloutRow({
   const summary = getAnnotationSummary(annotation);
   return (
     <View
-      style={{ flexDirection: "row", marginBottom: 5, alignItems: "flex-start" }}
+      style={{ flexDirection: "row", marginBottom: 2.5, alignItems: "flex-start" }}
     >
       <View
         style={{
           width: 14,
-          height: 10,
-          borderRadius: 5,
+          height: 9,
+          borderRadius: 4.5,
           backgroundColor: colour,
           alignItems: "center",
           justifyContent: "center",
@@ -560,8 +690,8 @@ function CalloutRow({
           {annotation.reference_code}
         </Text>
       </View>
-      {/* Colourway rows get their sampled swatch; stitch SVG icons are a
-          flagged follow-up (react-pdf Image doesn't take SVG sources). */}
+      {/* Colourway rows get their sampled swatch; stitch/branding SVG icons are
+          a flagged follow-up (react-pdf Image doesn't take SVG sources). */}
       {summary.swatch && (
         <View
           style={{
@@ -577,11 +707,15 @@ function CalloutRow({
         />
       )}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold" }}>
+        <Text
+          style={{ fontSize: 7, fontFamily: "Helvetica-Bold", maxLines: 1, textOverflow: "ellipsis" }}
+        >
           {summary.title}
         </Text>
         {summary.detail && (
-          <Text style={{ fontSize: 6.5, color: MUTED, marginTop: 1 }}>
+          <Text
+            style={{ fontSize: 6.5, color: MUTED, marginTop: 1, maxLines: 1, textOverflow: "ellipsis" }}
+          >
             {summary.detail}
           </Text>
         )}
@@ -592,37 +726,14 @@ function CalloutRow({
 
 function CalloutColumn({
   zone,
-  groups,
+  layers,
   total,
-  colourFor,
-  layerLabel,
 }: {
   zone: PdfRect;
-  groups: CalloutGroup[];
+  layers: CalloutLayerGroup[];
   total: number;
-  /** Per-annotation colour — one page colour for a single layer, or each pin's
-   *  own layer colour in the all-layers composite. */
-  colourFor: (annotation: CanvasAnnotation) => string;
-  layerLabel: string;
 }) {
-  // Budget annotation rows across all groups, keeping each group's rows
-  // together under its slot sub-header (no outer mutable — the running total is
-  // derived from the accumulator each step; group count is tiny).
-  const rendered = groups.reduce<{ header: string; rows: CanvasAnnotation[] }[]>(
-    (acc, g) => {
-      // Each rendered group costs its rows PLUS one line for its sub-header, so
-      // the vertical budget accounts for headers too and truncation stays
-      // honest ("+N more" is never silently clipped by overflow:hidden).
-      const used = acc.reduce((n, x) => n + x.rows.length + 1, 0);
-      const remaining = CALLOUT_MAX_ROWS - used;
-      if (remaining <= 0) return acc;
-      const rows = g.annotations.slice(0, remaining);
-      return rows.length > 0 ? [...acc, { header: g.header, rows }] : acc;
-    },
-    [],
-  );
-  const shownCount = rendered.reduce((n, g) => n + g.rows.length, 0);
-  const hidden = total - shownCount;
+  const { rendered, hidden } = budgetCallouts(layers, total, CALLOUT_BUDGET);
 
   return (
     <View
@@ -635,56 +746,52 @@ function CalloutColumn({
         borderWidth: 1,
         borderColor: HAIRLINE,
         borderRadius: 4,
-        padding: 8,
+        padding: CALLOUT_PAD,
         overflow: "hidden",
       }}
     >
-      <Text
-        style={{
-          fontSize: 7,
-          fontFamily: "Helvetica-Bold",
-          color: MUTED,
-          marginBottom: 6,
-          textTransform: "uppercase",
-        }}
-      >
-        {layerLabel} — {total} {total === 1 ? "callout" : "callouts"}
-      </Text>
       {total === 0 && (
         <Text style={{ fontSize: 7, color: MUTED }}>
-          No annotations on this layer.
+          No annotations on this page.
         </Text>
       )}
-      {rendered.map((group, gi) => (
-        <View key={gi} style={{ marginBottom: 4 }}>
-          {/* Slot sub-header — groups this slot's pins ("Front", "Back neck"). */}
-          <Text
-            style={{
-              fontSize: 6.5,
-              fontFamily: "Helvetica-Bold",
-              color: INK,
-              textTransform: "uppercase",
-              letterSpacing: 0.3,
-              marginBottom: 3,
-            }}
-          >
-            {group.header}
-          </Text>
-          <View style={{ paddingLeft: 4 }}>
-            {group.rows.map((a) => {
-              const rowColour = colourFor(a);
-              return (
-                <CalloutRow
-                  key={a.id}
-                  annotation={a}
-                  colour={rowColour}
-                  textColour={readableTextOn(rowColour)}
-                />
-              );
-            })}
+      {rendered.map((layer) => {
+        const textColour = readableTextOn(layer.colour);
+        return (
+          <View key={layer.key}>
+            {/* Colour-keyed layer heading. */}
+            <CalloutLayerHeading label={layer.label} colour={layer.colour} />
+            {layer.slots.map((slot, si) => (
+              <View key={si} style={{ marginBottom: 2, paddingLeft: 2 }}>
+                {/* Slot sub-header — groups this layer's pins on the slot
+                    ("Front", "Back neck"). */}
+                <Text
+                  style={{
+                    fontSize: 5.5,
+                    fontFamily: "Helvetica-Bold",
+                    color: MUTED,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                    marginBottom: 1.5,
+                  }}
+                >
+                  {slot.header}
+                </Text>
+                <View style={{ paddingLeft: 4 }}>
+                  {slot.rows.map((a) => (
+                    <CalloutRow
+                      key={a.id}
+                      annotation={a}
+                      colour={layer.colour}
+                      textColour={textColour}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))}
           </View>
-        </View>
-      ))}
+        );
+      })}
       {hidden > 0 && (
         <Text style={{ fontSize: 6.5, color: MUTED, marginTop: 2 }}>
           +{hidden} more — see the online tech pack for the full list.
@@ -695,7 +802,6 @@ function CalloutColumn({
 }
 
 function Header({ data }: { data: PdfPageData }) {
-  const chipText = readableTextOn(data.layerColour);
   return (
     <View
       style={{
@@ -739,21 +845,6 @@ function Header({ data }: { data: PdfPageData }) {
         <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold" }}>
           Technical Details
         </Text>
-        <View
-          style={{
-            marginTop: 3,
-            borderRadius: 6,
-            backgroundColor: data.layerColour,
-            paddingHorizontal: 6,
-            paddingVertical: 2,
-          }}
-        >
-          <Text
-            style={{ fontSize: 6.5, fontFamily: "Helvetica-Bold", color: chipText }}
-          >
-            {data.layerLabel}
-          </Text>
-        </View>
       </View>
 
       <View style={{ width: 130, alignItems: "flex-end" }}>
@@ -804,35 +895,38 @@ function Footer({ data }: { data: PdfPageData }) {
 
 export function TechPackPage({ data }: { data: PdfPageData }) {
   const layout = canvasZoneLayout(data.template, data.slots);
+  const overrides = data.layerColours;
 
-  // One page colour for a single-layer export; each pin's OWN layer colour in
-  // the all-layers composite — the same resolver the on-screen canvas uses, so
-  // the preview matches the "All layers" view.
+  // Composed export: every pin resolves its OWN layer colour — the same
+  // resolver the on-screen "All layers" view uses.
   const colourFor = (annotation: CanvasAnnotation): string =>
-    data.allLayers
-      ? resolveColourForLayerType(annotation.layer_type, data.layerColours)
-      : data.layerColour;
+    resolveColourForLayerType(annotation.layer_type, overrides);
 
-  // Callouts grouped by the slot their pins sit on, in slot order; each slot's
-  // pins are reference-code sorted, and slots with no pins on this layer are
-  // omitted. The sub-header matches the slot's box label so the factory can
-  // cross-reference box ↔ list.
-  const calloutGroups: CalloutGroup[] = data.slots
-    .map((slot, i) => ({
-      header: slotLabel(slot, i) ?? `Slot ${i + 1}`,
-      annotations: [...slot.annotations].sort(byReferenceCode),
-    }))
-    .filter((g) => g.annotations.length > 0);
-  const calloutTotal = calloutGroups.reduce(
-    (n, g) => n + g.annotations.length,
-    0,
-  );
+  // Callout tree: layer (canonical layer-bar order) → slot (slot order) → pins
+  // (reference-code order). Layers/slots with no pins are omitted. Each layer's
+  // heading + pin rows use the layer's resolved marker colour, matching the
+  // pins on the imagery.
+  const layerGroups: CalloutLayerGroup[] = ANNOTATION_LAYERS.map((layer) => {
+    const slots: CalloutSlotGroup[] = data.slots
+      .map((slot, i) => ({
+        header: slotLabel(slot, i) ?? `Slot ${i + 1}`,
+        annotations: slot.annotations
+          .filter((a) => layer.types.includes(a.layer_type))
+          .sort(byReferenceCode),
+      }))
+      .filter((g) => g.annotations.length > 0);
+    return {
+      key: layer.key,
+      label: layer.label,
+      colour: resolveLayerColour(layer.key, overrides),
+      slots,
+      total: slots.reduce((n, g) => n + g.annotations.length, 0),
+    };
+  }).filter((g) => g.total > 0);
+  const calloutTotal = layerGroups.reduce((n, g) => n + g.total, 0);
 
   return (
-    <Document
-      title={`${data.styleName} — Technical Details (${data.layerLabel})`}
-      author="TechPackApp"
-    >
+    <Document title={`${data.styleName} — Technical Details`} author="TechPackApp">
       <Page size={[PAGE_W, PAGE_H]} style={styles.page}>
         <Header data={data} />
         {data.slots.map((slot, i) => {
@@ -851,10 +945,8 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
         <NotesBox box={layout.notesBox} notes={data.notes} />
         <CalloutColumn
           zone={calloutZone()}
-          groups={calloutGroups}
+          layers={layerGroups}
           total={calloutTotal}
-          colourFor={colourFor}
-          layerLabel={data.layerLabel}
         />
         <Footer data={data} />
       </Page>
