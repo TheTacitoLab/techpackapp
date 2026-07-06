@@ -13,23 +13,22 @@ import type { ResolvedCanvasPage } from "@/types";
 
 /**
  * The vertical page navigation axis (perpendicular to the horizontal layer
- * buttons — the two axes never mix). Each thumbnail is a mini template render;
- * the active page has a lime left border. Switching pages here does not touch
- * the active layer. Drag to reorder. In `collapsed` (fullscreen) mode it shrinks
- * to a 48px thumbs-only rail with no page-name text.
+ * buttons — the two axes never mix). With the editor always fullscreen this
+ * strip is THE way to flick between pages, so it's sized for readable
+ * previews + names rather than the old icon-only rail. Each thumbnail is a
+ * mini template render; the active page has a lime left border. Switching
+ * pages here does not touch the active layer. Drag to reorder.
  */
 export function PageThumbnailStrip({
   pages,
   activePageId,
   productId,
-  collapsed = false,
   onSelect,
   onAddPage,
 }: {
   pages: ResolvedCanvasPage[];
   activePageId: string;
   productId: string;
-  collapsed?: boolean;
   onSelect: (pageId: string) => void;
   onAddPage: () => void;
 }) {
@@ -60,12 +59,7 @@ export function PageThumbnailStrip({
   }
 
   return (
-    <div
-      className={cn(
-        "flex shrink-0 flex-col gap-2 overflow-y-auto",
-        collapsed ? "w-12 border-r border-border p-1.5" : "w-[110px]",
-      )}
-    >
+    <div className="border-border flex w-[132px] shrink-0 flex-col gap-2 overflow-y-auto border-r p-2">
       {pages.map((page, index) => {
         const active = page.id === activePageId;
         return (
@@ -80,8 +74,7 @@ export function PageThumbnailStrip({
               handleDrop(page.id);
             }}
             className={cn(
-              "cursor-pointer rounded-lg transition-all",
-              collapsed ? "p-0.5" : "border-l-2 p-1",
+              "cursor-pointer rounded-lg border-l-2 p-1 transition-all",
               active
                 ? "border-brand bg-card shadow-card"
                 : "border-transparent hover:bg-muted",
@@ -94,26 +87,18 @@ export function PageThumbnailStrip({
               className="block w-full outline-none"
               title={page.label ?? `Page ${index + 1}`}
             >
-              <MiniTemplate
-                page={page}
-                className={cn(
-                  "rounded-md",
-                  collapsed ? "h-11" : "h-[72px]",
-                )}
-              />
+              <MiniTemplate page={page} className="h-[76px] rounded-md" />
             </button>
-            {!collapsed && (
-              <PageNameEditor
-                pageId={page.id}
-                name={page.label}
-                fallback={`Page ${index + 1}`}
-                className={cn(
-                  "mt-1 w-full px-1 text-xs",
-                  active ? "text-foreground font-medium" : "text-muted-foreground",
-                )}
-                inputClassName="text-xs"
-              />
-            )}
+            <PageNameEditor
+              pageId={page.id}
+              name={page.label}
+              fallback={`Page ${index + 1}`}
+              className={cn(
+                "mt-1 w-full px-1 text-xs",
+                active ? "text-foreground font-medium" : "text-muted-foreground",
+              )}
+              inputClassName="text-xs"
+            />
           </div>
         );
       })}
@@ -122,10 +107,7 @@ export function PageThumbnailStrip({
         type="button"
         onClick={onAddPage}
         aria-label="Add page"
-        className={cn(
-          "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground flex shrink-0 items-center justify-center rounded-lg border border-dashed transition-colors",
-          collapsed ? "h-11" : "h-10",
-        )}
+        className="border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground flex h-10 shrink-0 items-center justify-center rounded-lg border border-dashed transition-colors"
       >
         <Plus className="size-4" />
       </button>

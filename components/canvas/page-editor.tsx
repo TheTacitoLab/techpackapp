@@ -6,9 +6,9 @@ import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Eye,
+  FileDown,
   HelpCircle,
   Layers3,
-  Maximize2,
   Minimize2,
   Minus,
   Plus,
@@ -20,6 +20,10 @@ import { toast } from "sonner";
 import { AnnotationListPanel } from "@/components/canvas/annotation-list-panel";
 import { CanvasHelpDialog } from "@/components/canvas/canvas-help-dialog";
 import { TemplatePickerDialog } from "@/components/canvas/canvas-templates";
+import {
+  EditorToolbar,
+  type EditorToolbarGroup,
+} from "@/components/canvas/editor-toolbar";
 import { PagePreviewDialog } from "@/components/canvas/page-preview-dialog";
 import { LayerButton } from "@/components/canvas/layer-button";
 import {
@@ -32,7 +36,6 @@ import { PageCanvas } from "@/components/canvas/page-canvas";
 import { PageNotesEditor } from "@/components/canvas/page-notes-editor";
 import { PageThumbnailStrip } from "@/components/canvas/page-thumbnail-strip";
 import { LayerColoursEditor } from "@/components/settings/layer-colours-editor";
-import { useUserPreferences } from "@/components/user-preferences-context";
 import {
   Dialog,
   DialogContent,
@@ -62,11 +65,16 @@ function clampZoom(z: number): number {
 }
 
 /**
- * The focused editing view for one page. Two perpendicular navigation axes:
- * layer buttons run horizontally across the top, page thumbnails run vertically
- * down the left; the annotation list panel is the third region, to the right.
- * Switching pages never changes the active layer, and vice versa. A `⛶` toggle
- * promotes the editor into a full-viewport Portal (Escape exits).
+ * The focused editing view for one page — always fullscreen (a full-viewport
+ * Portal). The launchpad opens straight into it; leaving it (back button,
+ * exit action, or an unclaimed Escape) returns to the launchpad. There is no
+ * intermediate inline editor any more.
+ *
+ * Two perpendicular navigation axes: compact layer buttons run horizontally
+ * across the top, page thumbnails run vertically down the left; the
+ * annotation list panel is the third region, to the right. Switching pages
+ * never changes the active layer, and vice versa. The header's right side is
+ * the config-driven `EditorToolbar` (grouped icon buttons + ⋯ overflow).
  *
  * Owns the live annotation data for every page (`localPages`, seeded from the
  * `pages` prop and updated in place by pin create/update/delete) rather than
@@ -82,7 +90,6 @@ export function PageEditor({
   pageId,
   activeLayer,
   viewAllLayers,
-  isFullscreen,
   libraryItems,
   colourways,
   lastUsedColourwayId,
@@ -93,8 +100,6 @@ export function PageEditor({
   onViewAllLayers,
   onSelectPage,
   onBackToOverview,
-  onToggleFullscreen,
-  onExitFullscreen,
 }: {
   productId: string;
   workspaceId: string;
@@ -104,7 +109,6 @@ export function PageEditor({
   activeLayer: LayerKey;
   /** The read-only All-layers composite is active (no single layer selected). */
   viewAllLayers: boolean;
-  isFullscreen: boolean;
   libraryItems: ResolvedLibraryItem[];
   colourways: CanvasColourway[];
   lastUsedColourwayId: string | null;
@@ -115,8 +119,6 @@ export function PageEditor({
   onViewAllLayers: () => void;
   onSelectPage: (pageId: string) => void;
   onBackToOverview: () => void;
-  onToggleFullscreen: () => void;
-  onExitFullscreen: () => void;
 }) {
   const router = useRouter();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -128,9 +130,6 @@ export function PageEditor({
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<
     string | null
   >(null);
-  // Gentle, per-user-dismissible nudge to work in fullscreen (closest on-screen
-  // scale to the printed page). Shares the profiles.preferences pattern.
-  const { hideFullscreenHint, setHideFullscreenHint } = useUserPreferences();
 
   // Live per-page annotation state, seeded from the `pages` prop and mutated
   // directly by pin create/update/delete (no router.refresh() on those, per
@@ -234,16 +233,17 @@ export function PageEditor({
     if (owningPage && owningPage.id !== pageId) onSelectPage(owningPage.id);
   }
 
-  // Escape exits fullscreen; the listener only lives while fullscreen is on and
-  // is cleaned up on unmount / when leaving fullscreen.
+  // An UNCLAIMED Escape leaves the editor for the launchpad. Radix layers
+  // (dialogs, popovers, dropdowns) call preventDefault on the Escape they
+  // consume — as does the page-name editor's cancel — so closing one never
+  // also exits the editor.
   useEffect(() => {
-    if (!isFullscreen) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onExitFullscreen();
+      if (e.key === "Escape" && !e.defaultPrevented) onBackToOverview();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isFullscreen, onExitFullscreen]);
+  }, [onBackToOverview]);
 
   const activePage = localPages.find((p) => p.id === pageId) ?? localPages[0] ?? null;
 
@@ -315,43 +315,50 @@ export function PageEditor({
     });
   }
 
+  // Layer selector — compact enough for one line at typical fullscreen
+  // widths. The wrapper is a @container: below 50rem of layer-bar width the
+  // labels condense away (icon + count remain, `title` carries the name).
   const layerButtons = (
-    <div className="flex flex-wrap items-center gap-2">
-      {/* All-layers composite — read-only preview of the whole PDF page.
-          Visually distinct from the five real layers (outline, stacked icon). */}
-      <button
-        type="button"
-        onClick={onViewAllLayers}
-        aria-pressed={viewAllLayers}
-        title="Preview every layer at once — exactly what the PDF page will show"
-        className={cn(
-          "flex min-h-11 items-center gap-2 rounded-lg border-2 border-dashed px-3 py-2 text-sm transition-colors",
-          viewAllLayers
-            ? "border-foreground/40 text-foreground bg-muted font-semibold"
-            : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
-        )}
-      >
-        <Layers3 className="size-4 shrink-0" />
-        <span className="whitespace-nowrap">All layers</span>
-      </button>
-      {ANNOTATION_LAYERS.map((layer) => (
-        <LayerButton
-          key={layer.key}
-          layer={layer}
-          active={!viewAllLayers && layer.key === activeLayer}
-          count={layerCounts[layer.key]}
-          onClick={() => onLayerChange(layer.key)}
-        />
-      ))}
+    <div className="@container min-w-0 flex-1">
+      <div className="flex items-center gap-1 overflow-x-auto">
+        {/* All-layers composite — read-only preview of the whole PDF page.
+            Visually distinct from the five real layers (outline, stacked icon). */}
+        <button
+          type="button"
+          onClick={onViewAllLayers}
+          aria-pressed={viewAllLayers}
+          title="Preview every layer at once — exactly what the PDF page will show"
+          className={cn(
+            "flex h-8 shrink-0 items-center gap-1.5 rounded-lg border-2 border-dashed px-2 text-xs transition-colors",
+            viewAllLayers
+              ? "border-foreground/40 text-foreground bg-muted font-semibold"
+              : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <Layers3 className="size-3.5 shrink-0" />
+          <span className="hidden whitespace-nowrap @[50rem]:inline">
+            All layers
+          </span>
+        </button>
+        {ANNOTATION_LAYERS.map((layer) => (
+          <LayerButton
+            key={layer.key}
+            layer={layer}
+            active={!viewAllLayers && layer.key === activeLayer}
+            count={layerCounts[layer.key]}
+            onClick={() => onLayerChange(layer.key)}
+          />
+        ))}
+      </div>
     </div>
   );
 
   // Per-page annotation counter — neutral up to 9, amber 10–11, red at 12.
   const annotationCounter = (
     <span
-      title="Annotations on this page (max 12)"
+      title={`Annotations on this page (max ${MAX_ANNOTATIONS_PER_PAGE})`}
       className={cn(
-        "inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold tabular-nums",
+        "inline-flex shrink-0 items-center rounded-md px-2 py-1 text-xs font-semibold tabular-nums",
         atAnnotationCap
           ? "bg-destructive/10 text-destructive"
           : pageAnnotationCount >= ANNOTATION_CAP_AMBER_FROM
@@ -363,82 +370,97 @@ export function PageEditor({
     </span>
   );
 
-  const helpButton = (
-    <button
-      type="button"
-      onClick={() => setHelpOpen(true)}
-      aria-label="How pages work"
-      title="How pages work"
-      className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
-    >
-      <HelpCircle className="size-4" />
-    </button>
-  );
-
-  // Read-only, true-WYSIWYG preview of the exact PDF page (shares the layout
-  // module + PDF renderer, not a lookalike).
-  const previewButton = (
-    <button
-      type="button"
-      onClick={() => setPreviewOpen(true)}
-      title="Preview the exact PDF page"
-      className="border-border text-muted-foreground hover:text-foreground flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium"
-    >
-      <Eye className="size-4" />
-      Preview page
-    </button>
-  );
-
-  // Gentle, dismissible fullscreen nudge — only in the in-page view (you're
-  // already fullscreen otherwise) and until the user dismisses it.
-  const fullscreenHint =
-    !hideFullscreenHint ? (
-      <div className="border-brand/30 bg-brand-muted/40 text-foreground flex items-center gap-2 rounded-full border px-3 py-1 text-xs">
-        <Maximize2 className="size-3.5 shrink-0" />
-        <span className="whitespace-nowrap">
-          Go fullscreen for a true-to-print view
-        </span>
-        <button
-          type="button"
-          onClick={() => setHideFullscreenHint(true)}
-          className="text-muted-foreground hover:text-foreground font-medium underline underline-offset-2"
-        >
-          Got it
-        </button>
-      </div>
-    ) : null;
-
-  const zoomControls = (
-    <div className="flex items-center gap-1">
-      <button
-        type="button"
-        onClick={() => setStageZoom((z) => clampZoom(z - STAGE_ZOOM_STEP))}
-        aria-label="Zoom out"
-        className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
-      >
-        <Minus className="size-4" />
-      </button>
-      <span className="text-muted-foreground w-11 text-center text-xs font-medium tabular-nums">
-        {Math.round(stageZoom * 100)}%
-      </span>
-      <button
-        type="button"
-        onClick={() => setStageZoom((z) => clampZoom(z + STAGE_ZOOM_STEP))}
-        aria-label="Zoom in"
-        className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
-      >
-        <Plus className="size-4" />
-      </button>
-      <button
-        type="button"
-        onClick={() => setStageZoom(1)}
-        aria-label="Reset zoom"
-        className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
-      >
-        <RotateCcw className="size-3.5" />
-      </button>
-    </div>
-  );
+  // The right-side actions, config-driven: adding a button later is a new
+  // entry here; whatever stops fitting moves into the toolbar's ⋯ menu.
+  const toolbarGroups: EditorToolbarGroup[] = [
+    {
+      key: "view",
+      items: [
+        {
+          kind: "action",
+          key: "zoom-out",
+          icon: Minus,
+          label: "Zoom out",
+          onSelect: () => setStageZoom((z) => clampZoom(z - STAGE_ZOOM_STEP)),
+        },
+        {
+          kind: "readout",
+          key: "zoom-level",
+          label: "Zoom level",
+          text: `${Math.round(stageZoom * 100)}%`,
+        },
+        {
+          kind: "action",
+          key: "zoom-in",
+          icon: Plus,
+          label: "Zoom in",
+          onSelect: () => setStageZoom((z) => clampZoom(z + STAGE_ZOOM_STEP)),
+        },
+        {
+          kind: "action",
+          key: "zoom-reset",
+          icon: RotateCcw,
+          label: "Reset zoom",
+          onSelect: () => setStageZoom(1),
+        },
+      ],
+    },
+    {
+      key: "output",
+      items: [
+        {
+          kind: "action",
+          key: "preview",
+          icon: Eye,
+          label: "Preview the exact PDF page",
+          onSelect: () => setPreviewOpen(true),
+          disabled: !activePage,
+        },
+        {
+          kind: "action",
+          key: "export",
+          icon: FileDown,
+          label: "Export page PDF",
+          onSelect: () => {
+            if (!activePage) return;
+            window.open(
+              `/products/${productId}/pdf?pageId=${activePage.id}`,
+              "_blank",
+            );
+          },
+          disabled: !activePage,
+        },
+        {
+          kind: "action",
+          key: "marker-colours",
+          icon: Settings,
+          label: "Marker colours",
+          onSelect: () => setMarkerColoursOpen(true),
+        },
+        {
+          kind: "action",
+          key: "help",
+          icon: HelpCircle,
+          label: "How pages work",
+          onSelect: () => setHelpOpen(true),
+        },
+      ],
+    },
+    {
+      key: "session",
+      pinned: true,
+      items: [
+        {
+          kind: "action",
+          key: "exit-fullscreen",
+          icon: Minimize2,
+          label: "Exit fullscreen",
+          shortcut: "Esc",
+          onSelect: onBackToOverview,
+        },
+      ],
+    },
+  ];
 
   const backButton = (
     <button
@@ -448,21 +470,6 @@ export function PageEditor({
     >
       <ArrowLeft className="size-4" />
       All Pages
-    </button>
-  );
-
-  // Settings cog beside zoom/fullscreen: opens the SAME workspace marker-colour
-  // editor as the Settings tab, in a centered dialog, so colours can be tuned
-  // against the garment image in view — pins recolour live as values change.
-  const markerColoursButton = (
-    <button
-      type="button"
-      onClick={() => setMarkerColoursOpen(true)}
-      aria-label="Marker colour settings"
-      title="Marker colours"
-      className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
-    >
-      <Settings className="size-4" />
     </button>
   );
 
@@ -497,7 +504,7 @@ export function PageEditor({
       atAnnotationCap={atAnnotationCap}
       onAnnotationCapBlocked={handleCapBlocked}
       stageZoom={stageZoom}
-      heightClassName={isFullscreen ? "min-h-[calc(100vh-120px)]" : "h-[500px]"}
+      heightClassName="min-h-[calc(100vh-120px)]"
       libraryItems={libraryItems}
       colourwayContext={{
         colourways,
@@ -516,8 +523,8 @@ export function PageEditor({
   ) : null;
 
   // Saved notes patch localPages directly (the annotations' optimistic
-  // pattern) so a remount — the fullscreen toggle swaps the whole tree — sees
-  // current text instead of the last server round-trip's.
+  // pattern) so a page switch sees current text instead of the last server
+  // round-trip's.
   function handleNotesSaved(notesPageId: string, value: string) {
     const trimmed = value.trim();
     setLocalPages((prev) =>
@@ -529,9 +536,9 @@ export function PageEditor({
     );
   }
 
-  // Below the canvas in both branches — mirroring the PDF, where the PAGE
-  // NOTES box sits beneath the slots. Keyed by page id so switching pages
-  // resets the draft to that page's saved notes.
+  // Below the canvas — mirroring the PDF, where the PAGE NOTES box sits
+  // beneath the slots. Keyed by page id so switching pages resets the draft
+  // to that page's saved notes.
   const pageNotes = activePage ? (
     <PageNotesEditor
       key={activePage.id}
@@ -563,85 +570,17 @@ export function PageEditor({
     />
   );
 
-  // ---- Fullscreen (Portal to document.body) --------------------------------
-  // Fullscreen is only ever enabled by a client-side click, so `document` is
-  // guaranteed to exist here — no SSR mount guard needed.
-  if (isFullscreen) {
-    return createPortal(
-      <div className="bg-background fixed inset-0 z-50 flex flex-col">
-        <div className="border-border bg-card shadow-card flex shrink-0 items-center gap-3 border-b px-4 py-3">
-          {backButton}
-          {layerButtons}
-          <div className="ml-auto flex items-center gap-3">
-            {annotationCounter}
-            {zoomControls}
-            {helpButton}
-            {markerColoursButton}
-            {previewButton}
-            <button
-              type="button"
-              onClick={onExitFullscreen}
-              className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-sm font-medium"
-            >
-              <Minimize2 className="size-4" />
-              Exit
-              <kbd className="bg-muted rounded px-1 text-xs">Esc</kbd>
-            </button>
-          </div>
-        </div>
-        <div className="flex flex-1 overflow-hidden">
-          {activePage && (
-            <PageThumbnailStrip
-              pages={localPages}
-              activePageId={activePage.id}
-              productId={productId}
-              collapsed
-              onSelect={onSelectPage}
-              onAddPage={() => setPickerOpen(true)}
-            />
-          )}
-          <div className="flex-1 overflow-auto p-4">
-            {canvas}
-            <div className="mt-3">{pageNotes}</div>
-          </div>
-          {listPanel}
-        </div>
-        {picker}
-        {markerColoursDialog}
-        {previewDialog}
-        <CanvasHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
-      </div>,
-      document.body,
-    );
-  }
-
-  // ---- Normal (in-page) ----------------------------------------------------
-  return (
-    <div className="bg-card shadow-card overflow-hidden rounded-xl">
-      {/* Top bar — horizontal layer axis */}
-      <div className="border-border flex flex-wrap items-center gap-3 border-b p-3">
+  // Fullscreen Portal to document.body — the editor's only form. Mounting is
+  // always the result of a client-side click, so `document` exists.
+  return createPortal(
+    <div className="bg-background fixed inset-0 z-50 flex flex-col">
+      <div className="border-border bg-card shadow-card flex shrink-0 items-center gap-3 border-b px-4 py-2.5">
         {backButton}
         {layerButtons}
-        <div className="ml-auto flex items-center gap-3">
-          {fullscreenHint}
-          {annotationCounter}
-          {zoomControls}
-          {helpButton}
-          {markerColoursButton}
-          {previewButton}
-          <button
-            type="button"
-            onClick={onToggleFullscreen}
-            aria-label="Enter fullscreen"
-            className="border-border text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md border"
-          >
-            <Maximize2 className="size-4" />
-          </button>
-        </div>
+        {annotationCounter}
+        <EditorToolbar groups={toolbarGroups} />
       </div>
-
-      {/* Body — vertical page axis + canvas + annotation list */}
-      <div className="flex gap-3 p-3">
+      <div className="flex flex-1 overflow-hidden">
         {activePage && (
           <PageThumbnailStrip
             pages={localPages}
@@ -651,19 +590,17 @@ export function PageEditor({
             onAddPage={() => setPickerOpen(true)}
           />
         )}
-        <div className="min-w-0 flex-1 overflow-auto">{canvas}</div>
+        <div className="flex-1 overflow-auto p-4">
+          {canvas}
+          <div className="mt-3">{pageNotes}</div>
+        </div>
         {listPanel}
       </div>
-
-      {/* Page notes — the editor counterpart of the PDF's PAGE NOTES box */}
-      {pageNotes && (
-        <div className="border-border border-t px-3 pt-2.5 pb-3">{pageNotes}</div>
-      )}
-
       {picker}
       {markerColoursDialog}
       {previewDialog}
       <CanvasHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,13 +1,15 @@
 "use client";
 
 // Technical Details — the annotation workspace. Orchestrates two modes:
-//   • overview → the Page Overview grid (orientation: what have I built)
-//   • edit     → the Page Editor for one page (two perpendicular nav axes:
-//                horizontal layer buttons, vertical page thumbnails), with an
-//                optional fullscreen Portal.
+//   • overview → the launchpad (orientation: what have I built)
+//   • edit     → the fullscreen Page Editor for one page (two perpendicular
+//                nav axes: horizontal layer buttons, vertical page
+//                thumbnails). Opening a page goes STRAIGHT to fullscreen;
+//                leaving fullscreen returns here — there is no intermediate
+//                inline editor.
 //
-// This component owns only the navigation state (mode, active layer, fullscreen);
-// all rendering of pages/slots/pins lives in the child components, and the slot
+// This component owns only the navigation state (mode, active layer); all
+// rendering of pages/slots/pins lives in the child components, and the slot
 // rendering itself (page-canvas.tsx) stays isolated for the upcoming Konva swap.
 
 import { useState } from "react";
@@ -45,7 +47,6 @@ export function TechnicalDetailsSection({
   // The read-only All-layers composite preview — mutually exclusive with a
   // single active layer (selecting any real layer exits it).
   const [viewAllLayers, setViewAllLayers] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Optimistic colourway list, owned here (above the overview/edit switch) so a
   // colourway created while editing survives a bounce to the overview and back.
@@ -80,7 +81,6 @@ export function TechnicalDetailsSection({
   }
 
   function backToOverview() {
-    setIsFullscreen(false);
     setMode({ view: "overview" });
   }
 
@@ -105,7 +105,6 @@ export function TechnicalDetailsSection({
       pageId={mode.pageId}
       activeLayer={activeLayer}
       viewAllLayers={viewAllLayers}
-      isFullscreen={isFullscreen}
       libraryItems={libraryItems}
       colourways={localColourways}
       lastUsedColourwayId={lastUsedColourwayId}
@@ -120,8 +119,6 @@ export function TechnicalDetailsSection({
       onViewAllLayers={() => setViewAllLayers(true)}
       onSelectPage={(pageId) => setMode({ view: "edit", pageId })}
       onBackToOverview={backToOverview}
-      onToggleFullscreen={() => setIsFullscreen((v) => !v)}
-      onExitFullscreen={() => setIsFullscreen(false)}
     />
   );
 }

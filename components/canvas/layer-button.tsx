@@ -16,11 +16,14 @@ export const LAYER_ICONS: Record<LayerIconName, LucideIcon> = {
 };
 
 /**
- * One of the five layer buttons across the top of the Page Editor. Large pill
- * (min-h 44px) with the layer's icon, label, and a global annotation count
- * badge. Active state reads the layer's LIVE workspace colour (inline style —
- * dynamic, never a Tailwind token). Only styling lives here; the parent owns
- * which layer is active.
+ * One of the five layer buttons across the top of the Page Editor. A compact
+ * pill (32px) with the layer's icon, label, and a global annotation count
+ * badge — sized so all five plus "All layers" fit one line at typical
+ * fullscreen widths. Below 50rem of layer-bar width (@container query, set by
+ * the parent's wrapper) the label condenses away and only icon + count
+ * remain; `title` always carries the full name. Active state reads the
+ * layer's LIVE workspace colour (inline style — dynamic, never a Tailwind
+ * token). Only styling lives here; the parent owns which layer is active.
  */
 export function LayerButton({
   layer,
@@ -42,23 +45,26 @@ export function LayerButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={layer.label}
       style={
         active
           ? { backgroundColor: `${color}22`, borderColor: color }
           : undefined
       }
       className={cn(
-        "flex min-h-11 items-center gap-2 rounded-lg border-2 px-3 py-2 text-sm transition-colors",
+        "flex h-8 shrink-0 items-center gap-1.5 rounded-lg border-2 px-2 text-xs transition-colors",
         active
           ? "text-foreground font-semibold"
           : "bg-muted text-muted-foreground hover:bg-accent border-transparent",
       )}
     >
-      <Icon className="size-4 shrink-0" style={{ color }} />
-      <span className="whitespace-nowrap">{layer.label}</span>
+      <Icon className="size-3.5 shrink-0" style={{ color }} />
+      <span className="hidden whitespace-nowrap @[50rem]:inline">
+        {layer.label}
+      </span>
       <span
         className={cn(
-          "ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold",
+          "inline-flex min-w-4 items-center justify-center rounded-full px-1 py-px text-[10px] font-semibold",
           active ? "text-foreground" : "text-muted-foreground",
         )}
         style={{ backgroundColor: `${color}22` }}

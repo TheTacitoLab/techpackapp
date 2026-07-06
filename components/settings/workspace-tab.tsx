@@ -1,7 +1,6 @@
 import { CreditCard, Download, SlidersHorizontal, Users } from "lucide-react";
 
 import { SectionCard } from "@/components/section-card";
-import { FullscreenHintToggle } from "@/components/settings/fullscreen-hint-toggle";
 import { UnlockWarningToggle } from "@/components/settings/unlock-warning-toggle";
 
 /**
@@ -16,10 +15,7 @@ export function WorkspaceTab() {
   return (
     <>
       <SectionCard title="Preferences" icon={<SlidersHorizontal />}>
-        <div className="space-y-4">
-          <UnlockWarningToggle />
-          <FullscreenHintToggle />
-        </div>
+        <UnlockWarningToggle />
       </SectionCard>
 
       <SectionCard title="Team Members" icon={<Users />}>

@@ -7,12 +7,12 @@
  */
 export type UserPreferences = {
   hideUnlockWarning: boolean;
-  /** Suppresses the gentle "use fullscreen for a true-to-print view" hint shown
-   *  near the canvas fullscreen control. Set by the hint's dismiss button. */
-  hideFullscreenHint: boolean;
 };
 
-/** Narrow the raw profiles.preferences jsonb; anything malformed → defaults. */
+/** Narrow the raw profiles.preferences jsonb; anything malformed → defaults.
+ *  Unknown keys are ignored — a stored `hide_fullscreen_hint` (from the
+ *  retired fullscreen hint; the editor is always fullscreen now) is simply
+ *  never read. */
 export function parseUserPreferences(raw: unknown): UserPreferences {
   const obj =
     raw && typeof raw === "object" && !Array.isArray(raw)
@@ -20,6 +20,5 @@ export function parseUserPreferences(raw: unknown): UserPreferences {
       : {};
   return {
     hideUnlockWarning: obj.hide_unlock_warning === true,
-    hideFullscreenHint: obj.hide_fullscreen_hint === true,
   };
 }
