@@ -68,3 +68,25 @@ update public.product_spec_sheets
 set sample_sizes = array[sample_size_label]
 where sample_size_label is not null
   and coalesce(array_length(sample_sizes, 1), 0) = 0;
+
+-- ---- Reconcile the derived Size Specifications section status -----------------
+-- The section's product_sections.status is a stored roll-up recomputed by the
+-- spec server actions, never at read time. Because this migration resets every
+-- existing sheet to is_complete=false (and empties size_run), a section that
+-- was stored 'complete' under the old one-sheet model would otherwise keep
+-- showing complete on the product header / list / dashboard until the next spec
+-- action fires. Reconcile it here to exactly what recomputeSpecSectionStatus
+-- would produce (idempotent — re-running yields the same result).
+update public.product_sections ps
+set status = case
+  when not exists (
+    select 1 from public.product_spec_sheets s where s.product_id = ps.product_id
+  ) then 'not_started'
+  when (
+    select bool_and(s.is_complete)
+    from public.product_spec_sheets s
+    where s.product_id = ps.product_id
+  ) then 'complete'
+  else 'in_progress'
+end
+where ps.section_key = 'grading';

@@ -163,11 +163,16 @@ async function recomputeSpecSectionStatus(
   productId: string,
   workspaceId: string,
 ): Promise<void> {
-  const { data: sheets } = await supabase
+  const { data: sheets, error: readError } = await supabase
     .from("product_spec_sheets")
     .select("id, is_complete")
     .eq("product_id", productId)
     .eq("workspace_id", workspaceId);
+
+  // A transient read failure must not silently reset the section to
+  // not_started — leave the last-known status in place until a recompute reads
+  // cleanly (recompute runs on nearly every mutation, so it self-heals).
+  if (readError) return;
 
   let status: SectionStatus = "not_started";
   if (sheets && sheets.length > 0) {
@@ -409,28 +414,36 @@ export async function setSpecSampleSizes(
   const prev = sheet.sample_sizes ?? [];
 
   if (sheet.mode === "auto") {
-    const singleRelabel =
-      prev.length === 1 &&
-      next.length === 1 &&
-      normalizeSizeLabel(prev[0]) !== normalizeSizeLabel(next[0]);
-    if (singleRelabel) {
+    // When exactly ONE sample position was relabelled (a rename, not an
+    // add/remove) — including one label of a two-sample set — the measured
+    // column MOVES to the new label rather than being discarded (the numbers
+    // were taken off the garment). Any other shape (pure add, pure remove, or
+    // an ambiguous two-at-once change) just prunes down to the new set.
+    const removed = prev.filter(
+      (p) => !next.some((n) => normalizeSizeLabel(n) === normalizeSizeLabel(p)),
+    );
+    const added = next.filter(
+      (n) => !prev.some((p) => normalizeSizeLabel(p) === normalizeSizeLabel(n)),
+    );
+    if (removed.length === 1 && added.length === 1) {
       // Clear anything already at the destination, then re-key the measured
       // column onto the new label.
       const { error: clearError } = await supabase
         .from("product_spec_values")
         .delete()
         .eq("sheet_id", sheet.id)
-        .eq("size_label", next[0]);
+        .eq("size_label", added[0]);
       if (clearError) throw new Error(clearError.message);
       const { error: rekeyError } = await supabase
         .from("product_spec_values")
-        .update({ size_label: next[0] })
+        .update({ size_label: added[0] })
         .eq("sheet_id", sheet.id)
-        .eq("size_label", prev[0]);
+        .eq("size_label", removed[0]);
       if (rekeyError) throw new Error(rekeyError.message);
-    } else {
-      await pruneValuesOutsideLabels(supabase, sheet.id, next);
     }
+    // Drop anything now outside the sample set (covers genuine removals and any
+    // stray leftovers; a no-op for the re-keyed column, now in `next`).
+    await pruneValuesOutsideLabels(supabase, sheet.id, next);
   }
 
   const { error } = await supabase
@@ -596,7 +609,12 @@ export async function setSpecGradingProfile(
 
   const { error } = await supabase
     .from("product_spec_sheets")
-    .update({ grading_profile_id: input.profileId })
+    .update({
+      grading_profile_id: input.profileId,
+      // Clearing the profile leaves an auto sheet ungradeable — re-open it so
+      // the section status can't report a completeness that no longer holds.
+      ...(input.profileId === null ? { is_complete: false } : {}),
+    })
     .eq("id", sheet.id);
   if (error) throw new Error(error.message);
 
@@ -1086,13 +1104,22 @@ export async function deleteGradingProfile(
     .eq("workspace_id", workspaceId)
     .eq("grading_profile_id", input.profileId);
 
-  const { error } = await supabase
+  // `.select()` on the delete tells us whether a row was ACTUALLY removed — a
+  // global/seeded profile id passes the source='workspace' filter with zero
+  // rows deleted, and we must not then re-open sheets that still reference it.
+  const { data: deleted, error } = await supabase
     .from("grading_profiles")
     .delete()
     .eq("id", input.profileId)
     .eq("source", "workspace")
-    .eq("workspace_id", workspaceId);
+    .eq("workspace_id", workspaceId)
+    .select("id");
   if (error) throw new Error(error.message);
+
+  if (!deleted || deleted.length === 0) {
+    revalidatePath(`/products/${input.productId}`);
+    return;
+  }
 
   // The FK set-null leaves those auto sheets ungradeable, so re-open them
   // (drop is_complete) before rolling the affected sections' status back up.

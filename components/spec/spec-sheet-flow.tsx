@@ -4,6 +4,16 @@ import { useMemo, useState, useTransition } from "react";
 import { ChevronLeft, Plus, Ruler, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -130,6 +140,10 @@ export function SpecSheetFlow({
   }
 
   const [changeTemplateOpen, setChangeTemplateOpen] = useState(false);
+  // A pending "switch to auto-grade" action, held while we confirm that manual
+  // edits to the non-sample columns will be discarded (finding: no confirm
+  // before the lossy manual→auto prune).
+  const [pendingAuto, setPendingAuto] = useState<(() => void) | null>(null);
 
   // ---- Derived --------------------------------------------------------------
 
@@ -184,6 +198,25 @@ export function SpecSheetFlow({
   const gradingReady =
     localSettings.mode === "manual" || (!!anchor && !!localSettings.profileId);
   const canComplete = gradingReady && (localSettings.mode === "manual" ? hasAnyValue : anchorHasValues);
+
+  // In manual mode the non-sample columns may hold hand-entered values that a
+  // switch to auto-grade would prune — used to gate the confirm below.
+  const sampleKeySet = new Set(sampleSizes.map((s) => normalizeSizeLabel(s)));
+  const hasNonSampleValues = Object.values(localValues).some((byLabel) =>
+    Object.keys(byLabel).some((k) => !sampleKeySet.has(k)),
+  );
+
+  /**
+   * Run an action that switches the sheet to auto-grade. If manual edits to the
+   * non-sample columns would be discarded, confirm first; otherwise run it now.
+   */
+  function guardAuto(run: () => void) {
+    if (localSettings.mode === "manual" && hasNonSampleValues) {
+      setPendingAuto(() => run);
+    } else {
+      run();
+    }
+  }
 
   // Which steps the user may jump to (prerequisites met).
   const reachable = (n: number): boolean => {
@@ -360,7 +393,7 @@ export function SpecSheetFlow({
     try {
       const created = await createGradingProfile(productId, payload);
       setLocalProfiles((list) => [...list, { ...created, isGlobal: false }]);
-      chooseProfile(created.id);
+      guardAuto(() => chooseProfile(created.id));
     } catch {
       toast.error("Could not create the grading profile.");
       throw new Error("create failed");
@@ -683,7 +716,7 @@ export function SpecSheetFlow({
                   profiles={localProfiles}
                   value={localSettings.profileId}
                   disabled={isWorking}
-                  onSelect={chooseProfile}
+                  onSelect={(id) => guardAuto(() => chooseProfile(id))}
                   onCreate={handleCreateProfile}
                   onUpdate={handleUpdateProfile}
                   onDelete={handleDeleteProfile}
@@ -733,6 +766,37 @@ export function SpecSheetFlow({
           />
         </DialogContent>
       </Dialog>
+
+      {/* Confirm the lossy manual → auto-grade switch */}
+      <AlertDialog
+        open={pendingAuto !== null}
+        onOpenChange={(open) => !open && setPendingAuto(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch to auto-grading?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Auto-grading fills every size from your sample and the profile — your
+              manual edits to the other size columns will be discarded. The sample
+              column(s) are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isWorking}>Keep manual</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isWorking}
+              onClick={(e) => {
+                e.preventDefault();
+                const run = pendingAuto;
+                setPendingAuto(null);
+                run?.();
+              }}
+            >
+              Switch and auto-grade
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -908,13 +972,18 @@ function initialStep(sheet: ResolvedSpecSheet): number {
   if (sheet.is_complete) return 6;
   if ((sheet.size_run ?? []).length === 0) return 2;
   if ((sheet.sample_sizes ?? []).length === 0) return 3;
+  // Manual sheets fill any column, so ANY stored value means they're past the
+  // "enter your sample" step — the sample column itself may legitimately be
+  // blank. (Auto sheets need a value in the sample column to grade from.)
+  if (sheet.mode === "manual") {
+    return (sheet.values ?? []).length > 0 ? 6 : 4;
+  }
   const sampleKeys = new Set((sheet.sample_sizes ?? []).map((s) => normalizeSizeLabel(s)));
   const hasSample = (sheet.values ?? []).some((v) =>
     sampleKeys.has(normalizeSizeLabel(v.size_label)),
   );
   if (!hasSample) return 4;
-  const gradingSet =
-    sheet.mode === "manual" || (!!sheet.sample_size_label && !!sheet.grading_profile_id);
+  const gradingSet = !!sheet.sample_size_label && !!sheet.grading_profile_id;
   if (!gradingSet) return 5;
   return 6;
 }
