@@ -20,6 +20,8 @@ import {
   readIncrementSet,
   readToleranceSet,
 } from "@/components/spec/spec-data";
+import { cn } from "@/lib/utils";
+import type { IncrementKey, IncrementSet } from "@/lib/spec-grading";
 import type { GradingProfile } from "@/types";
 
 /** The payload shape `createGradingProfile` / `updateGradingProfile` accept. */
@@ -32,6 +34,22 @@ export interface GradingProfilePayload {
   extendedIncrements: Record<string, number> | null;
   tolerancesKnit: Record<string, number>;
   tolerancesWoven: Record<string, number>;
+}
+
+/**
+ * A create-mode pre-fill — Route B's detected increments land in this form
+ * for review, so the user always sees and can tune them BEFORE the profile
+ * exists or is applied. Keys the detection couldn't observe stay empty;
+ * tolerances keep the form's industry-typical defaults.
+ */
+export interface GradingProfileDraft {
+  name: string;
+  description: string | null;
+  breakSizeLabel: string | null;
+  baseIncrements: IncrementSet;
+  extendedIncrements: IncrementSet | null;
+  /** Keys the detection flagged (negative/inconsistent) — marked for review. */
+  flaggedKeys: IncrementKey[];
 }
 
 /** Men's starter values — the form's create-mode defaults, per the reference. */
@@ -84,6 +102,19 @@ function stringsFromJson(
   return result;
 }
 
+/** A typed increment set → draft strings, keyed like `fallback` (missing → ""). */
+function stringsFromSet(
+  set: IncrementSet,
+  fallback: Record<string, string>,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const key of Object.keys(fallback)) {
+    const value = set[key as IncrementKey];
+    result[key] = value !== undefined ? String(value) : "";
+  }
+  return result;
+}
+
 function numbersFromStrings(record: Record<string, string>): Record<string, number> {
   const result: Record<string, number> = {};
   for (const [key, raw] of Object.entries(record)) {
@@ -100,13 +131,19 @@ function numbersFromStrings(record: Record<string, string>): Record<string, numb
  * (base + from-the-break), the break size, and the knit/woven tolerance sets
  * — plain-language labels, with the reference's Men's values as defaults.
  * Controlled `open` so the picker can launch it for create, edit, or
- * duplicate-then-edit. Delete (edit mode) uses the inline two-step confirm.
+ * duplicate-then-edit; Route B passes `draft` to pre-fill create mode with
+ * detected increments (flagged keys marked amber for review). Delete (edit
+ * mode) uses the inline two-step confirm.
+ *
+ * The seed key doesn't watch `draft` content — a caller whose draft changes
+ * between opens must remount (`key`), which Route B's conditional render does.
  */
 export function GradingProfileDialog({
   open,
   onOpenChange,
   mode,
   profile,
+  draft = null,
   onSave,
   onDelete,
 }: {
@@ -115,6 +152,8 @@ export function GradingProfileDialog({
   mode: "create" | "edit";
   /** Seeds the form in edit mode; ignored for create. */
   profile: GradingProfile | null;
+  /** Pre-fills create mode (Route B detection); ignored for edit. */
+  draft?: GradingProfileDraft | null;
   onSave: (payload: GradingProfilePayload) => Promise<void>;
   onDelete?: () => Promise<void>;
 }) {
@@ -140,19 +179,27 @@ export function GradingProfileDialog({
     setSeededFor(seedKey);
     if (seedKey !== null) {
       const source = mode === "edit" ? profile : null;
-      setName(source?.name ?? "");
-      setDescription(source?.description ?? "");
+      const prefill = mode === "create" ? draft : null;
+      setName(source?.name ?? prefill?.name ?? "");
+      setDescription(source?.description ?? prefill?.description ?? "");
       setRunLabels((source?.size_run_labels ?? []).join(", "));
-      setBreakLabel(source?.break_size_label ?? (source ? "" : "2XL"));
+      setBreakLabel(
+        source?.break_size_label ??
+          (prefill ? (prefill.breakSizeLabel ?? "") : source ? "" : "2XL"),
+      );
       setBase(
         source
           ? stringsFromJson(source.base_increments, readIncrementSet, DEFAULT_BASE)
-          : { ...DEFAULT_BASE },
+          : prefill
+            ? stringsFromSet(prefill.baseIncrements, DEFAULT_BASE)
+            : { ...DEFAULT_BASE },
       );
       setExtended(
         source
           ? stringsFromJson(source.extended_increments, readIncrementSet, DEFAULT_EXTENDED)
-          : { ...DEFAULT_EXTENDED },
+          : prefill
+            ? stringsFromSet(prefill.extendedIncrements ?? {}, DEFAULT_EXTENDED)
+            : { ...DEFAULT_EXTENDED },
       );
       setKnit(
         source
@@ -205,6 +252,11 @@ export function GradingProfileDialog({
   }
 
   const hasBreak = breakLabel.trim() !== "";
+  // Route B review markers — increments the detection found negative or
+  // inconsistent stay amber so they're checked before the profile is saved.
+  const flagged = new Set<string>(
+    mode === "create" ? (draft?.flaggedKeys ?? []) : [],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -278,6 +330,13 @@ export function GradingProfileDialog({
             <h4 className="text-label text-[13px] font-medium">
               Increments per size step (cm)
             </h4>
+            {flagged.size > 0 && (
+              <p className="text-xs text-amber-600">
+                The amber-marked increments came out negative or inconsistent
+                across your entered measurements — double-check them before
+                saving.
+              </p>
+            )}
             <div className="grid grid-cols-[1fr_5rem_5rem] items-center gap-x-2 gap-y-1.5">
               <span />
               <span className="text-muted-foreground text-xs font-semibold">
@@ -300,7 +359,11 @@ export function GradingProfileDialog({
                     inputMode="decimal"
                     min={0}
                     step="any"
-                    className="h-8"
+                    className={cn(
+                      "h-8",
+                      flagged.has(field.key) &&
+                        "border-amber-500 focus-visible:ring-amber-500/30",
+                    )}
                     value={base[field.key] ?? ""}
                     onChange={(e) =>
                       setBase((prev) => ({ ...prev, [field.key]: e.target.value }))
@@ -312,7 +375,11 @@ export function GradingProfileDialog({
                     inputMode="decimal"
                     min={0}
                     step="any"
-                    className="h-8"
+                    className={cn(
+                      "h-8",
+                      flagged.has(field.key) &&
+                        "border-amber-500 focus-visible:ring-amber-500/30",
+                    )}
                     value={extended[field.key] ?? ""}
                     onChange={(e) =>
                       setExtended((prev) => ({

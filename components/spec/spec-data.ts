@@ -8,6 +8,7 @@
  * form can never drift apart.
  */
 
+import { normalizeSizeLabel } from "@/lib/spec-grading";
 import type {
   GradableRow,
   GradingRules,
@@ -19,6 +20,7 @@ import type {
 import type {
   GradingProfile,
   ProductSpecRow,
+  ProductSpecValue,
   SpecFabricType,
   SpecGradeCategory,
   SpecPomSubKind,
@@ -104,6 +106,26 @@ export function gradableRow(row: ProductSpecRow): GradableRow {
     gradeCategory: row.grade_category,
     subKind: row.sub_kind,
   };
+}
+
+/**
+ * Stored values → rowId → NORMALIZED size label → value. On a normalize
+ * collision the most-recently-updated row wins. Shared by the sheet UI and
+ * the PDF export so both resolve stored cells identically.
+ */
+export function storedValuesByRow(
+  values: readonly ProductSpecValue[],
+): Record<string, Record<string, number>> {
+  const result: Record<string, Record<string, number>> = {};
+  const newest: Record<string, Record<string, string>> = {};
+  for (const value of values) {
+    const key = normalizeSizeLabel(value.size_label);
+    const seenAt = newest[value.row_id]?.[key];
+    if (seenAt !== undefined && seenAt >= value.updated_at) continue;
+    (newest[value.row_id] ??= {})[key] = value.updated_at;
+    (result[value.row_id] ??= {})[key] = value.value;
+  }
+  return result;
 }
 
 // ---- Plain-language category choices ------------------------------------------------

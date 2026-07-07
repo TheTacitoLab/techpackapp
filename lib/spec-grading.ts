@@ -367,6 +367,214 @@ export function roundTo1dp(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+// ---- Route B: detect a grade from entered sizes -------------------------------
+
+/** A sheet row plus its entered cell values — `detectGrade`'s input. */
+export interface DetectableRow extends GradableRow {
+  /** Entered values keyed by NORMALIZED size label (see normalizeSizeLabel). */
+  values: Readonly<Record<string, number>>;
+}
+
+/**
+ * What `detectGrade` inferred — the pre-fill for a custom Grading Profile the
+ * user reviews in the profile builder before anything is created or applied.
+ */
+export interface DetectedGrade {
+  /** Per-step increments observed below the break (or throughout, no break). */
+  baseIncrements: IncrementSet;
+  /** Per-step increments observed at/above the break; null when no break. */
+  extendedIncrements: IncrementSet | null;
+  /** First size of the extended zone (an exact run label); null = no break. */
+  breakSizeLabel: string | null;
+  /**
+   * Keys whose observations came out negative, disagreed by more than
+   * DETECT_SPREAD_TOLERANCE, or were only seen above the break — surfaced for
+   * review in the builder, never silently applied.
+   */
+  flaggedKeys: IncrementKey[];
+  /** Plain sentences about what was (and wasn't) inferable. */
+  notes: string[];
+}
+
+/**
+ * Observations within one increment key/zone that differ by more than this
+ * (cm per step) are "wildly inconsistent" — almost certainly a data-entry
+ * error rather than legitimate variance between a category's POMs, which the
+ * averaging is there to absorb. Entered values are 0.1-rounded, so honest
+ * noise stays well under this.
+ */
+export const DETECT_SPREAD_TOLERANCE = 0.5;
+
+/** One per-step increment observation: a row's consecutive entered pair. */
+interface DetectObservation {
+  perStep: number;
+  lowerIndex: number;
+  upperIndex: number;
+}
+
+function mean(observations: readonly DetectObservation[]): number {
+  let sum = 0;
+  for (const o of observations) sum += o.perStep;
+  return sum / observations.length;
+}
+
+function spreadExceeds(observations: readonly DetectObservation[]): boolean {
+  if (observations.length < 2) return false;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const o of observations) {
+    if (o.perStep < min) min = o.perStep;
+    if (o.perStep > max) max = o.perStep;
+  }
+  return max - min > DETECT_SPREAD_TOLERANCE;
+}
+
+/**
+ * Route B — infer per-category increments from the sizes the user actually
+ * entered, so "auto-calculate from my sample sizes" can pre-fill a custom
+ * Grading Profile.
+ *
+ * For each row, every CONSECUTIVE pair of its entered sizes yields one
+ * observation: (value₂ − value₁) ÷ (size steps between them) — so non-adjacent
+ * samples (S and L with M between) still derive the per-step increment.
+ * Observations aggregate per increment key (the same
+ * `incrementKeyForRow` resolution the engine grades by) as a plain average,
+ * since a profile grades by category, not per POM.
+ *
+ * Break inference needs three+ entered sizes: the boundary can only sit at an
+ * interior entered size B, and the engine's "a step is extended when its
+ * UPPER size is at/above the break" semantics put the detected break LABEL
+ * one run position above B (segments ending at B graded base; segments
+ * starting at B graded extended — re-grading with the result reproduces the
+ * entered values exactly). The boundary is chosen where base/extended differ
+ * the most; if no boundary changes any key's 0.1-rounded value, the samples
+ * grade evenly and a single set is returned. Two entered sizes can never
+ * reveal a break — that's said in `notes` rather than guessed at.
+ *
+ * A row whose own entered pair straddles the chosen boundary (its middle
+ * value missing) is ambiguous and contributes to neither zone.
+ *
+ * Detected increments round to 0.1 cm. Suspicious keys land in `flaggedKeys`
+ * (negative, inconsistent beyond DETECT_SPREAD_TOLERANCE, or observed only
+ * above the break) — surfaced, not blocked.
+ *
+ * Returns null when fewer than two entered sizes resolve into the run, or no
+ * gradeable row has values at two of them — there is nothing to detect from.
+ */
+export function detectGrade(
+  rows: readonly DetectableRow[],
+  enteredSizes: readonly string[],
+  sizeRun: readonly string[],
+): DetectedGrade | null {
+  const indices = [
+    ...new Set(
+      enteredSizes
+        .map((label) => findSizeIndex(sizeRun, label))
+        .filter((i) => i !== -1),
+    ),
+  ].sort((a, b) => a - b);
+  if (indices.length < 2) return null;
+
+  // Every observation, grouped by the increment key the row grades through.
+  // Rows with no key (plain fixed, small without a sub-kind) never grade, so
+  // they can't inform an increment either.
+  const observationsByKey = new Map<IncrementKey, DetectObservation[]>();
+  for (const row of rows) {
+    const key = incrementKeyForRow(row.gradeCategory, row.subKind);
+    if (!key) continue;
+    const points: { index: number; value: number }[] = [];
+    for (const index of indices) {
+      const value = row.values[normalizeSizeLabel(sizeRun[index])];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        points.push({ index, value });
+      }
+    }
+    for (let i = 1; i < points.length; i++) {
+      const lower = points[i - 1];
+      const upper = points[i];
+      const observation: DetectObservation = {
+        perStep: (upper.value - lower.value) / (upper.index - lower.index),
+        lowerIndex: lower.index,
+        upperIndex: upper.index,
+      };
+      const list = observationsByKey.get(key);
+      if (list) list.push(observation);
+      else observationsByKey.set(key, [observation]);
+    }
+  }
+  if (observationsByKey.size === 0) return null;
+
+  // Pick the interior boundary (if any) where the two zones' averages differ
+  // after rounding — the strongest split wins; none differing = no break.
+  let split: { boundaryIndex: number; score: number } | null = null;
+  for (const boundaryIndex of indices.slice(1, -1)) {
+    let score = 0;
+    let changesARoundedValue = false;
+    for (const observations of observationsByKey.values()) {
+      const below = observations.filter((o) => o.upperIndex <= boundaryIndex);
+      const above = observations.filter((o) => o.lowerIndex >= boundaryIndex);
+      if (below.length === 0 || above.length === 0) continue;
+      const belowMean = mean(below);
+      const aboveMean = mean(above);
+      score += Math.abs(aboveMean - belowMean);
+      if (roundTo1dp(belowMean) !== roundTo1dp(aboveMean)) {
+        changesARoundedValue = true;
+      }
+    }
+    if (changesARoundedValue && (split === null || score > split.score)) {
+      split = { boundaryIndex, score };
+    }
+  }
+
+  const base: IncrementSet = {};
+  const extended: IncrementSet = {};
+  const flaggedKeys: IncrementKey[] = [];
+
+  for (const [key, observations] of observationsByKey) {
+    let flagged = false;
+    if (split) {
+      const boundaryIndex = split.boundaryIndex;
+      const below = observations.filter((o) => o.upperIndex <= boundaryIndex);
+      const above = observations.filter((o) => o.lowerIndex >= boundaryIndex);
+      if (below.length > 0) base[key] = roundTo1dp(mean(below));
+      if (above.length > 0) extended[key] = roundTo1dp(mean(above));
+      flagged =
+        spreadExceeds(below) ||
+        spreadExceeds(above) ||
+        (base[key] ?? 0) < 0 ||
+        (extended[key] ?? 0) < 0 ||
+        (above.length > 0 && below.length === 0);
+    } else {
+      base[key] = roundTo1dp(mean(observations));
+      flagged = spreadExceeds(observations) || (base[key] ?? 0) < 0;
+    }
+    if (flagged) flaggedKeys.push(key);
+  }
+
+  const notes: string[] = [];
+  if (split) {
+    notes.push(
+      `Bigger jumps detected from ${sizeRun[split.boundaryIndex + 1]} up.`,
+    );
+  } else if (indices.length === 2) {
+    notes.push(
+      "Two sizes can't reveal a size break — one increment per category was detected.",
+    );
+  } else {
+    notes.push(
+      "Increments are consistent across the entered sizes — no size break.",
+    );
+  }
+
+  return {
+    baseIncrements: base,
+    extendedIncrements: split ? extended : null,
+    breakSizeLabel: split ? sizeRun[split.boundaryIndex + 1] : null,
+    flaggedKeys,
+    notes,
+  };
+}
+
 function stepIncrement(
   row: GradableRow,
   upperIndex: number,

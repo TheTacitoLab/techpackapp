@@ -1,9 +1,9 @@
 /**
  * The FULL tech pack document: cover page → every canvas page (the proven
- * composed renderer, untouched) → Bill of Materials page(s). Assembly only —
- * document-wide "Page X of Y" numbering is threaded through the existing
- * header/footer props on each page's data; nothing about the per-page layout
- * changes here.
+ * composed renderer, untouched) → Bill of Materials page(s) → Size
+ * Specification page(s). Assembly only — document-wide "Page X of Y"
+ * numbering is threaded through the existing header/footer props on each
+ * page's data; nothing about the per-page layout changes here.
  */
 
 import { Document, renderToBuffer } from "@react-pdf/renderer";
@@ -15,6 +15,10 @@ import {
   PalettePage,
   type PdfPalettePageData,
 } from "@/lib/pdf/render-palette-page";
+import {
+  SpecSheetPage,
+  type PdfSpecSheetPageData,
+} from "@/lib/pdf/render-spec-sheet-page";
 import {
   TechPackCanvasPage,
   type PdfPageData,
@@ -34,6 +38,9 @@ export type TechPackDocumentData = {
   /** BOM pages (already paginated); empty when there is nothing to list or
    *  the Fabrics & Trim layer was deselected. */
   bomPages: PdfBomPageData[];
+  /** Size Specification table page(s), after the BOM; empty when the product
+   *  has no Spec Sheets or the export deselected them. */
+  specPages: PdfSpecSheetPageData[];
 };
 
 export function TechPackDocument({ data }: { data: TechPackDocumentData }) {
@@ -49,6 +56,9 @@ export function TechPackDocument({ data }: { data: TechPackDocumentData }) {
       ))}
       {data.bomPages.map((bom, i) => (
         <BomPage key={i} data={bom} />
+      ))}
+      {data.specPages.map((spec, i) => (
+        <SpecSheetPage key={i} data={spec} />
       ))}
     </Document>
   );

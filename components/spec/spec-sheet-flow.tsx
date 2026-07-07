@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, Plus, Ruler, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,11 +33,17 @@ import {
   formatSpecValue,
   gradableRow,
   gradingRulesFromProfile,
+  storedValuesByRow,
   toleranceSetForFabric,
 } from "@/components/spec/spec-data";
 import { demographicLabel, seededProfileNameFor } from "@/components/spec/spec-demographics";
-import type { GradingProfilePayload } from "@/components/spec/grading-profile-dialog";
 import {
+  GradingProfileDialog,
+  type GradingProfileDraft,
+  type GradingProfilePayload,
+} from "@/components/spec/grading-profile-dialog";
+import {
+  detectGrade,
   findSizeIndex,
   gradeSheet,
   normalizeSizeLabel,
@@ -78,7 +84,9 @@ import type {
  *
  * Steps 1–3 are compact guided forms (template picker, demographic + ticked
  * run, 1–2 sample sizes). Step 4 shows the live sheet with the sample column(s)
- * editable. Step 5 chooses grading (Manual / new profile / pick a profile).
+ * editable. Step 5 chooses grading (Manual / new profile / pick a profile /
+ * Route B: auto-detect the increments from two+ entered sizes, reviewed in the
+ * profile builder before anything is created or applied).
  * Once grading is set the sheet computes and this lands on the done view, where
  * every non-sample column fills live from the profile (never persisted — the
  * stored sample column(s) + profile are the single source of truth). Completed
@@ -126,7 +134,7 @@ export function SpecSheetFlow({
 
   const [localRows, setLocalRows] = useState<ProductSpecRow[]>(sheet.rows);
   const [localValues, setLocalValues] = useState<Record<string, Record<string, number>>>(
-    () => valuesByRow(sheet),
+    () => storedValuesByRow(sheet.values ?? []),
   );
   const [localSettings, setLocalSettings] = useState<Settings>(() => settingsOf(sheet));
   const [syncedSheet, setSyncedSheet] = useState(sheet);
@@ -135,7 +143,7 @@ export function SpecSheetFlow({
   if (sheet !== syncedSheet) {
     setSyncedSheet(sheet);
     setLocalRows(sheet.rows);
-    if (pendingValueSaves === 0) setLocalValues(valuesByRow(sheet));
+    if (pendingValueSaves === 0) setLocalValues(storedValuesByRow(sheet.values ?? []));
     setLocalSettings(settingsOf(sheet));
   }
 
@@ -144,6 +152,14 @@ export function SpecSheetFlow({
   // edits to the non-sample columns will be discarded (finding: no confirm
   // before the lossy manual→auto prune).
   const [pendingAuto, setPendingAuto] = useState<(() => void) | null>(null);
+  // Route B: the detected-profile draft under review. Present = dialog open;
+  // the seq number keys the dialog so a re-detect remounts it with the fresh
+  // draft (its form seeds once per mount).
+  const [routeBDraft, setRouteBDraft] = useState<{
+    draft: GradingProfileDraft;
+    seq: number;
+  } | null>(null);
+  const routeBSeq = useRef(0);
 
   // ---- Derived --------------------------------------------------------------
 
@@ -205,6 +221,18 @@ export function SpecSheetFlow({
   const hasNonSampleValues = Object.values(localValues).some((byLabel) =>
     Object.keys(byLabel).some((k) => !sampleKeySet.has(k)),
   );
+
+  // Route B needs two+ sizes with entered values — the run labels (in run
+  // order) that hold a value for at least one row.
+  const enteredSizeLabels = useMemo(
+    () =>
+      sizeRun.filter((label) => {
+        const key = normalizeSizeLabel(label);
+        return localRows.some((r) => localValues[r.id]?.[key] !== undefined);
+      }),
+    [sizeRun, localRows, localValues],
+  );
+  const canDetect = enteredSizeLabels.length >= 2;
 
   /**
    * Run an action that switches the sheet to auto-grade. If manual edits to the
@@ -385,6 +413,48 @@ export function SpecSheetFlow({
       } catch {
         toast.error("Could not apply the grading profile.");
       }
+    });
+  }
+
+  /**
+   * Route B — detect the grade from the entered sizes and open the profile
+   * builder pre-filled with the result. Nothing is created or applied until
+   * the user reviews and saves there (the save path is the normal
+   * handleCreateProfile: create the custom profile, then apply it).
+   */
+  function handleDetectGrade() {
+    const detected = detectGrade(
+      localRows.map((r) => ({
+        ...gradableRow(r),
+        values: localValues[r.id] ?? {},
+      })),
+      enteredSizeLabels,
+      sizeRun,
+    );
+    if (!detected) {
+      toast.error(
+        "Couldn't detect a grade — a graded measurement needs values in at least two sizes.",
+      );
+      return;
+    }
+    const sheetName =
+      sheet.name ?? sheet.template_name ?? demographicLabel(sheet.demographic);
+    routeBSeq.current += 1;
+    setRouteBDraft({
+      seq: routeBSeq.current,
+      draft: {
+        name: `${sheetName} detected grade`.slice(0, 80),
+        description: [
+          `Auto-detected from entered sizes ${enteredSizeLabels.join(", ")}.`,
+          ...detected.notes,
+        ]
+          .join(" ")
+          .slice(0, 400),
+        breakSizeLabel: detected.breakSizeLabel,
+        baseIncrements: detected.baseIncrements,
+        extendedIncrements: detected.extendedIncrements,
+        flaggedKeys: detected.flaggedKeys,
+      },
     });
   }
 
@@ -722,15 +792,30 @@ export function SpecSheetFlow({
                   onDelete={handleDeleteProfile}
                   onDuplicate={handleDuplicateProfile}
                 />
-                <div className="border-border/60 flex items-center gap-2 rounded-md border border-dashed px-3 py-2">
+                {/* Route B — detect the increments from the entered sizes,
+                    then review them in the profile builder before anything
+                    is created or applied. */}
+                <div className="border-border/60 flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2">
                   <Sparkles className="text-muted-foreground size-4 shrink-0" />
                   <span className="text-muted-foreground text-xs">
-                    Auto-calculate the grade from my two samples
+                    Auto-calculate the grade from my sample sizes
                   </span>
-                  <Badge variant="outline" className="ml-auto text-[10px]">
-                    Coming soon
-                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    disabled={!canDetect || isWorking}
+                    onClick={handleDetectGrade}
+                  >
+                    Detect grade
+                  </Button>
                 </div>
+                {!canDetect && (
+                  <p className="text-muted-foreground text-xs">
+                    Enter measurements in a second size to auto-detect the
+                    grade.
+                  </p>
+                )}
               </div>
             </GradingOption>
 
@@ -766,6 +851,25 @@ export function SpecSheetFlow({
           />
         </DialogContent>
       </Dialog>
+
+      {/* Route B review — the detected increments in the normal profile
+          builder. Saving runs handleCreateProfile: the custom profile is
+          created and applied (through the same manual→auto guard) only after
+          the user has seen and tuned the numbers. Keyed by seq so a re-detect
+          reseeds the form. */}
+      {routeBDraft && (
+        <GradingProfileDialog
+          key={routeBDraft.seq}
+          open
+          onOpenChange={(open) => {
+            if (!open) setRouteBDraft(null);
+          }}
+          mode="create"
+          profile={null}
+          draft={routeBDraft.draft}
+          onSave={handleCreateProfile}
+        />
+      )}
 
       {/* Confirm the lossy manual → auto-grade switch */}
       <AlertDialog
@@ -940,23 +1044,6 @@ function SummaryChip({ label, children }: { label: string; children: React.React
 }
 
 // ---- Sheet → local state helpers ---------------------------------------------
-
-/**
- * Stored values → rowId → NORMALIZED size label → value. On a normalize
- * collision the most-recently-updated row wins.
- */
-function valuesByRow(sheet: ResolvedSpecSheet): Record<string, Record<string, number>> {
-  const result: Record<string, Record<string, number>> = {};
-  const newest: Record<string, Record<string, string>> = {};
-  for (const value of sheet.values ?? []) {
-    const key = normalizeSizeLabel(value.size_label);
-    const seenAt = newest[value.row_id]?.[key];
-    if (seenAt !== undefined && seenAt >= value.updated_at) continue;
-    (newest[value.row_id] ??= {})[key] = value.updated_at;
-    (result[value.row_id] ??= {})[key] = value.value;
-  }
-  return result;
-}
 
 function settingsOf(sheet: ResolvedSpecSheet): Settings {
   return {

@@ -15,6 +15,7 @@ import { describe, it } from "node:test";
 
 import {
   defaultSampleSize,
+  detectGrade,
   findSizeIndex,
   gradeSheet,
   incrementKeyForRow,
@@ -24,6 +25,7 @@ import {
   roundTo1dp,
   toleranceForRow,
   toleranceKeyForRow,
+  type DetectableRow,
   type GradableRow,
   type GradingRules,
   type ToleranceSet,
@@ -437,6 +439,263 @@ describe("gradeSheet — rounding and edge cases", () => {
       ["One Size"],
     );
     assert.deepEqual(graded.chest, { "One Size": 52 });
+  });
+});
+
+// ---- Route B: detectGrade -----------------------------------------------------------
+
+/** DetectableRow shorthand — values are keyed by canonical (normalized) labels. */
+const drow = (
+  id: string,
+  gradeCategory: GradableRow["gradeCategory"],
+  subKind: GradableRow["subKind"],
+  values: Record<string, number>,
+): DetectableRow => ({ id, gradeCategory, subKind, values });
+
+describe("detectGrade — two-size linear detection", () => {
+  const RUN = ["S", "M", "L", "XL", "2XL"];
+
+  it("derives per-key increments from two adjacent entered sizes", () => {
+    const detected = detectGrade(
+      [
+        drow("chest", "primary_girth", null, { M: 52, L: 54.5 }),
+        drow("body", "body_length", null, { M: 70, L: 71.5 }),
+        drow("neck", "small", "neck", { M: 18, L: 18.6 }),
+        drow("inseam", "fixed", "inseam", { M: 78, L: 78 }),
+      ],
+      ["M", "L"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 2.5);
+    assert.equal(detected.baseIncrements.body_length, 1.5);
+    assert.equal(detected.baseIncrements.small_neck, 0.6);
+    assert.equal(detected.baseIncrements.inseam, 0);
+    // Two sizes: one increment set, and the break is explicitly not inferable.
+    assert.equal(detected.extendedIncrements, null);
+    assert.equal(detected.breakSizeLabel, null);
+    assert.deepEqual(detected.flaggedKeys, []);
+    assert.ok(detected.notes.some((n) => /break/i.test(n)));
+  });
+
+  it("averages across a category's POMs (a profile grades by category)", () => {
+    const detected = detectGrade(
+      [
+        drow("chest", "primary_girth", null, { M: 52, L: 54.5 }), // +2.5
+        drow("hem", "primary_girth", null, { M: 50, L: 52.7 }), // +2.7
+      ],
+      ["M", "L"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 2.6); // mean 2.6
+    assert.deepEqual(detected.flaggedKeys, []);
+  });
+
+  it("re-grading with the detected rules reproduces the entered values", () => {
+    const rows = [drow("chest", "primary_girth", null, { M: 52, XL: 57 })];
+    const detected = detectGrade(rows, ["M", "XL"], RUN);
+    assert.ok(detected);
+    const graded = gradeSheet(
+      [row("chest", "primary_girth")],
+      "M",
+      { chest: 52 },
+      {
+        baseIncrements: detected.baseIncrements,
+        extendedIncrements: detected.extendedIncrements,
+        breakSizeLabel: detected.breakSizeLabel,
+      },
+      RUN,
+    );
+    assert.equal(graded.chest.XL, 57);
+  });
+
+  it("matches entered sizes under normalization (XXL entry, 2XL run)", () => {
+    const detected = detectGrade(
+      [drow("chest", "primary_girth", null, { XL: 57, "2XL": 60.5 })],
+      ["xl", "XXL"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 3.5);
+  });
+
+  it("returns null when fewer than two entered sizes land in the run", () => {
+    assert.equal(
+      detectGrade(
+        [drow("chest", "primary_girth", null, { M: 52 })],
+        ["M"],
+        RUN,
+      ),
+      null,
+    );
+    assert.equal(
+      detectGrade(
+        [drow("chest", "primary_girth", null, { M: 52 })],
+        ["M", "44"], // 44 isn't in the run
+        RUN,
+      ),
+      null,
+    );
+  });
+
+  it("returns null when no gradeable row has values at two entered sizes", () => {
+    // Sheet-level entered sizes exist, but each row only covers one of them —
+    // and a plain fixed row never informs an increment at all.
+    assert.equal(
+      detectGrade(
+        [
+          drow("chest", "primary_girth", null, { M: 52 }),
+          drow("sleeve", "limb_length", null, { L: 61 }),
+          drow("ribHeight", "fixed", null, { M: 2.5, L: 4 }),
+        ],
+        ["M", "L"],
+        RUN,
+      ),
+      null,
+    );
+  });
+});
+
+describe("detectGrade — three sizes across a break", () => {
+  it("splits base vs extended around the middle sample", () => {
+    // M→XL grades +2.5/step, XL→2XL jumps +3.5: the boundary sits at XL, so
+    // the engine-facing break LABEL is the next run size (2XL) — steps ending
+    // at XL grade base, steps from XL up grade extended.
+    const rows = [
+      drow("chest", "primary_girth", null, { M: 52, XL: 57, "2XL": 60.5 }),
+    ];
+    const detected = detectGrade(rows, ["M", "XL", "2XL"], MENS_RUN);
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 2.5);
+    assert.equal(detected.extendedIncrements?.primary_girth, 3.5);
+    assert.equal(detected.breakSizeLabel, "2XL");
+    assert.deepEqual(detected.flaggedKeys, []);
+
+    // The detected rules must reproduce every entered value when the engine
+    // grades outward from the anchor.
+    const graded = gradeSheet(
+      [row("chest", "primary_girth")],
+      "M",
+      { chest: 52 },
+      {
+        baseIncrements: detected.baseIncrements,
+        extendedIncrements: detected.extendedIncrements,
+        breakSizeLabel: detected.breakSizeLabel,
+      },
+      MENS_RUN,
+    );
+    assert.equal(graded.chest.XL, 57);
+    assert.equal(graded.chest["2XL"], 60.5);
+    assert.equal(graded.chest["3XL"], 64); // extended continues above
+  });
+
+  it("collapses to a single set when the segments agree", () => {
+    const detected = detectGrade(
+      [drow("chest", "primary_girth", null, { M: 52, L: 54.5, XL: 57 })],
+      ["M", "L", "XL"],
+      MENS_RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 2.5);
+    assert.equal(detected.extendedIncrements, null);
+    assert.equal(detected.breakSizeLabel, null);
+    assert.ok(detected.notes.some((n) => /no size break/i.test(n)));
+  });
+
+  it("keeps a per-key base fallback when only one category jumps at the break", () => {
+    // Chest jumps at the break; body length grades evenly. body_length gets
+    // the same value in both zones — harmless, since the engine reads
+    // extended per key with a base fallback either way.
+    const detected = detectGrade(
+      [
+        drow("chest", "primary_girth", null, { M: 52, XL: 57, "2XL": 60.5 }),
+        drow("body", "body_length", null, { M: 70, XL: 73, "2XL": 74.5 }),
+      ],
+      ["M", "XL", "2XL"],
+      MENS_RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.breakSizeLabel, "2XL");
+    assert.equal(detected.baseIncrements.body_length, 1.5);
+    assert.equal(detected.extendedIncrements?.body_length, 1.5);
+  });
+});
+
+describe("detectGrade — non-adjacent sizes and rounding", () => {
+  const RUN = ["S", "M", "L", "XL"];
+
+  it("divides by the number of size steps between non-adjacent samples", () => {
+    // S and L with M between: 5 cm over 2 steps = 2.5 per step.
+    const detected = detectGrade(
+      [drow("chest", "primary_girth", null, { S: 50, L: 55 })],
+      ["S", "L"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 2.5);
+  });
+
+  it("rounds detected increments to 0.1 cm", () => {
+    // 4.7 cm over 2 steps = 2.35 → 2.4.
+    const detected = detectGrade(
+      [drow("chest", "primary_girth", null, { S: 50, L: 54.7 })],
+      ["S", "L"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 2.4);
+  });
+});
+
+describe("detectGrade — inconsistent data is flagged, not silently applied", () => {
+  const RUN = ["S", "M", "L", "XL"];
+
+  it("flags a category whose POMs disagree wildly", () => {
+    // +2.5 vs +5.0 per step in one category — a data-entry error, not
+    // legitimate POM variance. The average is still reported for review.
+    const detected = detectGrade(
+      [
+        drow("chest", "primary_girth", null, { M: 52, L: 54.5 }),
+        drow("waist", "primary_girth", null, { M: 45, L: 50 }),
+      ],
+      ["M", "L"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 3.8); // mean 3.75 → 3.8
+    assert.deepEqual(detected.flaggedKeys, ["primary_girth"]);
+  });
+
+  it("flags a negative increment (sizes should grow going up)", () => {
+    const detected = detectGrade(
+      [
+        drow("chest", "primary_girth", null, { M: 52, L: 50 }),
+        drow("body", "body_length", null, { M: 70, L: 71.5 }),
+      ],
+      ["M", "L"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, -2);
+    assert.ok(detected.flaggedKeys.includes("primary_girth"));
+    assert.ok(!detected.flaggedKeys.includes("body_length"));
+  });
+
+  it("tolerates honest variance between a category's POMs", () => {
+    // 2.4 / 2.5 / 2.6 per step — normal spread, absorbed by the average.
+    const detected = detectGrade(
+      [
+        drow("chest", "primary_girth", null, { M: 52, L: 54.4 }),
+        drow("waist", "primary_girth", null, { M: 45, L: 47.5 }),
+        drow("hem", "primary_girth", null, { M: 50, L: 52.6 }),
+      ],
+      ["M", "L"],
+      RUN,
+    );
+    assert.ok(detected);
+    assert.equal(detected.baseIncrements.primary_girth, 2.5);
+    assert.deepEqual(detected.flaggedKeys, []);
   });
 });
 

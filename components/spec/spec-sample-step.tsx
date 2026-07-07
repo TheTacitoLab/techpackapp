@@ -15,9 +15,9 @@ import type { ResolvedSpecSheet } from "@/types";
  * Step 3 — "Select the sample size(s)". The 1–2 sizes the user physically has
  * samples for (distinct from the full run — this is what "sample size" now
  * means). The first pick is the grading ANCHOR: in auto mode every other column
- * grades outward from it. A second pick is allowed now (it becomes a second
- * editable/known column; the auto-detect that USES two samples is Route B, next
- * session).
+ * grades outward from it. A second pick becomes a second editable/known column
+ * — and feeds Route B, the Grading step's "auto-calculate from my sample
+ * sizes" detection.
  */
 export function SpecSampleStep({
   sheet,
@@ -110,8 +110,8 @@ export function SpecSampleStep({
 
       {picks.length >= 2 && (
         <p className="text-muted-foreground text-xs">
-          Two samples chosen. Auto-detecting the grade from both is coming soon —
-          for now the second is simply a second column you can enter directly.
+          Two samples chosen. Enter measurements for both and the Grading step
+          can auto-detect your grade from them.
         </p>
       )}
 

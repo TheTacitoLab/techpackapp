@@ -33,6 +33,10 @@ import {
   type PdfCoverFabric,
 } from "@/lib/pdf/render-cover-page";
 import type { PdfPalettePageData } from "@/lib/pdf/render-palette-page";
+import {
+  buildSpecSheetPages,
+  type PdfSpecSheetPageData,
+} from "@/lib/pdf/render-spec-sheet-page";
 import { renderTechPackDocumentPdf } from "@/lib/pdf/render-techpack-document";
 import type {
   PdfFooterData,
@@ -45,7 +49,12 @@ import type {
   CanvasAnnotation,
   CanvasColourway,
   CanvasLayerType,
+  GradingProfile,
   IdentitySectionData,
+  ProductSpecRow,
+  ProductSpecSheet,
+  ProductSpecValue,
+  ResolvedSpecSheet,
 } from "@/types";
 
 const ALL_LAYER_KEYS = ANNOTATION_LAYERS.map((l) => l.key);
@@ -167,16 +176,18 @@ function exportFilename(styleNumber: string | null, name: string): string {
 }
 
 /**
- * GET /products/{id}/techpack.pdf?layers=fabric,colourway,…
+ * GET /products/{id}/techpack.pdf?layers=fabric,colourway,…&specs=0
  *
  * The FULL tech pack as one PDF document: cover page (logo, identity,
  * description/end-use, hero image, key fabrics, colour palette) → a
  * dedicated Colour Palette page when the palette outgrows the cover → every
  * canvas page in order (the proven composed renderer, filtered to the
  * selected layers) → Bill of Materials page(s) (only when the Fabrics & Trim
- * layer is selected and rows exist). Page numbering runs across the whole
- * document; the cover is page 1. Auth + workspace scoping match every other
- * data path. A product with no canvas pages exports as a cover-only document.
+ * layer is selected and rows exist) → Size Specification page(s) (one titled
+ * table per Spec Sheet, omitted via `?specs=0` or when there are no sheets).
+ * Page numbering runs across the whole document; the cover is page 1. Auth +
+ * workspace scoping match every other data path. A product with no canvas
+ * pages exports as a cover-only document.
  */
 export async function GET(
   req: NextRequest,
@@ -186,14 +197,16 @@ export async function GET(
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
-  const layersParam = parseLayersParam(
-    new URL(req.url).searchParams.get("layers"),
-  );
+  const url = new URL(req.url);
+  const layersParam = parseLayersParam(url.searchParams.get("layers"));
   if ("error" in layersParam) {
     return new Response(layersParam.error, { status: 400 });
   }
   const selectedKeys = layersParam.keys;
   const allowedTypes = allowedLayerTypes(selectedKeys);
+  // The Quick Export "Size Specifications" toggle — ticked by default, so
+  // only an explicit `specs=0` omits the spec pages.
+  const includeSpecs = url.searchParams.get("specs") !== "0";
 
   const supabase = await createClient();
   const { data: product } = await supabase
@@ -212,6 +225,7 @@ export async function GET(
     identityResult,
     heroResult,
     colourwaysResult,
+    specSheetsResult,
   ] = await Promise.all([
     supabase
       .from("canvas_pages")
@@ -258,6 +272,13 @@ export async function GET(
       .select("*")
       .eq("product_id", product.id)
       .order("sequence_number", { ascending: true }),
+    includeSpecs
+      ? supabase
+          .from("product_spec_sheets")
+          .select("*, product_spec_rows(*), product_spec_values(*)")
+          .eq("product_id", product.id)
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: null }),
   ]);
 
   const allPages = (pages ?? []) as unknown as RawPdfPage[];
@@ -338,11 +359,49 @@ export async function GET(
   const bomRowPages = paginateBom(bomRows);
   const bomColumns = visibleBomColumns(bomRows);
 
+  // Spec Sheets → dedicated table page(s) after the BOM. Same embed shape as
+  // the product page; auto-mode columns are re-graded live inside the builder
+  // through the same engine the UI uses (computed values are never persisted).
+  type RawSpecSheet = ProductSpecSheet & {
+    product_spec_rows: ProductSpecRow[];
+    product_spec_values: ProductSpecValue[];
+  };
+  const specSheets: ResolvedSpecSheet[] = (
+    (specSheetsResult.data ?? []) as unknown as RawSpecSheet[]
+  ).map(({ product_spec_rows, product_spec_values, ...sheetRest }) => ({
+    ...sheetRest,
+    rows: product_spec_rows ?? [],
+    values: product_spec_values ?? [],
+  }));
+  const profileIds = [
+    ...new Set(
+      specSheets
+        .map((s) => s.grading_profile_id)
+        .filter((pid): pid is string => pid !== null),
+    ),
+  ];
+  const profilesById = new Map<string, GradingProfile>();
+  if (profileIds.length > 0) {
+    // RLS scopes this to seeded globals + the workspace's own profiles.
+    const { data: profiles } = await supabase
+      .from("grading_profiles")
+      .select("*")
+      .in("id", profileIds);
+    for (const profile of (profiles ?? []) as GradingProfile[]) {
+      profilesById.set(profile.id, profile);
+    }
+  }
+  const specPageContents = buildSpecSheetPages(specSheets, profilesById);
+
   // Document-wide numbering: cover is page 1, the overflow palette page (if
-  // any) follows it, canvas pages next, BOM last.
+  // any) follows it, canvas pages next, BOM, then Size Specifications last.
   const paletteOffset = hasPalettePage ? 1 : 0;
   const pageCount =
-    1 + paletteOffset + allPages.length + bomRowPages.length;
+    1 +
+    paletteOffset +
+    allPages.length +
+    bomRowPages.length +
+    specPageContents.length;
 
   const styleNumber = product.style_number ?? "—";
   const brandName = brand?.name ?? "Brand";
@@ -429,6 +488,18 @@ export async function GET(
     };
   });
 
+  const specPages: PdfSpecSheetPageData[] = specPageContents.map(
+    (content, i) => {
+      const pageNumber =
+        1 + paletteOffset + allPages.length + bomRowPages.length + i + 1;
+      return {
+        header: headerAt(pageNumber, "Size Specifications"),
+        footer: footerAt(pageNumber),
+        content,
+      };
+    },
+  );
+
   let pdf: Buffer;
   try {
     pdf = await renderTechPackDocumentPdf({
@@ -436,6 +507,7 @@ export async function GET(
       palettePage,
       pages: pageData,
       bomPages,
+      specPages,
     });
   } catch (err) {
     console.error("[pdf] renderTechPackDocumentPdf failed:", err);
