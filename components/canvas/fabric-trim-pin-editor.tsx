@@ -105,10 +105,12 @@ export function FabricTrimPinEditor(
           composition: null,
           colour: null,
           gsm: null,
+          width_cm: null,
           trim_kind: null,
           placement: null,
           quantity: null,
           unit: null,
+          unit_cost: null,
           supplier_code: null,
           notes: null,
         };
@@ -138,6 +140,14 @@ export function FabricTrimPinEditor(
     initial.quantity !== null ? String(initial.quantity) : "",
   );
   const [unit, setUnit] = useState<FabricTrimAnnotationData["unit"]>(initial.unit);
+  // Fabric width (cm) — fabric family only; trims never carry one.
+  const [widthCm, setWidthCm] = useState(
+    initial.width_cm !== null ? String(initial.width_cm) : "",
+  );
+  // Cost per the chosen unit — both families; drives the BOM's Total column.
+  const [unitCost, setUnitCost] = useState(
+    initial.unit_cost !== null ? String(initial.unit_cost) : "",
+  );
   const [notes, setNotes] = useState(initial.notes ?? "");
 
   const [isSaving, setIsSaving] = useState(false);
@@ -188,10 +198,13 @@ export function FabricTrimPinEditor(
       composition: autoFilled.composition,
       colour,
       gsm: autoFilled.gsm,
+      width_cm:
+        subType === "fabric" && widthCm.trim() ? Number(widthCm) : null,
       trim_kind: subType === "trim" ? trimKind : null,
       placement: placement.trim() || null,
       quantity: quantity.trim() ? Number(quantity) : null,
       unit,
+      unit_cost: unitCost.trim() ? Number(unitCost) : null,
       supplier_code: autoFilled.supplier_code,
       notes: notes.trim() || null,
     };
@@ -421,6 +434,40 @@ export function FabricTrimPinEditor(
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {subType === "fabric" && (
+          <div className="space-y-1.5">
+            <Label htmlFor="ftpe-width" className="text-xs">
+              Width (cm)
+            </Label>
+            <Input
+              id="ftpe-width"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="any"
+              value={widthCm}
+              onChange={(e) => setWidthCm(e.target.value)}
+            />
+          </div>
+        )}
+        <div className="space-y-1.5">
+          <Label htmlFor="ftpe-unit-cost" className="text-xs">
+            Unit cost
+          </Label>
+          <Input
+            id="ftpe-unit-cost"
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="any"
+            value={unitCost}
+            onChange={(e) => setUnitCost(e.target.value)}
+            placeholder={unit ? `Cost ${UNIT_LABEL[unit]}` : "Cost per unit"}
+          />
         </div>
       </div>
 

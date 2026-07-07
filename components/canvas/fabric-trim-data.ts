@@ -223,10 +223,12 @@ export function readFabricTrimData(
     composition: asString(raw.composition),
     colour: asString(raw.colour),
     gsm: asNumber(raw.gsm),
+    width_cm: asNumber(raw.width_cm),
     trim_kind: trimKind,
     placement: asString(raw.placement),
     quantity: asNumber(raw.quantity),
     unit: asString(raw.unit) as FabricTrimAnnotationData["unit"],
+    unit_cost: asNumber(raw.unit_cost),
     supplier_code: asString(raw.supplier_code),
     notes: asString(raw.notes),
   };

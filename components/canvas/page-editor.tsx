@@ -6,7 +6,6 @@ import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Eye,
-  FileDown,
   HelpCircle,
   Layers3,
   Minimize2,
@@ -425,20 +424,9 @@ export function PageEditor({
           onSelect: () => setPreviewOpen(true),
           disabled: !activePage,
         },
-        {
-          kind: "action",
-          key: "export",
-          icon: FileDown,
-          label: "Export page PDF",
-          onSelect: () => {
-            if (!activePage) return;
-            window.open(
-              `/products/${productId}/pdf?pageId=${activePage.id}`,
-              "_blank",
-            );
-          },
-          disabled: !activePage,
-        },
+        // The spike per-page "Export page PDF" button is retired — the
+        // product header's Quick Export builds the full document now; this
+        // preview stays as the per-page WYSIWYG check.
         {
           kind: "action",
           key: "marker-colours",

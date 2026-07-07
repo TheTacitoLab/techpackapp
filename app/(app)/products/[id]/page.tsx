@@ -9,6 +9,7 @@ import { CollapsibleSection } from "@/components/collapsible-section";
 import { IdentitySection } from "@/components/identity-section";
 import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
+import { QuickExportDialog } from "@/components/quick-export-dialog";
 import { SectionIcon } from "@/components/section-icon";
 import { Progress } from "@/components/ui/progress";
 import { getWorkspaceLibrary } from "@/lib/library";
@@ -228,6 +229,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
             workspaceId={activeProduct.workspace_id}
             assets={assets}
             pages={resolvedPages}
+            heroAssetId={activeProduct.hero_asset_id}
           />
         );
       case "technical_details":
@@ -328,8 +330,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
           <span aria-hidden className="bg-border h-5 w-px shrink-0" />
 
-          {/* Right zone: labels + status */}
+          {/* Right zone: export + labels + status */}
           <div className="flex shrink-0 items-center gap-3">
+            <QuickExportDialog productId={product.id} />
             <ProductLabels
               productId={product.id}
               labels={labels}

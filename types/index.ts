@@ -150,12 +150,14 @@ export type TrimKind = "fastener" | "elastic" | "binding" | "drawcord" | "other"
  * `colour`, `gsm`, `supplier_code`) are denormalised onto the annotation so
  * the BOM and pin UI never need a join back to `library_items`;
  * `placement`/`quantity`/`unit`/`notes` are per-instance and entered on this
- * pin only. `gsm` is fabric-specific and null for trims. `trim_kind` is set
- * only on trim pins (null for fabric) and stays editable after creation — it
- * is descriptive, never part of the reference code. Annotations created
- * before the dedicated editor store only `{ label, notes }` — those legacy
- * fields are read as a display fallback (never migrated) so old pins keep
- * working; see `readFabricTrimData` in
+ * pin only. `gsm` and `width_cm` (fabric width) are fabric-specific and null
+ * for trims. `unit_cost` (per the pin's `unit`) applies to both families and
+ * drives the BOM's computed Total (qty × unit cost, only when both present).
+ * `trim_kind` is set only on trim pins (null for fabric) and stays editable
+ * after creation — it is descriptive, never part of the reference code.
+ * Annotations created before the dedicated editor store only
+ * `{ label, notes }` — those legacy fields are read as a display fallback
+ * (never migrated) so old pins keep working; see `readFabricTrimData` in
  * `components/canvas/fabric-trim-data.ts`.
  */
 export type FabricTrimAnnotationData = {
@@ -165,10 +167,12 @@ export type FabricTrimAnnotationData = {
   composition: string | null;
   colour: string | null;
   gsm: number | null;
+  width_cm: number | null;
   trim_kind: TrimKind | null;
   placement: string | null;
   quantity: number | null;
   unit: "per_metre" | "per_unit" | "per_kg" | null;
+  unit_cost: number | null;
   supplier_code: string | null;
   notes: string | null;
 };

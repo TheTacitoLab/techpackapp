@@ -32,6 +32,16 @@ import {
 
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
 import {
+  BOX_BG,
+  HAIRLINE,
+  INK,
+  LINK_BLUE,
+  MUTED,
+  PDF_BRAND_NAME,
+  shareDisplay,
+  shareUrl,
+} from "@/lib/pdf/branding";
+import {
   ANNOTATION_LAYERS,
   readableTextOn,
   resolveColourForLayerType,
@@ -101,11 +111,8 @@ export type PdfPageData = {
   slots: PdfSlotData[];
 };
 
-// ---- Chrome palette (hardcoded spike defaults) --------------------------------
-const INK = "#1C1917";
-const MUTED = "#78716C";
-const HAIRLINE = "#D6D3D1";
-const BOX_BG = "#FAFAF9";
+// Chrome palette lives in lib/pdf/branding.ts — shared with the cover and BOM
+// pages so the whole document reads as one design.
 
 const styles = StyleSheet.create({
   page: {
@@ -816,7 +823,32 @@ function CalloutColumn({
   );
 }
 
-function Header({ data }: { data: PdfPageData }) {
+/** The header fields the chrome actually reads — a structural subset of
+ *  PdfPageData, so the cover/BOM pages can reuse the exact same header band
+ *  without carrying slot data. */
+export type PdfHeaderData = Pick<
+  PdfPageData,
+  | "brandName"
+  | "styleName"
+  | "styleNumber"
+  | "seasonName"
+  | "versionLabel"
+  | "dateLabel"
+  | "pageNumber"
+  | "pageCount"
+  | "pageLabel"
+  | "designerName"
+>;
+
+export function Header({
+  data,
+  title = "Technical Details",
+}: {
+  data: PdfHeaderData;
+  /** The centre band title — "Technical Details" on canvas pages (the
+   *  established default), "Bill of Materials" on the BOM page. */
+  title?: string;
+}) {
   return (
     <View
       style={{
@@ -858,7 +890,7 @@ function Header({ data }: { data: PdfPageData }) {
 
       <View style={{ flex: 1, alignItems: "center" }}>
         <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold" }}>
-          Technical Details
+          {title}
         </Text>
       </View>
 
@@ -877,8 +909,14 @@ function Header({ data }: { data: PdfPageData }) {
   );
 }
 
-function Footer({ data }: { data: PdfPageData }) {
-  const shareUrl = `https://techpackapp.com/view/${data.shareToken}`;
+/** The footer fields the chrome actually reads — shared with cover/BOM pages. */
+export type PdfFooterData = Pick<
+  PdfPageData,
+  "brandName" | "styleNumber" | "shareToken" | "pageNumber" | "pageCount"
+>;
+
+export function Footer({ data }: { data: PdfFooterData }) {
+  const shareHref = shareUrl(data.shareToken);
   return (
     <View
       style={{
@@ -897,18 +935,24 @@ function Footer({ data }: { data: PdfPageData }) {
         Confidential — property of {data.brandName}. For production purposes only.
       </Text>
       <View style={{ flexDirection: "row" }}>
-        <Link src={shareUrl} style={{ fontSize: 6.5, color: "#2563EB" }}>
-          View online: techpackapp.com/view/{data.shareToken.slice(0, 8)}…
+        <Link src={shareHref} style={{ fontSize: 6.5, color: LINK_BLUE }}>
+          View online: {shareDisplay(data.shareToken)}
         </Link>
         <Text style={{ fontSize: 6.5, color: MUTED, marginLeft: 8 }}>
-          TechPackApp · {data.styleNumber} · Page {data.pageNumber} of {data.pageCount}
+          {PDF_BRAND_NAME} · {data.styleNumber} · Page {data.pageNumber} of {data.pageCount}
         </Text>
       </View>
     </View>
   );
 }
 
-export function TechPackPage({ data }: { data: PdfPageData }) {
+/**
+ * ONE canvas page as a react-pdf <Page> — the unit the full-document route
+ * composes (cover + N of these + BOM). Layout/geometry unchanged from the
+ * proven single-page export; document assembly only threads pageNumber /
+ * pageCount through the existing header/footer props.
+ */
+export function TechPackCanvasPage({ data }: { data: PdfPageData }) {
   const layout = canvasZoneLayout(data.template, data.slots);
   const overrides = data.layerColours;
 
@@ -941,30 +985,40 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
   const calloutTotal = layerGroups.reduce((n, g) => n + g.total, 0);
 
   return (
-    <Document title={`${data.styleName} — Technical Details`} author="TechPackApp">
-      <Page size={[PAGE_W, PAGE_H]} style={styles.page}>
-        <Header data={data} />
-        {data.slots.map((slot, i) => {
-          const sl = layout.slots[i];
-          return sl ? (
-            <PdfSlot
-              key={i}
-              slot={slot}
-              cell={sl.cell}
-              geo={sl.geo}
-              colourFor={colourFor}
-              index={i}
-            />
-          ) : null;
-        })}
-        <NotesBox box={layout.notesBox} notes={data.notes} />
-        <CalloutColumn
-          zone={calloutZone()}
-          layers={layerGroups}
-          total={calloutTotal}
-        />
-        <Footer data={data} />
-      </Page>
+    <Page size={[PAGE_W, PAGE_H]} style={styles.page}>
+      <Header data={data} />
+      {data.slots.map((slot, i) => {
+        const sl = layout.slots[i];
+        return sl ? (
+          <PdfSlot
+            key={i}
+            slot={slot}
+            cell={sl.cell}
+            geo={sl.geo}
+            colourFor={colourFor}
+            index={i}
+          />
+        ) : null;
+      })}
+      <NotesBox box={layout.notesBox} notes={data.notes} />
+      <CalloutColumn
+        zone={calloutZone()}
+        layers={layerGroups}
+        total={calloutTotal}
+      />
+      <Footer data={data} />
+    </Page>
+  );
+}
+
+/** The single-page document — the Preview dialog / per-page route's form. */
+export function TechPackPage({ data }: { data: PdfPageData }) {
+  return (
+    <Document
+      title={`${data.styleName} — Technical Details`}
+      author={PDF_BRAND_NAME}
+    >
+      <TechPackCanvasPage data={data} />
     </Document>
   );
 }

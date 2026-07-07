@@ -9,6 +9,7 @@ import {
   Loader2,
   MoreHorizontal,
   Pencil,
+  Star,
   TriangleAlert,
   Trash2,
   Upload,
@@ -61,6 +62,7 @@ import { Input } from "@/components/ui/input";
 import {
   deleteAsset,
   renameAsset,
+  setProductHeroAsset,
 } from "@/app/(app)/products/[id]/canvas-actions";
 import type { ProductAsset } from "@/types";
 
@@ -83,15 +85,20 @@ type PendingUpload = {
 function AssetTile({
   asset,
   inUse,
+  isHero,
   onPreview,
   onRename,
   onDelete,
+  onToggleHero,
 }: {
   asset: ProductAsset;
   inUse: boolean;
+  /** This asset is the product's hero — the exported PDF's cover image. */
+  isHero: boolean;
   onPreview: (asset: ProductAsset) => void;
   onRename: (asset: ProductAsset) => void;
   onDelete: (asset: ProductAsset) => void;
+  onToggleHero: (asset: ProductAsset) => void;
 }) {
   return (
     <div className="group">
@@ -115,14 +122,46 @@ function AssetTile({
           />
         </button>
 
-        {inUse && (
-          <Badge
-            variant="secondary"
-            className="pointer-events-none absolute top-1.5 left-1.5 shadow-sm"
-          >
-            In use
-          </Badge>
+        {(isHero || inUse) && (
+          <div className="pointer-events-none absolute top-1.5 left-1.5 flex flex-col items-start gap-1">
+            {isHero && (
+              <Badge variant="secondary" className="shadow-sm">
+                <Star className="size-3 fill-amber-400 text-amber-400" />
+                Hero
+              </Badge>
+            )}
+            {inUse && (
+              <Badge variant="secondary" className="shadow-sm">
+                In use
+              </Badge>
+            )}
+          </div>
         )}
+
+        {/* Hero star — one per product; the hero's star stays visible, the
+            rest appear on hover. Sibling of the preview trigger (same
+            layering rule as the menu). */}
+        <Button
+          variant="secondary"
+          size="icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleHero(asset);
+          }}
+          aria-label={
+            isHero ? `Remove ${asset.name} as hero` : `Set ${asset.name} as hero`
+          }
+          title={isHero ? "Remove as hero" : "Set as hero — the PDF cover image"}
+          className={
+            isHero
+              ? "absolute top-1.5 right-9 size-7 shadow-sm"
+              : "absolute top-1.5 right-9 size-7 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          }
+        >
+          <Star
+            className={isHero ? "size-4 fill-amber-400 text-amber-400" : "size-4"}
+          />
+        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -142,6 +181,10 @@ function AssetTile({
             <DropdownMenuItem onSelect={() => onRename(asset)}>
               <Pencil className="size-4" />
               Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onToggleHero(asset)}>
+              <Star className="size-4" />
+              {isHero ? "Remove as hero" : "Set as hero"}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -385,11 +428,14 @@ export function AssetLibrary({
   workspaceId,
   assets,
   usedAssetIds,
+  heroAssetId,
 }: {
   productId: string;
   workspaceId: string;
   assets: ProductAsset[];
   usedAssetIds: Set<string>;
+  /** The product's chosen hero asset (PDF cover image), if any. */
+  heroAssetId: string | null;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -397,6 +443,20 @@ export function AssetLibrary({
   const [previewTarget, setPreviewTarget] = useState<ProductAsset | null>(null);
   const [renameTarget, setRenameTarget] = useState<ProductAsset | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProductAsset | null>(null);
+
+  function handleToggleHero(asset: ProductAsset) {
+    const makeHero = heroAssetId !== asset.id;
+    void setProductHeroAsset(productId, makeHero ? asset.id : null)
+      .then(() => {
+        toast.success(
+          makeHero
+            ? `${asset.name} is now the cover image.`
+            : "Hero image cleared.",
+        );
+        router.refresh();
+      })
+      .catch(() => toast.error("Could not update the hero image."));
+  }
 
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -488,9 +548,11 @@ export function AssetLibrary({
                 key={asset.id}
                 asset={asset}
                 inUse={usedAssetIds.has(asset.id)}
+                isHero={heroAssetId === asset.id}
                 onPreview={setPreviewTarget}
                 onRename={setRenameTarget}
                 onDelete={setDeleteTarget}
+                onToggleHero={handleToggleHero}
               />
             ))}
           </div>

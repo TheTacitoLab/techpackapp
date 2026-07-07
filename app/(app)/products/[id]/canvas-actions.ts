@@ -267,6 +267,49 @@ export async function deleteAsset(id: string): Promise<{ warning?: string }> {
     : {};
 }
 
+const setHeroSchema = z.object({
+  productId: z.uuid(),
+  assetId: z.uuid().nullable(),
+});
+
+/**
+ * Choose the product's hero image — the exported PDF's cover picture. One per
+ * product by construction (`products.hero_asset_id`, migration 0032): setting
+ * a new hero replaces the previous one in the same single-column update;
+ * `assetId: null` clears it (the cover then falls back to the first filled
+ * slot's image). The asset must belong to THIS product — a hero from another
+ * product's library is rejected even within the same workspace.
+ */
+export async function setProductHeroAsset(
+  productId: string,
+  assetId: string | null,
+): Promise<void> {
+  const input = setHeroSchema.parse({ productId, assetId });
+  const { supabase, workspaceId } = await requireActionContext();
+
+  await assertProductInWorkspace(supabase, input.productId, workspaceId);
+
+  if (input.assetId !== null) {
+    const { data: asset } = await supabase
+      .from("product_assets")
+      .select("id")
+      .eq("id", input.assetId)
+      .eq("product_id", input.productId)
+      .eq("workspace_id", workspaceId)
+      .single();
+    if (!asset) throw new Error("Not found in your workspace.");
+  }
+
+  const { error } = await supabase
+    .from("products")
+    .update({ hero_asset_id: input.assetId })
+    .eq("id", input.productId)
+    .eq("workspace_id", workspaceId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${input.productId}`);
+}
+
 // ============================================================================
 // Pages
 // ============================================================================

@@ -166,6 +166,7 @@ export type Database = {
           retail_price: number | null;
           status: Database["public"]["Enums"]["product_status"];
           share_token: string;
+          hero_asset_id: string | null;
           created_at: string;
           updated_at: string;
           archived_at: string | null;
@@ -191,6 +192,7 @@ export type Database = {
           retail_price?: number | null;
           status?: Database["public"]["Enums"]["product_status"];
           share_token?: string;
+          hero_asset_id?: string | null;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -216,6 +218,7 @@ export type Database = {
           retail_price?: number | null;
           status?: Database["public"]["Enums"]["product_status"];
           share_token?: string;
+          hero_asset_id?: string | null;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;

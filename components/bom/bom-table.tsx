@@ -84,9 +84,12 @@ export function BomTable({ annotations }: { annotations: CanvasAnnotation[] }) {
           <TableHead>Item Name</TableHead>
           <TableHead>Composition / Detail</TableHead>
           <TableHead>Colour</TableHead>
+          <TableHead>Width (cm)</TableHead>
           <TableHead>Placement</TableHead>
           <TableHead>Quantity</TableHead>
           <TableHead>Unit</TableHead>
+          <TableHead>Unit cost</TableHead>
+          <TableHead>Total</TableHead>
           <TableHead>Notes</TableHead>
         </TableRow>
       </TableHeader>
@@ -95,7 +98,7 @@ export function BomTable({ annotations }: { annotations: CanvasAnnotation[] }) {
           <Fragment key={group.layerType}>
             <TableRow className="hover:bg-transparent">
               <TableCell
-                colSpan={9}
+                colSpan={12}
                 className="bg-muted/50 text-muted-foreground py-1.5 text-xs font-semibold tracking-wide uppercase"
               >
                 {GROUP_LABEL[group.layerType as keyof typeof GROUP_LABEL]}
@@ -130,6 +133,9 @@ export function BomTable({ annotations }: { annotations: CanvasAnnotation[] }) {
                   <TableCell className="text-muted-foreground">
                     {d.colour ?? "—"}
                   </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {d.width_cm ?? "—"}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {d.placement ?? "—"}
                   </TableCell>
@@ -138,6 +144,14 @@ export function BomTable({ annotations }: { annotations: CanvasAnnotation[] }) {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {d.unit ? UNIT_LABEL[d.unit] : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {d.unit_cost !== null ? d.unit_cost.toFixed(2) : "—"}
+                  </TableCell>
+                  <TableCell className="tabular-nums font-medium">
+                    {d.quantity !== null && d.unit_cost !== null
+                      ? (d.quantity * d.unit_cost).toFixed(2)
+                      : "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground max-w-48 truncate">
                     {d.notes ?? "—"}

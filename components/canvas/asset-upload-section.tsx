@@ -14,11 +14,14 @@ export function AssetUploadSection({
   workspaceId,
   assets,
   pages,
+  heroAssetId,
 }: {
   productId: string;
   workspaceId: string;
   assets: ProductAsset[];
   pages: ResolvedCanvasPage[];
+  /** The product's chosen hero asset (PDF cover image), if any. */
+  heroAssetId: string | null;
 }) {
   // Which asset ids are placed in at least one slot across all pages — drives
   // the "in use" badge and the delete-confirm warning in the library.
@@ -41,6 +44,7 @@ export function AssetUploadSection({
         workspaceId={workspaceId}
         assets={assets}
         usedAssetIds={usedAssetIds}
+        heroAssetId={heroAssetId}
       />
       <p className="text-muted-foreground text-xs">
         Images uploaded here are available for annotation in Technical Details.
