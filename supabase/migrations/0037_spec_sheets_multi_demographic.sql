@@ -78,7 +78,7 @@ where sample_size_label is not null
 -- action fires. Reconcile it here to exactly what recomputeSpecSectionStatus
 -- would produce (idempotent — re-running yields the same result).
 update public.product_sections ps
-set status = case
+set status = (case
   when not exists (
     select 1 from public.product_spec_sheets s where s.product_id = ps.product_id
   ) then 'not_started'
@@ -88,5 +88,5 @@ set status = case
     where s.product_id = ps.product_id
   ) then 'complete'
   else 'in_progress'
-end
+end)::public.section_status
 where ps.section_key = 'grading';
