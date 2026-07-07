@@ -4,6 +4,7 @@ import { parseLayerColours } from "@/components/canvas/layers";
 import {
   createImageFetcher,
   buildPdfSlots,
+  resolvePdfImage,
   type RawPdfPage,
 } from "@/lib/pdf/page-data";
 import { renderTechPackPagePdf } from "@/lib/pdf/render-techpack-page";
@@ -67,7 +68,11 @@ export async function GET(
 
   const [{ data: brand }, { data: season }] = await Promise.all([
     product.brand_id
-      ? supabase.from("brands").select("name").eq("id", product.brand_id).single()
+      ? supabase
+          .from("brands")
+          .select("name, logo_url")
+          .eq("id", product.brand_id)
+          .single()
       : Promise.resolve({ data: null }),
     product.season_id
       ? supabase.from("seasons").select("name").eq("id", product.season_id).single()
@@ -81,7 +86,13 @@ export async function GET(
 
   // Shared assembly (lib/pdf/page-data.ts): memoised image fetch + slot
   // mapping — a page exports COMPOSED (no layer filter on this route).
-  const slots = await buildPdfSlots(page.canvas_slots, createImageFetcher());
+  const fetchImage = createImageFetcher();
+  const slots = await buildPdfSlots(page.canvas_slots, fetchImage);
+
+  // Header logo — same fetch/fallback as the full-document export.
+  const logo = resolvePdfImage(
+    brand?.logo_url ? await fetchImage(brand.logo_url) : null,
+  );
 
   const pageIndex = allPages.findIndex((p) => p.id === page.id);
   const data: PdfPageData = {
@@ -89,6 +100,7 @@ export async function GET(
     styleNumber: product.style_number ?? "—",
     seasonName: season?.name ?? "—",
     brandName: brand?.name ?? "Brand",
+    logo,
     designerName: product.designer_name ?? "—",
     // Spike hardcodes: versioning ships with the approval flow.
     versionLabel: "V1 · Draft",

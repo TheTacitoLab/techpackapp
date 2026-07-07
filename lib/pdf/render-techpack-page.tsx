@@ -41,6 +41,7 @@ import {
   shareDisplay,
   shareUrl,
 } from "@/lib/pdf/branding";
+import { containFit, type PdfImage } from "@/lib/pdf/image-fit";
 import {
   ANNOTATION_LAYERS,
   readableTextOn,
@@ -94,6 +95,10 @@ export type PdfPageData = {
   styleNumber: string;
   seasonName: string;
   brandName: string;
+  /** Brand logo for the header band (fetched/memoised, natural size
+   *  resolved); null falls back to the brand-name box — the same graceful
+   *  fallback on every page. */
+  logo: PdfImage | null;
   designerName: string;
   versionLabel: string;
   dateLabel: string;
@@ -829,6 +834,7 @@ function CalloutColumn({
 export type PdfHeaderData = Pick<
   PdfPageData,
   | "brandName"
+  | "logo"
   | "styleName"
   | "styleNumber"
   | "seasonName"
@@ -863,21 +869,36 @@ export function Header({
         alignItems: "center",
       }}
     >
-      {/* Brand logo placeholder box. */}
-      <View
-        style={{
-          width: 64,
-          height: 36,
-          borderWidth: 1,
-          borderColor: HAIRLINE,
-          borderRadius: 4,
-          alignItems: "center",
-          justifyContent: "center",
-          marginRight: 12,
-        }}
-      >
-        <Text style={{ fontSize: 6, color: MUTED }}>{data.brandName}</Text>
-      </View>
+      {/* Brand logo — the same left slot on every page (cover, canvas, BOM).
+          Sized by our own containFit (react-pdf objectFit is unreliable for
+          SVG); no logo falls back to the original brand-name box. */}
+      {data.logo ? (
+        <View
+          style={{
+            width: 76,
+            height: 36,
+            justifyContent: "center",
+            marginRight: 12,
+          }}
+        >
+          <Image src={data.logo.src} style={containFit(data.logo, 76, 36)} />
+        </View>
+      ) : (
+        <View
+          style={{
+            width: 76,
+            height: 36,
+            borderWidth: 1,
+            borderColor: HAIRLINE,
+            borderRadius: 4,
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: 12,
+          }}
+        >
+          <Text style={{ fontSize: 6, color: MUTED }}>{data.brandName}</Text>
+        </View>
+      )}
 
       <View style={{ width: 200 }}>
         <Text style={{ fontSize: 12, fontFamily: "Helvetica-Bold" }}>

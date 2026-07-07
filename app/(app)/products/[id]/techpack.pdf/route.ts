@@ -1,6 +1,11 @@
 import type { NextRequest } from "next/server";
 
 import {
+  isValidHex,
+  readColourwayData,
+} from "@/components/canvas/colourway-data";
+import { readFabricTrimData } from "@/components/canvas/fabric-trim-data";
+import {
   ANNOTATION_LAYERS,
   parseLayerColours,
   type LayerKey,
@@ -9,19 +14,25 @@ import { STATUS_LABELS } from "@/components/status-pill";
 import {
   createImageFetcher,
   buildPdfSlots,
-  dataUriImageSize,
+  resolvePdfImage,
   type RawPdfPage,
 } from "@/lib/pdf/page-data";
+import type {
+  PdfCoverColourway,
+  PdfCoverSwatch,
+} from "@/lib/pdf/palette-blocks";
 import {
   buildBomRows,
   paginateBom,
   visibleBomColumns,
   type PdfBomPageData,
 } from "@/lib/pdf/render-bom-page";
-import type {
-  PdfCoverData,
-  PdfCoverImage,
+import {
+  coverPaletteFits,
+  type PdfCoverData,
+  type PdfCoverFabric,
 } from "@/lib/pdf/render-cover-page";
+import type { PdfPalettePageData } from "@/lib/pdf/render-palette-page";
 import { renderTechPackDocumentPdf } from "@/lib/pdf/render-techpack-document";
 import type {
   PdfFooterData,
@@ -30,9 +41,18 @@ import type {
 } from "@/lib/pdf/render-techpack-page";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { CanvasLayerType, IdentitySectionData } from "@/types";
+import type {
+  CanvasAnnotation,
+  CanvasColourway,
+  CanvasLayerType,
+  IdentitySectionData,
+} from "@/types";
 
 const ALL_LAYER_KEYS = ANNOTATION_LAYERS.map((l) => l.key);
+
+/** The cover's key-fabrics strip caps at this many rows — the primary
+ *  materials, never an overflowing list. */
+const COVER_FABRICS_MAX = 5;
 
 /**
  * The Quick Export layer filter: `?layers=fabric,measurement` → the set of
@@ -56,7 +76,8 @@ function parseLayersParam(
 }
 
 /** The layer_types the selected layer keys cover — the ONE filter the whole
- *  composed pipeline (pins, callout groups, BOM inclusion) derives from. */
+ *  composed pipeline (pins, callout groups, BOM/cover-block inclusion)
+ *  derives from. */
 function allowedLayerTypes(keys: Set<LayerKey>): Set<CanvasLayerType> {
   const types = new Set<CanvasLayerType>();
   for (const layer of ANNOTATION_LAYERS) {
@@ -65,20 +86,75 @@ function allowedLayerTypes(keys: Set<LayerKey>): Set<CanvasLayerType> {
   return types;
 }
 
-/** A fetched data URI as a cover image — natural size from the DB columns
- *  when known, else sniffed from the bytes (SVG markup / PNG / JPEG). Null
- *  (unmeasurable) means the cover skips the image rather than mis-sizing it. */
-function toCoverImage(
-  src: string | null,
-  knownWidth?: number | null,
-  knownHeight?: number | null,
-): PdfCoverImage | null {
-  if (!src) return null;
-  if (knownWidth && knownHeight) {
-    return { src, width: knownWidth, height: knownHeight };
+/** Numeric-aware reference-code order (F2 before F10). */
+function byReferenceCode(a: CanvasAnnotation, b: CanvasAnnotation): number {
+  return a.reference_code.localeCompare(b.reference_code, undefined, {
+    numeric: true,
+  });
+}
+
+/**
+ * The cover's key fabrics: fabric-family pins (the fabric type specifically
+ * — trims are hardware, not materials), reference-code order, deduped by
+ * item identity, capped. Sourced from the already-FILTERED annotations, so a
+ * fabrics-deselected export carries no fabric data anywhere.
+ */
+function buildCoverFabrics(annotations: CanvasAnnotation[]): PdfCoverFabric[] {
+  const fabrics: PdfCoverFabric[] = [];
+  const seen = new Set<string>();
+  for (const a of [...annotations]
+    .filter((x) => x.layer_type === "fabric")
+    .sort(byReferenceCode)) {
+    const d = readFabricTrimData(a.data);
+    const name = d.library_item_name ?? `Fabric ${a.reference_code}`;
+    const detail =
+      [d.composition, d.gsm !== null ? `${d.gsm} GSM` : null]
+        .filter((v): v is string => !!v)
+        .join(" · ") || null;
+    // Item identity when the pin is library-linked (two suppliers' fabrics
+    // can share a display name); display fields as the fallback key.
+    const key = d.library_item_id ?? `${name}|${detail ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    fabrics.push({ label: d.placement, name, detail });
+    if (fabrics.length >= COVER_FABRICS_MAX) break;
   }
-  const size = dataUriImageSize(src);
-  return size ? { src, ...size } : null;
+  return fabrics;
+}
+
+/**
+ * The palette variants: each colourway (sequence order) with its pins'
+ * swatches (reference-code order) — hex is the SAMPLED colour (validated),
+ * Pantone/name are the user's entries verbatim. Pins with no colour data at
+ * all are dropped (never an empty card); duplicate swatches within a variant
+ * collapse; variants left with no swatches are omitted (never an empty
+ * heading).
+ */
+function buildCoverColourways(
+  colourways: CanvasColourway[],
+  annotations: CanvasAnnotation[],
+): PdfCoverColourway[] {
+  const pins = annotations
+    .filter((a) => a.layer_type === "colourway")
+    .sort(byReferenceCode);
+  return [...colourways]
+    .sort((a, b) => a.sequence_number - b.sequence_number)
+    .map((colourway): PdfCoverColourway => {
+      const swatches: PdfCoverSwatch[] = [];
+      const seen = new Set<string>();
+      for (const pin of pins) {
+        if (pin.colourway_id !== colourway.id) continue;
+        const d = readColourwayData(pin.data);
+        const hex = d.hex && isValidHex(d.hex) ? d.hex.toUpperCase() : null;
+        if (!hex && !d.colour_name && !d.pantone) continue;
+        const key = `${hex ?? ""}|${d.colour_name ?? ""}|${d.pantone ?? ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        swatches.push({ hex, name: d.colour_name, pantone: d.pantone });
+      }
+      return { name: colourway.name, swatches };
+    })
+    .filter((c) => c.swatches.length > 0);
 }
 
 /** `{style-number-or-name}-techpack.pdf`, sanitised for a filename. */
@@ -94,12 +170,13 @@ function exportFilename(styleNumber: string | null, name: string): string {
  * GET /products/{id}/techpack.pdf?layers=fabric,colourway,…
  *
  * The FULL tech pack as one PDF document: cover page (logo, identity,
- * description/end-use, hero image) → every canvas page in order (the proven
- * composed renderer, filtered to the selected layers) → Bill of Materials
- * page(s) (only when the Fabrics & Trim layer is selected and rows exist).
- * Page numbering runs across the whole document; the cover is page 1. Auth +
- * workspace scoping match every other data path. A product with no canvas
- * pages exports as a cover-only document.
+ * description/end-use, hero image, key fabrics, colour palette) → a
+ * dedicated Colour Palette page when the palette outgrows the cover → every
+ * canvas page in order (the proven composed renderer, filtered to the
+ * selected layers) → Bill of Materials page(s) (only when the Fabrics & Trim
+ * layer is selected and rows exist). Page numbering runs across the whole
+ * document; the cover is page 1. Auth + workspace scoping match every other
+ * data path. A product with no canvas pages exports as a cover-only document.
  */
 export async function GET(
   req: NextRequest,
@@ -134,6 +211,7 @@ export async function GET(
     collectionResult,
     identityResult,
     heroResult,
+    colourwaysResult,
   ] = await Promise.all([
     supabase
       .from("canvas_pages")
@@ -175,6 +253,11 @@ export async function GET(
           .eq("product_id", product.id)
           .single()
       : Promise.resolve({ data: null }),
+    supabase
+      .from("canvas_colourways")
+      .select("*")
+      .eq("product_id", product.id)
+      .order("sequence_number", { ascending: true }),
   ]);
 
   const allPages = (pages ?? []) as unknown as RawPdfPage[];
@@ -193,11 +276,14 @@ export async function GET(
       buildPdfSlots(page.canvas_slots, fetchImage, allowedTypes),
     ),
   );
+  const filteredAnnotations = pageSlots.flatMap((slots) =>
+    slots.flatMap((s) => s.annotations),
+  );
 
   // Hero image: the chosen hero asset, else the first filled slot's image
   // (first page onward), else none (clean text-only cover).
-  let heroImage: PdfCoverImage | null = heroResult.data
-    ? toCoverImage(
+  let heroImage = heroResult.data
+    ? resolvePdfImage(
         await fetchImage(heroResult.data.file_url),
         heroResult.data.width,
         heroResult.data.height,
@@ -207,7 +293,7 @@ export async function GET(
     for (const slots of pageSlots) {
       const withImage = slots.find((s) => s.image !== null);
       if (withImage?.image) {
-        heroImage = toCoverImage(
+        heroImage = resolvePdfImage(
           withImage.image,
           withImage.naturalWidth,
           withImage.naturalHeight,
@@ -217,21 +303,46 @@ export async function GET(
     }
   }
 
-  const logo = toCoverImage(
+  const logo = resolvePdfImage(
     brand?.logo_url ? await fetchImage(brand.logo_url) : null,
   );
 
+  // Cover blocks — all from the FILTERED annotations, so deselected layers
+  // leak nothing onto the cover either.
+  const coverFabrics = selectedKeys.has("fabric")
+    ? buildCoverFabrics(filteredAnnotations)
+    : [];
+  const coverColourways = selectedKeys.has("colourway")
+    ? buildCoverColourways(colourwaysResult.data ?? [], filteredAnnotations)
+    : [];
+  // The palette lives on the cover while it PROVABLY fits alongside the
+  // identity column's other blocks (global budget, no cram/clip); otherwise
+  // it becomes the dedicated Colour Palette page straight after the cover.
+  const coverContent = {
+    collectionName: collectionResult.data?.name ?? null,
+    seasonName: seasonResult.data?.name ?? null,
+    description: identity?.product_description ?? null,
+    endUse: identity?.end_use ?? null,
+    fabrics: coverFabrics,
+  };
+  const paletteOnCover =
+    coverColourways.length > 0 &&
+    coverPaletteFits(coverColourways, coverContent);
+  const hasPalettePage = coverColourways.length > 0 && !paletteOnCover;
+
   // BOM: derived from the SAME filtered annotations the pages render — the
   // fabric layer deselected means no fabric/trim pins anywhere, so no BOM.
-  const bomAnnotations = selectedKeys.has("fabric")
-    ? pageSlots.flatMap((slots) => slots.flatMap((s) => s.annotations))
-    : [];
-  const bomRows = buildBomRows(bomAnnotations);
+  const bomRows = buildBomRows(
+    selectedKeys.has("fabric") ? filteredAnnotations : [],
+  );
   const bomRowPages = paginateBom(bomRows);
   const bomColumns = visibleBomColumns(bomRows);
 
-  // Document-wide numbering: cover is page 1, canvas pages follow, BOM last.
-  const pageCount = 1 + allPages.length + bomRowPages.length;
+  // Document-wide numbering: cover is page 1, the overflow palette page (if
+  // any) follows it, canvas pages next, BOM last.
+  const paletteOffset = hasPalettePage ? 1 : 0;
+  const pageCount =
+    1 + paletteOffset + allPages.length + bomRowPages.length;
 
   const styleNumber = product.style_number ?? "—";
   const brandName = brand?.name ?? "Brand";
@@ -252,33 +363,53 @@ export async function GET(
     pageNumber,
     pageCount,
   });
+  const headerAt = (pageNumber: number, pageLabel: string): PdfHeaderData => ({
+    brandName,
+    logo,
+    styleName: product.name,
+    styleNumber,
+    seasonName,
+    versionLabel,
+    dateLabel,
+    pageNumber,
+    pageCount,
+    pageLabel,
+    designerName,
+  });
 
   const cover: PdfCoverData = {
     brandName,
     logo,
     productName: product.name,
     styleNumber: product.style_number,
-    collectionName: collectionResult.data?.name ?? null,
-    seasonName: seasonResult.data?.name ?? null,
+    ...coverContent,
     statusLabel: STATUS_LABELS[product.status],
     designerName: product.designer_name,
     versionLabel,
     dateLabel,
-    description: identity?.product_description ?? null,
-    endUse: identity?.end_use ?? null,
     heroImage,
+    colourways: paletteOnCover ? coverColourways : [],
     footer: footerAt(1),
   };
+
+  const palettePage: PdfPalettePageData | null = hasPalettePage
+    ? {
+        header: headerAt(2, "Colour Palette"),
+        footer: footerAt(2),
+        colourways: coverColourways,
+      }
+    : null;
 
   const pageData: PdfPageData[] = allPages.map((page, i) => ({
     styleName: product.name,
     styleNumber,
     seasonName,
     brandName,
+    logo,
     designerName,
     versionLabel,
     dateLabel,
-    pageNumber: i + 2,
+    pageNumber: 1 + paletteOffset + i + 1,
     pageCount,
     pageLabel: page.label ?? `Page ${i + 1}`,
     template: page.template,
@@ -288,21 +419,10 @@ export async function GET(
     slots: pageSlots[i],
   }));
 
-  const bomHeaderBase: Omit<PdfHeaderData, "pageNumber"> = {
-    brandName,
-    styleName: product.name,
-    styleNumber,
-    seasonName,
-    versionLabel,
-    dateLabel,
-    pageCount,
-    pageLabel: "Bill of Materials",
-    designerName,
-  };
   const bomPages: PdfBomPageData[] = bomRowPages.map((rows, i) => {
-    const pageNumber = 1 + allPages.length + i + 1;
+    const pageNumber = 1 + paletteOffset + allPages.length + i + 1;
     return {
-      header: { ...bomHeaderBase, pageNumber },
+      header: headerAt(pageNumber, "Bill of Materials"),
       footer: footerAt(pageNumber),
       rows,
       columns: bomColumns,
@@ -311,7 +431,12 @@ export async function GET(
 
   let pdf: Buffer;
   try {
-    pdf = await renderTechPackDocumentPdf({ cover, pages: pageData, bomPages });
+    pdf = await renderTechPackDocumentPdf({
+      cover,
+      palettePage,
+      pages: pageData,
+      bomPages,
+    });
   } catch (err) {
     console.error("[pdf] renderTechPackDocumentPdf failed:", err);
     return new Response("PDF generation failed", { status: 500 });

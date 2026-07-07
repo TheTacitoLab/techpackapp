@@ -9,6 +9,7 @@
  * can never drift.
  */
 
+import type { PdfImage } from "@/lib/pdf/image-fit";
 import type { PdfSlotData } from "@/lib/pdf/render-techpack-page";
 import type {
   CanvasAnnotation,
@@ -166,6 +167,24 @@ export function dataUriImageSize(
   } catch {
     return null;
   }
+}
+
+/**
+ * A fetched data URI as a sized PdfImage — natural size from the DB columns
+ * when known, else sniffed from the bytes. Null (no source / unmeasurable)
+ * means the consumer skips the image rather than mis-sizing it.
+ */
+export function resolvePdfImage(
+  src: string | null,
+  knownWidth?: number | null,
+  knownHeight?: number | null,
+): PdfImage | null {
+  if (!src) return null;
+  if (knownWidth && knownHeight) {
+    return { src, width: knownWidth, height: knownHeight };
+  }
+  const size = dataUriImageSize(src);
+  return size ? { src, ...size } : null;
 }
 
 /**
