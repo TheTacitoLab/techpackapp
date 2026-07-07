@@ -112,14 +112,15 @@ export default async function ProductDetailPage({ params }: PageProps) {
     // category) so the picker can filter Fabric/Trim/Fastener/Elastic
     // client-side without four separate round-trips.
     getWorkspaceLibrary(),
-    // Size Specifications: the product's Spec Sheet (rows + stored values
-    // embedded — in auto mode that's just the sample column), plus the two
-    // spec libraries for the template picker and profile picker.
+    // Size Specifications: the product's LIST of Spec Sheets (0037 — Youth,
+    // Men's and Women's can coexist), each with rows + stored values embedded
+    // (in auto mode that's just the sample column(s)), plus the two spec
+    // libraries for the template picker and profile picker.
     supabase
       .from("product_spec_sheets")
       .select("*, product_spec_rows(*), product_spec_values(*)")
       .eq("product_id", product.id)
-      .maybeSingle(),
+      .order("created_at", { ascending: true }),
     getSpecTemplates(),
     getGradingProfiles(),
   ]);
@@ -190,27 +191,23 @@ export default async function ProductDetailPage({ params }: PageProps) {
     .flatMap((p) => p.slots.flatMap((s) => s.annotations))
     .filter((a) => isFabricFamilyType(a.layer_type));
 
-  // The Spec Sheet embed (rows + values) — like the canvas embeds above, the
-  // generated types don't model it, so the raw row is described explicitly.
+  // The Spec Sheet embeds (rows + values) — like the canvas embeds above, the
+  // generated types don't model them, so the raw rows are described explicitly.
   type RawSpecSheet = ProductSpecSheet & {
     product_spec_rows: ProductSpecRow[];
     product_spec_values: ProductSpecValue[];
   };
-  const rawSpecSheet = (specSheetResult.data as unknown as RawSpecSheet | null) ?? null;
-  const specSheet: ResolvedSpecSheet | null = rawSpecSheet
-    ? (() => {
-        const { product_spec_rows, product_spec_values, ...sheetRest } = rawSpecSheet;
-        return {
-          ...sheetRest,
-          rows: [...(product_spec_rows ?? [])].sort(
-            (a, b) =>
-              a.sort_order - b.sort_order ||
-              a.code.localeCompare(b.code, undefined, { numeric: true }),
-          ),
-          values: product_spec_values ?? [],
-        };
-      })()
-    : null;
+  const specSheets: ResolvedSpecSheet[] = (
+    (specSheetResult.data ?? []) as unknown as RawSpecSheet[]
+  ).map(({ product_spec_rows, product_spec_values, ...sheetRest }) => ({
+    ...sheetRest,
+    rows: [...(product_spec_rows ?? [])].sort(
+      (a, b) =>
+        a.sort_order - b.sort_order ||
+        a.code.localeCompare(b.code, undefined, { numeric: true }),
+    ),
+    values: product_spec_values ?? [],
+  }));
 
   const brand = brandResult.data;
   const collection = collectionResult.data;
@@ -290,8 +287,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
         return (
           <SizeSpecificationsSection
             productId={activeProduct.id}
-            sizeRangeText={activeProduct.size_range}
-            sheet={specSheet}
+            sheets={specSheets}
             templates={specTemplates}
             profiles={gradingProfiles}
           />

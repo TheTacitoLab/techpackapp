@@ -105,7 +105,7 @@ function SpecCellInput({
 export function SpecSheetTable({
   rows,
   sizeRun,
-  sampleSize,
+  sampleSizes,
   mode,
   storedValues,
   computedValues,
@@ -118,7 +118,8 @@ export function SpecSheetTable({
 }: {
   rows: ProductSpecRow[];
   sizeRun: string[];
-  sampleSize: string | null;
+  /** The 1–2 physically-sampled sizes — highlighted, editable in auto mode. */
+  sampleSizes: string[];
   mode: "auto" | "manual";
   /** rowId → NORMALIZED size label → stored value (see normalizeSizeLabel). */
   storedValues: Record<string, Record<string, number>>;
@@ -159,13 +160,13 @@ export function SpecSheetTable({
   }
 
   // Sample matching is normalized (like the engine and the section), so a
-  // casing-only edit to the size range can't strand the sample column.
-  const normalizedSample =
-    sampleSize === null ? null : normalizeSizeLabel(sampleSize);
+  // casing-only edit to the size run can't strand a sample column.
+  const sampleKeys = new Set(sampleSizes.map((s) => normalizeSizeLabel(s)));
+  // A column is a "sample" (highlighted, and editable in auto mode) when it is
+  // one of the 1–2 measured sizes. Manual mode edits every column, so the
+  // highlight there only marks the physically-measured ones.
   const isSampleColumn = (label: string) =>
-    mode === "auto" &&
-    normalizedSample !== null &&
-    normalizeSizeLabel(label) === normalizedSample;
+    sampleKeys.has(normalizeSizeLabel(label));
 
   return (
     <Table>
@@ -176,7 +177,14 @@ export function SpecSheetTable({
           <TableHead className="min-w-44">Measurement</TableHead>
           <TableHead className="w-20 text-right">Tol ±</TableHead>
           {sizeRun.map((label) => (
-            <TableHead key={label} className="w-24 text-right">
+            <TableHead
+              key={label}
+              className={cn(
+                "w-24 text-right",
+                isSampleColumn(label) &&
+                  "border-brand/50 bg-brand/5 border-x border-t",
+              )}
+            >
               {isSampleColumn(label) ? (
                 <span className="inline-flex items-center gap-1.5">
                   {label}
@@ -250,10 +258,17 @@ export function SpecSheetTable({
                 {tolerance !== null ? formatSpecValue(tolerance) : "—"}
               </TableCell>
               {sizeRun.map((label) => {
-                const editable = mode === "manual" || isSampleColumn(label);
+                const sample = isSampleColumn(label);
+                const editable = mode === "manual" || sample;
                 if (editable) {
                   return (
-                    <TableCell key={label} className="text-right">
+                    <TableCell
+                      key={label}
+                      className={cn(
+                        "text-right",
+                        sample && "border-brand/40 bg-brand/5 border-x",
+                      )}
+                    >
                       <SpecCellInput
                         value={
                           storedValues[row.id]?.[normalizeSizeLabel(label)] ??

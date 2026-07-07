@@ -370,6 +370,8 @@ export type SpecGradeCategory = Enums<"spec_grade_category">;
 export type SpecPomSubKind = Enums<"spec_pom_sub_kind">;
 export type SpecSheetMode = Enums<"spec_sheet_mode">;
 export type SpecFabricType = Enums<"spec_fabric_type">;
+export type SpecDemographic = Enums<"spec_demographic">;
+export type SpecSizingSystem = Enums<"spec_sizing_system">;
 
 /**
  * A Spec Template with its POM rows attached and the global/workspace flag

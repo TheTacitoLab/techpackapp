@@ -26,22 +26,19 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import {
-  defaultSampleSize,
-  normalizeSizeLabel,
-  parseSizeRun,
-  roundTo1dp,
-} from "@/lib/spec-grading";
+import { normalizeSizeLabel, roundTo1dp } from "@/lib/spec-grading";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
 import type {
   GradingProfile,
   ProductSpecRow,
   SectionStatus,
+  SpecDemographic,
   SpecFabricType,
   SpecGradeCategory,
   SpecPomSubKind,
   SpecSheetMode,
+  SpecSizingSystem,
 } from "@/types";
 
 // ---- Shared schema fragments ---------------------------------------------------
@@ -64,11 +61,25 @@ const SUB_KINDS = [
   "inseam",
 ] as const satisfies readonly SpecPomSubKind[];
 
+const DEMOGRAPHICS = [
+  "youth",
+  "mens",
+  "womens",
+  "custom",
+] as const satisfies readonly SpecDemographic[];
+
+const SIZING_SYSTEMS = [
+  "alpha",
+  "numeric",
+] as const satisfies readonly SpecSizingSystem[];
+
 const gradeCategorySchema = z.enum(GRADE_CATEGORIES);
 const subKindSchema = z.enum(SUB_KINDS).nullable();
 const fabricTypeSchema = z.enum(["knit", "woven"] as const satisfies readonly SpecFabricType[]);
-// Size labels come from parseSizeRun over products.size_range (max 60 chars),
-// whose single-label fallback can be the whole string — the cap must match.
+const demographicSchema = z.enum(DEMOGRAPHICS);
+const sizingSystemSchema = z.enum(SIZING_SYSTEMS);
+// Size labels: alpha ladders, numeric sizes, or free-entry custom labels. The
+// cap is generous so an oddly named custom label still fits.
 const sizeLabelSchema = z.string().trim().min(1).max(60);
 /** Measurements are cm to 0.1 — parsed as any finite non-negative number and rounded on write. */
 const measurementSchema = z.number().finite().min(0).max(10000);
@@ -140,38 +151,27 @@ async function getSheetContext(
 }
 
 /**
- * Recompute the Size Specifications section's status (section_key 'grading'):
- * no sheet → not_started; sheet → in_progress; complete once measurements are
- * stored AND (in auto mode) a sample size + Grading Profile are set so every
- * size column has numbers.
+ * Recompute the Size Specifications section's status (section_key 'grading')
+ * across the product's LIST of Spec Sheets (0037 — a product now holds many):
+ * no sheets → not_started; every sheet marked complete → complete; otherwise
+ * in_progress. A sheet's own `is_complete` flag (set by "Mark complete", gated
+ * on having real data — see setSpecComplete) is the per-sheet truth, so the
+ * section rolls those up rather than re-deriving each sheet's completeness here.
  */
 async function recomputeSpecSectionStatus(
   supabase: ActionCtx["supabase"],
   productId: string,
   workspaceId: string,
 ): Promise<void> {
-  const { data: sheet } = await supabase
+  const { data: sheets } = await supabase
     .from("product_spec_sheets")
-    .select("id, mode, sample_size_label, grading_profile_id")
+    .select("id, is_complete")
     .eq("product_id", productId)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
+    .eq("workspace_id", workspaceId);
 
   let status: SectionStatus = "not_started";
-  if (sheet) {
-    const { count } = await supabase
-      .from("product_spec_values")
-      .select("id", { count: "exact", head: true })
-      .eq("sheet_id", sheet.id);
-    const hasValues = (count ?? 0) > 0;
-    if (sheet.mode === "manual") {
-      status = hasValues ? "complete" : "in_progress";
-    } else {
-      status =
-        hasValues && sheet.grading_profile_id && sheet.sample_size_label
-          ? "complete"
-          : "in_progress";
-    }
+  if (sheets && sheets.length > 0) {
+    status = sheets.every((s) => s.is_complete) ? "complete" : "in_progress";
   }
 
   await supabase
@@ -179,6 +179,50 @@ async function recomputeSpecSectionStatus(
     .update({ status })
     .eq("product_id", productId)
     .eq("section_key", "grading");
+}
+
+/**
+ * Delete a sheet's stored values whose size label falls OUTSIDE the given
+ * allowed set (normalized). Used when the size run shrinks or the sample set
+ * changes so orphaned columns can't linger. Fetch-then-delete-by-id keeps the
+ * normalized comparison in one place (no injection-prone label filter strings).
+ */
+async function pruneValuesOutsideLabels(
+  supabase: ActionCtx["supabase"],
+  sheetId: string,
+  allowedLabels: readonly string[],
+): Promise<void> {
+  const allowed = new Set(allowedLabels.map((l) => normalizeSizeLabel(l)));
+  const { data: values } = await supabase
+    .from("product_spec_values")
+    .select("id, size_label")
+    .eq("sheet_id", sheetId);
+  const staleIds = (values ?? [])
+    .filter((v) => !allowed.has(normalizeSizeLabel(v.size_label)))
+    .map((v) => v.id);
+  if (staleIds.length === 0) return;
+  const { error } = await supabase
+    .from("product_spec_values")
+    .delete()
+    .in("id", staleIds);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Dedupe size labels by normalized form, preserving first-seen order and the
+ * user's original spelling. Shared by the size-run and sample-size writers so a
+ * "XXL" + "2XL" pair can't split a column.
+ */
+function dedupeSizeLabels(labels: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const label of labels) {
+    const key = normalizeSizeLabel(label);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(label);
+  }
+  return result;
 }
 
 /** Copy a template's POMs into product-owned sheet rows. */
@@ -238,9 +282,13 @@ const createSheetSchema = z.object({
 });
 
 /**
- * Step 1 of the journey — "Choose Spec Template" (or start blank). Creates
- * the product's sheet, copies the template's POMs into product-owned rows and
- * defaults the sample column to the middle of the product's size run.
+ * Step 1 of the journey — "Choose Spec Template" (or start blank), creating
+ * ANOTHER Spec Sheet for the product (0037 — a product holds a list of them).
+ * Copies the template's POMs into product-owned rows. The sheet is
+ * self-contained: its size run, demographic and sample sizes are chosen later
+ * in the flow (steps 2–3), NOT inherited from the product — so it starts with
+ * an empty run. `name` seeds from the template so the section list has
+ * something to show before the demographic is picked.
  */
 export async function createSpecSheet(
   productId: string,
@@ -249,19 +297,11 @@ export async function createSpecSheet(
   const input = createSheetSchema.parse({ productId, templateId });
   const { supabase, workspaceId } = await requireActionContext();
 
-  const { data: product } = await supabase
-    .from("products")
-    .select("id, size_range")
-    .eq("id", input.productId)
-    .eq("workspace_id", workspaceId)
-    .single();
-  if (!product) throw new Error("Not found in your workspace.");
+  await assertProductInWorkspace(supabase, input.productId, workspaceId);
 
   const template = input.templateId
     ? await getVisibleTemplate(supabase, input.templateId, workspaceId)
     : null;
-
-  const sampleSize = defaultSampleSize(parseSizeRun(product.size_range));
 
   const { data: sheet, error } = await supabase
     .from("product_spec_sheets")
@@ -270,7 +310,7 @@ export async function createSpecSheet(
       workspace_id: workspaceId,
       template_id: template?.id ?? null,
       template_name: template?.name ?? null,
-      sample_size_label: sampleSize,
+      name: template?.name ?? null,
     })
     .select("id")
     .single();
@@ -285,6 +325,189 @@ export async function createSpecSheet(
   await recomputeSpecSectionStatus(supabase, input.productId, workspaceId);
   revalidatePath(`/products/${input.productId}`);
   return { id: sheet.id };
+}
+
+// ---- Step 2/3: size run + sample sizes ---------------------------------------
+
+const setSizeRunSchema = z.object({
+  sheetId: z.uuid(),
+  demographic: demographicSchema,
+  sizingSystem: sizingSystemSchema,
+  sizeRun: z.array(sizeLabelSchema).max(40),
+});
+
+/**
+ * Step 2 — "Choose the size range". Stores the sheet's demographic, sizing
+ * system and the ticked size run. The run is deduped by normalized label so a
+ * casing/synonym variant can't create two columns for one size. Sample sizes
+ * are pruned to those still in the run, and any stored values for now-absent
+ * columns are dropped so removing a size can't strand orphan cells.
+ */
+export async function setSpecSizeRun(
+  sheetId: string,
+  input: {
+    demographic: SpecDemographic;
+    sizingSystem: SpecSizingSystem;
+    sizeRun: string[];
+  },
+): Promise<void> {
+  const parsed = setSizeRunSchema.parse({ sheetId, ...input });
+  const { supabase, workspaceId } = await requireActionContext();
+  const sheet = await getSheetContext(supabase, parsed.sheetId, workspaceId);
+
+  const sizeRun = dedupeSizeLabels(parsed.sizeRun);
+  const runKeys = new Set(sizeRun.map((l) => normalizeSizeLabel(l)));
+  const nextSamples = (sheet.sample_sizes ?? []).filter((s) =>
+    runKeys.has(normalizeSizeLabel(s)),
+  );
+
+  const { error } = await supabase
+    .from("product_spec_sheets")
+    .update({
+      demographic: parsed.demographic,
+      sizing_system: parsed.sizingSystem,
+      size_run: sizeRun,
+      sample_sizes: nextSamples,
+      sample_size_label: nextSamples[0] ?? null,
+      // Changing the columns re-opens the sheet — re-confirm to complete again.
+      is_complete: false,
+    })
+    .eq("id", sheet.id);
+  if (error) throw new Error(error.message);
+
+  await pruneValuesOutsideLabels(supabase, sheet.id, sizeRun);
+  await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  revalidatePath(`/products/${sheet.product_id}`);
+}
+
+const setSampleSizesSchema = z.object({
+  sheetId: z.uuid(),
+  sampleSizes: z.array(sizeLabelSchema).min(0).max(2),
+});
+
+/**
+ * Step 3 — "Select the sample size(s)". One or two sizes physically sampled,
+ * both a subset of the run; the FIRST is the grading anchor (mirrored into
+ * `sample_size_label`, which the engine and the auto-mode storage invariant
+ * read). In auto mode a pure single→single relabel MOVES the measured column
+ * to its new label (the numbers were taken off the garment — relabelling keeps
+ * them); any other change prunes stored values down to the new sample set (auto
+ * mode only ever stores sample columns).
+ */
+export async function setSpecSampleSizes(
+  sheetId: string,
+  sampleSizes: string[],
+): Promise<void> {
+  const parsed = setSampleSizesSchema.parse({ sheetId, sampleSizes });
+  const { supabase, workspaceId } = await requireActionContext();
+  const sheet = await getSheetContext(supabase, parsed.sheetId, workspaceId);
+
+  const runKeys = new Set((sheet.size_run ?? []).map((l) => normalizeSizeLabel(l)));
+  const next = dedupeSizeLabels(parsed.sampleSizes).filter((s) =>
+    runKeys.has(normalizeSizeLabel(s)),
+  );
+  const prev = sheet.sample_sizes ?? [];
+
+  if (sheet.mode === "auto") {
+    const singleRelabel =
+      prev.length === 1 &&
+      next.length === 1 &&
+      normalizeSizeLabel(prev[0]) !== normalizeSizeLabel(next[0]);
+    if (singleRelabel) {
+      // Clear anything already at the destination, then re-key the measured
+      // column onto the new label.
+      const { error: clearError } = await supabase
+        .from("product_spec_values")
+        .delete()
+        .eq("sheet_id", sheet.id)
+        .eq("size_label", next[0]);
+      if (clearError) throw new Error(clearError.message);
+      const { error: rekeyError } = await supabase
+        .from("product_spec_values")
+        .update({ size_label: next[0] })
+        .eq("sheet_id", sheet.id)
+        .eq("size_label", prev[0]);
+      if (rekeyError) throw new Error(rekeyError.message);
+    } else {
+      await pruneValuesOutsideLabels(supabase, sheet.id, next);
+    }
+  }
+
+  const { error } = await supabase
+    .from("product_spec_sheets")
+    .update({
+      sample_sizes: next,
+      sample_size_label: next[0] ?? null,
+      is_complete: false,
+    })
+    .eq("id", sheet.id);
+  if (error) throw new Error(error.message);
+
+  await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  revalidatePath(`/products/${sheet.product_id}`);
+}
+
+// ---- Sheet name + completion -------------------------------------------------
+
+/** Rename a sheet (the label shown in the section's Spec Sheet list). */
+export async function renameSpecSheet(
+  sheetId: string,
+  name: string,
+): Promise<void> {
+  const input = z
+    .object({ sheetId: z.uuid(), name: z.string().trim().min(1).max(80) })
+    .parse({ sheetId, name });
+  const { supabase, workspaceId } = await requireActionContext();
+  const sheet = await getSheetContext(supabase, input.sheetId, workspaceId);
+
+  const { error } = await supabase
+    .from("product_spec_sheets")
+    .update({ name: input.name })
+    .eq("id", sheet.id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/products/${sheet.product_id}`);
+}
+
+/**
+ * Step 7 — "Mark complete" (or re-open). Marking complete is gated on the sheet
+ * actually being finished: a size run, at least one stored measurement, and
+ * either manual mode or (auto) a sample anchor + a Grading Profile so every
+ * column has numbers. Un-completing is always allowed.
+ */
+export async function setSpecComplete(
+  sheetId: string,
+  isComplete: boolean,
+): Promise<void> {
+  const input = z
+    .object({ sheetId: z.uuid(), isComplete: z.boolean() })
+    .parse({ sheetId, isComplete });
+  const { supabase, workspaceId } = await requireActionContext();
+  const sheet = await getSheetContext(supabase, input.sheetId, workspaceId);
+
+  if (input.isComplete) {
+    const { count } = await supabase
+      .from("product_spec_values")
+      .select("id", { count: "exact", head: true })
+      .eq("sheet_id", sheet.id);
+    const hasValues = (count ?? 0) > 0;
+    const hasRun = (sheet.size_run ?? []).length > 0;
+    const gradingReady =
+      sheet.mode === "manual" ||
+      (!!sheet.sample_size_label && !!sheet.grading_profile_id);
+    if (!hasRun || !hasValues || !gradingReady) {
+      throw new Error("Finish the sheet before marking it complete.");
+    }
+  }
+
+  const { error } = await supabase
+    .from("product_spec_sheets")
+    .update({ is_complete: input.isComplete })
+    .eq("id", sheet.id);
+  if (error) throw new Error(error.message);
+
+  await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  revalidatePath(`/products/${sheet.product_id}`);
 }
 
 /**
@@ -316,6 +539,8 @@ export async function changeSpecTemplate(
     .update({
       template_id: template?.id ?? null,
       template_name: template?.name ?? null,
+      // A fresh set of measurement rows re-opens the sheet.
+      is_complete: false,
     })
     .eq("id", sheet.id);
   if (updateError) throw new Error(updateError.message);
@@ -344,55 +569,9 @@ export async function deleteSpecSheet(sheetId: string): Promise<void> {
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
-// ---- Sheet settings (sample size, profile, fabric) -----------------------------------
+// ---- Sheet settings (profile, fabric) ------------------------------------------------
 
-/**
- * Change which size the physical sample is. In auto mode the stored sample
- * values MOVE to the new column (the numbers were measured off the garment —
- * relabelling the sample keeps them), rather than being discarded.
- */
-export async function setSpecSampleSize(
-  sheetId: string,
-  sampleSizeLabel: string,
-): Promise<void> {
-  const input = z
-    .object({ sheetId: z.uuid(), sampleSizeLabel: sizeLabelSchema })
-    .parse({ sheetId, sampleSizeLabel });
-  const { supabase, workspaceId } = await requireActionContext();
-  const sheet = await getSheetContext(supabase, input.sheetId, workspaceId);
-
-  if (
-    sheet.mode === "auto" &&
-    sheet.sample_size_label &&
-    sheet.sample_size_label !== input.sampleSizeLabel
-  ) {
-    // Clear anything already stored at the destination label (stale
-    // leftovers), then re-key the sample column onto the new label.
-    const { error: clearError } = await supabase
-      .from("product_spec_values")
-      .delete()
-      .eq("sheet_id", sheet.id)
-      .eq("size_label", input.sampleSizeLabel);
-    if (clearError) throw new Error(clearError.message);
-
-    const { error: rekeyError } = await supabase
-      .from("product_spec_values")
-      .update({ size_label: input.sampleSizeLabel })
-      .eq("sheet_id", sheet.id)
-      .eq("size_label", sheet.sample_size_label);
-    if (rekeyError) throw new Error(rekeyError.message);
-  }
-
-  const { error } = await supabase
-    .from("product_spec_sheets")
-    .update({ sample_size_label: input.sampleSizeLabel })
-    .eq("id", sheet.id);
-  if (error) throw new Error(error.message);
-
-  revalidatePath(`/products/${sheet.product_id}`);
-}
-
-/** Step 3 of the journey — apply a Grading Profile (null clears it). */
+/** Step 5 of the journey — apply a Grading Profile (null clears it). */
 export async function setSpecGradingProfile(
   sheetId: string,
   profileId: string | null,
@@ -502,20 +681,17 @@ export async function switchSpecSheetMode(
       }
     }
   } else {
-    if (!sheet.sample_size_label) {
+    const sampleSizes = sheet.sample_sizes ?? [];
+    if (sampleSizes.length === 0) {
       throw new Error("Pick a sample size first.");
     }
-    const { error } = await supabase
-      .from("product_spec_values")
-      .delete()
-      .eq("sheet_id", sheet.id)
-      .neq("size_label", sheet.sample_size_label);
-    if (error) throw new Error(error.message);
+    // Discard every non-sample value; the sample column(s) are re-graded live.
+    await pruneValuesOutsideLabels(supabase, sheet.id, sampleSizes);
   }
 
   const { error: modeError } = await supabase
     .from("product_spec_sheets")
-    .update({ mode: input.mode })
+    .update({ mode: input.mode, is_complete: false })
     .eq("id", sheet.id);
   if (modeError) throw new Error(modeError.message);
 
@@ -526,7 +702,7 @@ export async function switchSpecSheetMode(
 // ---- Cell values ------------------------------------------------------------------------
 
 /**
- * Write one cell (sample column in auto mode; any cell in manual). Null
+ * Write one cell (a sample column in auto mode; any cell in manual). Null
  * clears the cell. Values round to 0.1 on write, matching the engine.
  */
 export async function saveSpecValue(
@@ -552,22 +728,23 @@ export async function saveSpecValue(
   if (!row) throw new Error("Not found in your workspace.");
   const sheet = await getSheetContext(supabase, row.sheet_id, workspaceId);
 
-  // The auto-mode storage invariant: only the sample column is ever
-  // persisted. Enforced here (not just by UI gating) so stray non-sample
-  // rows can never appear and later be clobbered by a sample re-key or
-  // mis-snapshot on a mode switch. Matching is normalized and the stored key
-  // is forced to the sheet's canonical sample label, so a casing-variant
-  // column label can't fragment the sample column.
+  // The auto-mode storage invariant: only the SAMPLE column(s) are ever
+  // persisted (1–2 of them since 0037). Enforced here (not just by UI gating)
+  // so stray non-sample rows can never appear and later be clobbered by a
+  // sample re-key or mis-snapshot on a mode switch. Matching is normalized and
+  // the stored key is forced to the sheet's canonical sample label, so a
+  // casing-variant column label can't fragment a sample column.
   let storedLabel = input.sizeLabel;
   if (sheet.mode === "auto") {
-    if (
-      !sheet.sample_size_label ||
-      normalizeSizeLabel(input.sizeLabel) !==
-        normalizeSizeLabel(sheet.sample_size_label)
-    ) {
-      throw new Error("Only the sample column can be edited in auto-grade mode.");
+    const canonical = (sheet.sample_sizes ?? []).find(
+      (s) => normalizeSizeLabel(s) === normalizeSizeLabel(input.sizeLabel),
+    );
+    if (!canonical) {
+      throw new Error(
+        "Only the sample column(s) can be edited in auto-grade mode.",
+      );
     }
-    storedLabel = sheet.sample_size_label;
+    storedLabel = canonical;
   }
 
   if (input.value === null) {
@@ -905,7 +1082,7 @@ export async function deleteGradingProfile(
 
   const { data: affected } = await supabase
     .from("product_spec_sheets")
-    .select("product_id")
+    .select("id, product_id")
     .eq("workspace_id", workspaceId)
     .eq("grading_profile_id", input.profileId);
 
@@ -917,9 +1094,20 @@ export async function deleteGradingProfile(
     .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
 
-  for (const sheet of affected ?? []) {
-    await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
-    revalidatePath(`/products/${sheet.product_id}`);
+  // The FK set-null leaves those auto sheets ungradeable, so re-open them
+  // (drop is_complete) before rolling the affected sections' status back up.
+  const affectedIds = (affected ?? []).map((s) => s.id);
+  if (affectedIds.length > 0) {
+    await supabase
+      .from("product_spec_sheets")
+      .update({ is_complete: false })
+      .in("id", affectedIds);
+  }
+
+  const affectedProducts = new Set((affected ?? []).map((s) => s.product_id));
+  for (const affectedProductId of affectedProducts) {
+    await recomputeSpecSectionStatus(supabase, affectedProductId, workspaceId);
+    revalidatePath(`/products/${affectedProductId}`);
   }
 
   revalidatePath(`/products/${input.productId}`);
