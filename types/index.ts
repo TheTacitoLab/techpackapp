@@ -353,3 +353,50 @@ export const RETIRED_LAYER_TYPES: readonly CanvasLayerType[] = [
   "label_component",
   "print",
 ];
+
+// ---- Size Specifications (Spec Sheets) ---------------------------------------
+
+// Row aliases
+export type SpecTemplate = Tables<"spec_templates">;
+export type SpecTemplatePom = Tables<"spec_template_poms">;
+export type GradingProfile = Tables<"grading_profiles">;
+export type ProductSpecSheet = Tables<"product_spec_sheets">;
+export type ProductSpecRow = Tables<"product_spec_rows">;
+export type ProductSpecValue = Tables<"product_spec_values">;
+
+// Enum aliases
+export type SpecTemplateCategory = Enums<"spec_template_category">;
+export type SpecGradeCategory = Enums<"spec_grade_category">;
+export type SpecPomSubKind = Enums<"spec_pom_sub_kind">;
+export type SpecSheetMode = Enums<"spec_sheet_mode">;
+export type SpecFabricType = Enums<"spec_fabric_type">;
+
+/**
+ * A Spec Template with its POM rows attached and the global/workspace flag
+ * resolved — what the "Choose Spec Template" picker consumes (mirrors
+ * `ResolvedLibraryItem`). Assembled by `lib/spec-library.ts`.
+ */
+export type ResolvedSpecTemplate = SpecTemplate & {
+  poms: SpecTemplatePom[];
+  isGlobal: boolean;
+};
+
+/**
+ * A Grading Profile with the global/workspace flag resolved. The jsonb
+ * increment/tolerance blobs stay `Json` here; the defensive readers in
+ * `components/spec/spec-data.ts` are the only place they're decoded.
+ */
+export type ResolvedGradingProfile = GradingProfile & {
+  isGlobal: boolean;
+};
+
+/**
+ * A product's Spec Sheet with rows (sort-ordered) and stored values attached
+ * — the server-assembled shape the Size Specifications section receives. In
+ * auto mode `values` holds only the sample column; every other size is
+ * computed live by `lib/spec-grading.ts` and never persisted.
+ */
+export type ResolvedSpecSheet = ProductSpecSheet & {
+  rows: ProductSpecRow[];
+  values: ProductSpecValue[];
+};

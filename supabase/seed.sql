@@ -12,7 +12,7 @@ values
   ('assets',            'Asset Upload',             'Images',        20, true, false),
   ('technical_details', 'Technical Details',        'Layers',        30, true, true),
   ('bom',               'Bill of Materials',        'ListTree',      50, true, true),
-  ('grading',           'Grading',                  'Table2',        60, true, true),
+  ('grading',           'Size Specifications',      'Ruler',         60, true, true),
   ('documents',         'Supplementary Documents',  'Paperclip',     70, true, true)
 on conflict (key) do update
   set label              = excluded.label,

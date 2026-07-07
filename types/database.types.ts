@@ -627,6 +627,264 @@ export type Database = {
         };
         Relationships: [];
       };
+      spec_templates: {
+        Row: {
+          id: string;
+          source: Database["public"]["Enums"]["library_source"];
+          workspace_id: string | null;
+          name: string;
+          category: Database["public"]["Enums"]["spec_template_category"];
+          description: string | null;
+          is_active: boolean;
+          sort_order: number;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          source: Database["public"]["Enums"]["library_source"];
+          workspace_id?: string | null;
+          name: string;
+          category: Database["public"]["Enums"]["spec_template_category"];
+          description?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          source?: Database["public"]["Enums"]["library_source"];
+          workspace_id?: string | null;
+          name?: string;
+          category?: Database["public"]["Enums"]["spec_template_category"];
+          description?: string | null;
+          is_active?: boolean;
+          sort_order?: number;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      spec_template_poms: {
+        Row: {
+          id: string;
+          template_id: string;
+          code: string;
+          name: string;
+          how_to_measure: string | null;
+          grade_category: Database["public"]["Enums"]["spec_grade_category"];
+          sub_kind: Database["public"]["Enums"]["spec_pom_sub_kind"] | null;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          template_id: string;
+          code: string;
+          name: string;
+          how_to_measure?: string | null;
+          grade_category: Database["public"]["Enums"]["spec_grade_category"];
+          sub_kind?: Database["public"]["Enums"]["spec_pom_sub_kind"] | null;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          template_id?: string;
+          code?: string;
+          name?: string;
+          how_to_measure?: string | null;
+          grade_category?: Database["public"]["Enums"]["spec_grade_category"];
+          sub_kind?: Database["public"]["Enums"]["spec_pom_sub_kind"] | null;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      grading_profiles: {
+        Row: {
+          id: string;
+          source: Database["public"]["Enums"]["library_source"];
+          workspace_id: string | null;
+          name: string;
+          description: string | null;
+          size_run_labels: string[];
+          break_size_label: string | null;
+          base_increments: Json;
+          extended_increments: Json | null;
+          tolerances_knit: Json;
+          tolerances_woven: Json;
+          is_active: boolean;
+          sort_order: number;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          source: Database["public"]["Enums"]["library_source"];
+          workspace_id?: string | null;
+          name: string;
+          description?: string | null;
+          size_run_labels?: string[];
+          break_size_label?: string | null;
+          base_increments?: Json;
+          extended_increments?: Json | null;
+          tolerances_knit?: Json;
+          tolerances_woven?: Json;
+          is_active?: boolean;
+          sort_order?: number;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          source?: Database["public"]["Enums"]["library_source"];
+          workspace_id?: string | null;
+          name?: string;
+          description?: string | null;
+          size_run_labels?: string[];
+          break_size_label?: string | null;
+          base_increments?: Json;
+          extended_increments?: Json | null;
+          tolerances_knit?: Json;
+          tolerances_woven?: Json;
+          is_active?: boolean;
+          sort_order?: number;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      product_spec_sheets: {
+        Row: {
+          id: string;
+          product_id: string;
+          workspace_id: string;
+          template_id: string | null;
+          template_name: string | null;
+          mode: Database["public"]["Enums"]["spec_sheet_mode"];
+          sample_size_label: string | null;
+          grading_profile_id: string | null;
+          fabric_type: Database["public"]["Enums"]["spec_fabric_type"];
+          unit: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          workspace_id: string;
+          template_id?: string | null;
+          template_name?: string | null;
+          mode?: Database["public"]["Enums"]["spec_sheet_mode"];
+          sample_size_label?: string | null;
+          grading_profile_id?: string | null;
+          fabric_type?: Database["public"]["Enums"]["spec_fabric_type"];
+          unit?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          product_id?: string;
+          workspace_id?: string;
+          template_id?: string | null;
+          template_name?: string | null;
+          mode?: Database["public"]["Enums"]["spec_sheet_mode"];
+          sample_size_label?: string | null;
+          grading_profile_id?: string | null;
+          fabric_type?: Database["public"]["Enums"]["spec_fabric_type"];
+          unit?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      product_spec_rows: {
+        Row: {
+          id: string;
+          sheet_id: string;
+          workspace_id: string;
+          code: string;
+          name: string;
+          how_to_measure: string | null;
+          grade_category: Database["public"]["Enums"]["spec_grade_category"];
+          sub_kind: Database["public"]["Enums"]["spec_pom_sub_kind"] | null;
+          tolerance_override: number | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          sheet_id: string;
+          workspace_id: string;
+          code: string;
+          name: string;
+          how_to_measure?: string | null;
+          grade_category: Database["public"]["Enums"]["spec_grade_category"];
+          sub_kind?: Database["public"]["Enums"]["spec_pom_sub_kind"] | null;
+          tolerance_override?: number | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          sheet_id?: string;
+          workspace_id?: string;
+          code?: string;
+          name?: string;
+          how_to_measure?: string | null;
+          grade_category?: Database["public"]["Enums"]["spec_grade_category"];
+          sub_kind?: Database["public"]["Enums"]["spec_pom_sub_kind"] | null;
+          tolerance_override?: number | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      product_spec_values: {
+        Row: {
+          id: string;
+          sheet_id: string;
+          row_id: string;
+          workspace_id: string;
+          size_label: string;
+          value: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          sheet_id: string;
+          row_id: string;
+          workspace_id: string;
+          size_label: string;
+          value: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          sheet_id?: string;
+          row_id?: string;
+          workspace_id?: string;
+          size_label?: string;
+          value?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -684,6 +942,29 @@ export type Database = {
         | "colourway"
         | "branding"
         | "label";
+      spec_template_category:
+        | "tops"
+        | "bottoms"
+        | "outerwear"
+        | "performance"
+        | "womenswear"
+        | "accessories";
+      spec_grade_category:
+        | "primary_girth"
+        | "secondary_girth"
+        | "body_length"
+        | "limb_length"
+        | "small"
+        | "fixed";
+      spec_pom_sub_kind:
+        | "shoulder"
+        | "neck"
+        | "cuff_opening"
+        | "rise"
+        | "strap"
+        | "inseam";
+      spec_sheet_mode: "auto" | "manual";
+      spec_fabric_type: "knit" | "woven";
     };
     CompositeTypes: {
       [_ in never]: never;

@@ -11,8 +11,10 @@ import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
 import { QuickExportDialog } from "@/components/quick-export-dialog";
 import { SectionIcon } from "@/components/section-icon";
+import { SizeSpecificationsSection } from "@/components/spec/size-specifications-section";
 import { Progress } from "@/components/ui/progress";
 import { getWorkspaceLibrary } from "@/lib/library";
+import { getGradingProfiles, getSpecTemplates } from "@/lib/spec-library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -24,9 +26,13 @@ import type {
   IdentitySectionData,
   Label,
   ProductAsset,
+  ProductSpecRow,
+  ProductSpecSheet,
+  ProductSpecValue,
   ResolvedCanvasPage,
   ResolvedSection,
   ResolvedSlot,
+  ResolvedSpecSheet,
   Season,
   SectionStatus,
 } from "@/types";
@@ -61,6 +67,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
     { data: workspaceSeasons },
     { data: workspaceCollections },
     libraryItems,
+    specSheetResult,
+    specTemplates,
+    gradingProfiles,
   ] = await Promise.all([
     supabase
       .from("product_sections")
@@ -103,6 +112,16 @@ export default async function ProductDetailPage({ params }: PageProps) {
     // category) so the picker can filter Fabric/Trim/Fastener/Elastic
     // client-side without four separate round-trips.
     getWorkspaceLibrary(),
+    // Size Specifications: the product's Spec Sheet (rows + stored values
+    // embedded — in auto mode that's just the sample column), plus the two
+    // spec libraries for the template picker and profile picker.
+    supabase
+      .from("product_spec_sheets")
+      .select("*, product_spec_rows(*), product_spec_values(*)")
+      .eq("product_id", product.id)
+      .maybeSingle(),
+    getSpecTemplates(),
+    getGradingProfiles(),
   ]);
 
   // Canvas data (Phase 4b): the product's image assets and its pages with slots
@@ -170,6 +189,28 @@ export default async function ProductDetailPage({ params }: PageProps) {
   const bomAnnotations: CanvasAnnotation[] = resolvedPages
     .flatMap((p) => p.slots.flatMap((s) => s.annotations))
     .filter((a) => isFabricFamilyType(a.layer_type));
+
+  // The Spec Sheet embed (rows + values) — like the canvas embeds above, the
+  // generated types don't model it, so the raw row is described explicitly.
+  type RawSpecSheet = ProductSpecSheet & {
+    product_spec_rows: ProductSpecRow[];
+    product_spec_values: ProductSpecValue[];
+  };
+  const rawSpecSheet = (specSheetResult.data as unknown as RawSpecSheet | null) ?? null;
+  const specSheet: ResolvedSpecSheet | null = rawSpecSheet
+    ? (() => {
+        const { product_spec_rows, product_spec_values, ...sheetRest } = rawSpecSheet;
+        return {
+          ...sheetRest,
+          rows: [...(product_spec_rows ?? [])].sort(
+            (a, b) =>
+              a.sort_order - b.sort_order ||
+              a.code.localeCompare(b.code, undefined, { numeric: true }),
+          ),
+          values: product_spec_values ?? [],
+        };
+      })()
+    : null;
 
   const brand = brandResult.data;
   const collection = collectionResult.data;
@@ -246,6 +287,15 @@ export default async function ProductDetailPage({ params }: PageProps) {
       case "bom":
         return <BomTable annotations={bomAnnotations} />;
       case "grading":
+        return (
+          <SizeSpecificationsSection
+            productId={activeProduct.id}
+            sizeRangeText={activeProduct.size_range}
+            sheet={specSheet}
+            templates={specTemplates}
+            profiles={gradingProfiles}
+          />
+        );
       case "documents":
       default:
         return (

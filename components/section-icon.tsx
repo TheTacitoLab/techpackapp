@@ -5,6 +5,7 @@ import {
   Layers,
   ListTree,
   Paperclip,
+  Ruler,
   Table2,
   Tag,
   type LucideIcon,
@@ -23,6 +24,7 @@ const ICONS: Record<string, LucideIcon> = {
   ListTree,
   Table2,
   Paperclip,
+  Ruler,
 };
 
 export function SectionIcon({
