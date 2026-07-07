@@ -32,8 +32,8 @@
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-  --animate-collapsible-down: collapsible-down 0.2s ease-out;
-  --animate-collapsible-up: collapsible-up 0.2s ease-out;
+  --animate-section-down: section-down 0.2s ease-out;
+  --animate-section-up: section-up 0.2s ease-out;
 }
 
 /*
@@ -155,20 +155,37 @@
   --ring: oklch(0.93 0.21 124);
 }
 
-@keyframes collapsible-down {
+/*
+  Section expand/collapse. Deliberately NOT named `collapsible-down/up`:
+  tw-animate-css ships keyframes under those names and wins the duplicate-name
+  resolution, which would silently discard these.
+
+  The overflow clip lives INSIDE the keyframes (not on the element): while the
+  height animates the content must be clipped, but at rest the section must
+  NOT be a clipping ancestor — `overflow: hidden` on CollapsibleContent would
+  silently break the `position: sticky` toolbar inside Technical Details
+  (a sticky element pins to its nearest scroll container, and overflow:hidden
+  creates one that never scrolls). Animation styles win during playback and
+  revert when it ends, giving clip-while-animating, sticky-at-rest.
+*/
+@keyframes section-down {
   from {
     height: 0;
+    overflow: hidden;
   }
   to {
     height: var(--radix-collapsible-content-height);
+    overflow: hidden;
   }
 }
-@keyframes collapsible-up {
+@keyframes section-up {
   from {
     height: var(--radix-collapsible-content-height);
+    overflow: hidden;
   }
   to {
     height: 0;
+    overflow: hidden;
   }
 }
 

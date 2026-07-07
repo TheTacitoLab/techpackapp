@@ -66,14 +66,19 @@ export function CollapsibleSection({
   );
   const open = hydrated ? (storedOpen ?? defaultOpen) : defaultOpen;
 
+  // No `overflow-hidden` on the root or the content: a clipping ancestor
+  // would break the sticky toolbar inside Technical Details (sticky pins to
+  // the nearest scroll container, which overflow:hidden creates). The
+  // expand/collapse clip instead lives inside the animation keyframes
+  // (globals.css), and the trigger rounds its own corners to match the card.
   return (
     <Collapsible
       id={`section-${sectionKey}`}
       open={open}
       onOpenChange={(next) => setSectionOpen(sectionKey, next)}
-      className="bg-card shadow-card overflow-hidden rounded-xl"
+      className="bg-card shadow-card rounded-xl"
     >
-      <CollapsibleTrigger className="group hover:bg-accent/50 focus-visible:ring-ring flex h-14 w-full items-center gap-3 px-5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset">
+      <CollapsibleTrigger className="group hover:bg-accent/50 focus-visible:ring-ring flex h-14 w-full items-center gap-3 rounded-t-xl px-5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset data-[state=closed]:rounded-b-xl">
         <StatusIndicator status={status} />
         <span className="text-muted-foreground flex size-5 items-center justify-center [&_svg]:size-4">
           {icon}
@@ -81,7 +86,7 @@ export function CollapsibleSection({
         <span className="flex-1 text-base font-semibold">{title}</span>
         <ChevronDown className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-180" />
       </CollapsibleTrigger>
-      <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
+      <CollapsibleContent className="data-[state=closed]:animate-section-up data-[state=open]:animate-section-down">
         <div className="border-border border-t px-5 py-5">{children}</div>
       </CollapsibleContent>
     </Collapsible>

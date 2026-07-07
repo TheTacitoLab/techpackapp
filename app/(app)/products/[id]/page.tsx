@@ -9,8 +9,8 @@ import { CollapsibleSection } from "@/components/collapsible-section";
 import { IdentitySection } from "@/components/identity-section";
 import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
-import { ProgressTracker } from "@/components/progress-tracker";
 import { SectionIcon } from "@/components/section-icon";
+import { Progress } from "@/components/ui/progress";
 import { getWorkspaceLibrary } from "@/lib/library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -243,7 +243,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
         );
       case "bom":
         return <BomTable annotations={bomAnnotations} />;
-      case "branding":
       case "grading":
       case "documents":
       default:
@@ -255,15 +254,26 @@ export default async function ProductDetailPage({ params }: PageProps) {
     }
   }
 
+  // Header progress readout — same numbers ProgressTracker derives, but the
+  // compact one-row header needs its own presentation (short fixed bar +
+  // a label that condenses to "1/6" if the row ever gets tight).
+  const completedCount = statuses.filter((s) => s === "complete").length;
+  const progressPercentage =
+    statuses.length === 0
+      ? 0
+      : Math.round((completedCount / statuses.length) * 100);
+
   return (
     <div className="flex flex-col">
-      {/* Sticky workspace header: compact breadcrumb bar + slim progress row.
-          Stays pinned so the product name, labels, status, and progress remain
-          visible while scrolling through long tech-pack sections. */}
-      <div className="bg-background border-border sticky top-0 z-10 -mx-6 -mt-6 border-b">
-        {/* Compact header bar — single line on desktop */}
-        <div className="flex h-14 items-center justify-between gap-4 px-6">
-          <nav className="text-muted-foreground flex min-w-0 items-center gap-1.5 overflow-hidden text-[13px] whitespace-nowrap">
+      {/* Sticky workspace header — ONE compact row in three zones divided by
+          hairlines: breadcrumb (left) · progress (centre) · labels + status
+          (right). Stays pinned (z-20) while the sections scroll under it; the
+          Technical Details summary strip sticks directly below at top-12
+          (= this header's h-12), so the two stack instead of colliding. */}
+      <div className="bg-background border-border sticky top-0 z-20 -mx-6 -mt-6 border-b">
+        <div className="@container flex h-12 items-center gap-4 px-6">
+          {/* Left zone: breadcrumb */}
+          <nav className="text-muted-foreground flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-[13px] whitespace-nowrap">
             <Link
               href="/products"
               className="hover:text-foreground shrink-0 transition-colors"
@@ -296,6 +306,29 @@ export default async function ProductDetailPage({ params }: PageProps) {
             </span>
           </nav>
 
+          <span aria-hidden className="bg-border h-5 w-px shrink-0" />
+
+          {/* Centre zone: progress. The bar condenses below @3xl (48rem of
+              header width) so the row degrades gracefully instead of
+              overflowing. */}
+          <div className="flex shrink-0 items-center gap-3">
+            <Progress
+              value={progressPercentage}
+              className="w-24 @3xl:w-40"
+            />
+            <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
+              <span className="hidden @3xl:inline">
+                {completedCount} of {statuses.length} sections complete
+              </span>
+              <span className="@3xl:hidden">
+                {completedCount}/{statuses.length}
+              </span>
+            </span>
+          </div>
+
+          <span aria-hidden className="bg-border h-5 w-px shrink-0" />
+
+          {/* Right zone: labels + status */}
           <div className="flex shrink-0 items-center gap-3">
             <ProductLabels
               productId={product.id}
@@ -307,11 +340,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
               currentStatus={product.status}
             />
           </div>
-        </div>
-
-        {/* Slim progress row */}
-        <div className="flex h-8 items-center px-6 pb-1.5">
-          <ProgressTracker statuses={statuses} className="w-full" />
         </div>
       </div>
 

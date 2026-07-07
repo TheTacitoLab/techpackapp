@@ -193,13 +193,22 @@ export function PageOverview({
         </div>
       ) : (
         <div className="space-y-4">
-          <SummaryStrip
-            pages={pages}
-            canPreview={firstExportablePageId !== null}
-            onPreviewPdf={() =>
-              firstExportablePageId && openPreview(firstExportablePageId)
-            }
-          />
+          {/* The canvas toolbar sticks DIRECTLY BELOW the product header while
+              the page grid scrolls: top-12 = the header's h-12, z-10 < the
+              header's z-20, so the two stack — never overlap. Negative
+              margins stretch it over the card's p-4 so cards sliding
+              underneath are fully covered by its opaque card background; it
+              stays inside this card's box, so it scrolls away with the
+              section once the section's bottom passes it. */}
+          <div className="bg-card border-border/70 sticky top-12 z-10 -mx-4 -mt-4 rounded-t-xl border-b px-4 pt-4 pb-3">
+            <SummaryStrip
+              pages={pages}
+              canPreview={firstExportablePageId !== null}
+              onPreviewPdf={() =>
+                firstExportablePageId && openPreview(firstExportablePageId)
+              }
+            />
+          </div>
           {/* Fixed 3 columns: the app shell floors the layout at 1280px, so a
               responsive breakpoint below that can never genuinely fire. */}
           <div className="grid grid-cols-3 gap-4">

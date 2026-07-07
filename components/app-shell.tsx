@@ -158,15 +158,20 @@ export function AppShell({
         </div>
       </aside>
 
-      {/* The one scrolling region for page content. */}
+      {/* The one scrolling region for page content. The page padding lives on
+          an INNER wrapper, not on <main> itself: Chromium insets a sticky
+          child's constraint rectangle by its scroll container's padding, so
+          padding here would make every `sticky top-0` inside pin 24px below
+          the pane's visual top — with scrolled content showing through the
+          band above it (the product-header/canvas-toolbar overlap bug). */}
       <main
         ref={mainRef}
         onScroll={(e) =>
           scrollPositions.current.set(pathname, e.currentTarget.scrollTop)
         }
-        className="min-w-0 flex-1 overflow-y-auto p-6"
+        className="min-w-0 flex-1 overflow-y-auto"
       >
-        {children}
+        <div className="p-6">{children}</div>
       </main>
     </div>
   );
