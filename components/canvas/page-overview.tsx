@@ -175,7 +175,7 @@ export function PageOverview({
                 Add your first page
               </span>
               <span className="text-muted-foreground block max-w-md text-sm">
-                Upload your design and start pinning — colours, fabrics,
+                Upload your design and start pinning, colours, fabrics,
                 measurements, construction and branding, right on the garment.
               </span>
             </span>
@@ -186,7 +186,7 @@ export function PageOverview({
           </button>
           {assets.length === 0 && (
             <p className="text-muted-foreground text-center text-xs">
-              Tip: upload your garment images in the Asset Upload section first —
+              Tip: upload your garment images in the Asset Upload section first,
               you&apos;ll place them onto pages here.
             </p>
           )}

@@ -95,7 +95,7 @@ export function SlotNameEditor({
         setEditing(true);
       }}
       onPointerDown={(e) => e.stopPropagation()}
-      title="Click to name this view — appears on the PDF"
+      title="Click to name this view, appears on the PDF"
       className={cn(
         "flex max-w-[150px] items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors",
         named

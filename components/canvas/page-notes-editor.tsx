@@ -104,7 +104,7 @@ export function PageNotesEditor({
   return (
     <div className="space-y-1.5">
       <Label htmlFor={`page-notes-${pageId}`} className="text-xs">
-        Page notes — appears on every layer&apos;s PDF page
+        Page notes, appears on every layer&apos;s PDF page
       </Label>
       <Textarea
         id={`page-notes-${pageId}`}
@@ -121,7 +121,7 @@ export function PageNotesEditor({
             e.currentTarget.blur();
           }
         }}
-        placeholder="e.g. Wash before measuring — all tolerances ±0.5cm unless pinned"
+        placeholder="e.g. Wash before measuring, all tolerances ±0.5cm unless pinned"
         className="min-h-16"
       />
     </div>

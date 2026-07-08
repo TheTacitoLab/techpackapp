@@ -2059,7 +2059,7 @@ function AnnotationSlot({
             <AlertDialogTitle>Unlock this image?</AlertDialogTitle>
             <AlertDialogDescription>
               This slot has annotations. Re-framing the image may move them out
-              of position — you can drag them back into place afterwards.
+              of position, you can drag them back into place afterwards.
               Unlock anyway?
             </AlertDialogDescription>
           </AlertDialogHeader>

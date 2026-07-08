@@ -2,7 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronRight, MoreHorizontal, Plus, Ruler } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  FilePlus2,
+  FileText,
+  MoreHorizontal,
+  Plus,
+  Ruler,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -66,9 +74,25 @@ export function SizeSpecificationsSection({
   const router = useRouter();
   const [isWorking, startWorking] = useTransition();
   const [openSheetId, setOpenSheetId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  // The create flow's first step (Tweak 1): "fork" shows the two explicit
+  // choices; "template" opens the grouped template list. null = not creating.
+  const [creating, setCreating] = useState<"fork" | "template" | null>(null);
   const [renameTarget, setRenameTarget] = useState<ResolvedSpecSheet | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ResolvedSpecSheet | null>(null);
+
+  /** Create a sheet (from a template, or blank when templateId is null) and open it. */
+  function createSheet(templateId: string | null) {
+    startWorking(async () => {
+      try {
+        const { id } = await createSpecSheet(productId, templateId);
+        setCreating(null);
+        setOpenSheetId(id);
+        router.refresh();
+      } catch {
+        toast.error("Could not create the spec sheet.");
+      }
+    });
+  }
 
   const openSheet = openSheetId
     ? sheets.find((s) => s.id === openSheetId) ?? null
@@ -96,37 +120,75 @@ export function SizeSpecificationsSection({
     );
   }
 
-  // ---- Creating a new sheet → step 1 (template) -----------------------------
+  // ---- Creating a new sheet → the two-choice fork (Tweak 1) ------------------
 
-  if (creating) {
+  if (creating === "fork") {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div className="space-y-0.5">
-            <h3 className="text-base font-semibold">Choose or create the template</h3>
+            <h3 className="text-base font-semibold">Create a Spec Sheet</h3>
             <p className="text-muted-foreground text-sm">
-              Start from a garment template, or build your own measurement list.
+              Start from a ready-made template, or build your own from scratch.
             </p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setCreating(false)} disabled={isWorking}>
+          <Button variant="ghost" size="sm" onClick={() => setCreating(null)} disabled={isWorking}>
             Cancel
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            disabled={isWorking}
+            onClick={() => setCreating("template")}
+            className="bg-card hover:ring-brand/40 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-shadow hover:ring-2 disabled:opacity-60"
+          >
+            <span className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-full">
+              <FileText className="size-5" />
+            </span>
+            <span className="text-sm font-semibold">Choose a Spec Template</span>
+            <span className="text-muted-foreground text-xs">
+              Pick from ready-made garment templates with the measurements built in.
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={isWorking}
+            onClick={() => createSheet(null)}
+            className="bg-card hover:ring-brand/40 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-shadow hover:ring-2 disabled:opacity-60"
+          >
+            <span className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-full">
+              <FilePlus2 className="size-5" />
+            </span>
+            <span className="text-sm font-semibold">Build Your Own (Start Blank)</span>
+            <span className="text-muted-foreground text-xs">
+              Start from an empty sheet and add your own measurements one by one.
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (creating === "template") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <h3 className="text-base font-semibold">Choose a Spec Template</h3>
+            <p className="text-muted-foreground text-sm">
+              Pick a garment template to start from.
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setCreating("fork")} disabled={isWorking}>
+            Back
           </Button>
         </div>
         <SpecTemplatePicker
           templates={templates}
           disabled={isWorking}
-          onPick={(templateId) => {
-            startWorking(async () => {
-              try {
-                const { id } = await createSpecSheet(productId, templateId);
-                setCreating(false);
-                setOpenSheetId(id);
-                router.refresh();
-              } catch {
-                toast.error("Could not create the spec sheet.");
-              }
-            });
-          }}
+          showBlankOption={false}
+          onPick={(templateId) => createSheet(templateId)}
         />
       </div>
     );
@@ -143,11 +205,11 @@ export function SizeSpecificationsSection({
         <div className="space-y-1">
           <p className="text-sm font-medium">No Spec Sheets yet</p>
           <p className="text-muted-foreground max-w-sm text-sm">
-            A Spec Sheet holds the graded measurements for one size run — add a
+            A Spec Sheet holds the graded measurements for one size run, add a
             Youth, Men&rsquo;s and Women&rsquo;s version if you need them.
           </p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setCreating(true)}>
+        <Button size="sm" className="gap-1.5" onClick={() => setCreating("fork")}>
           <Plus className="size-3.5" />
           Create your first Spec Sheet
         </Button>
@@ -172,7 +234,7 @@ export function SizeSpecificationsSection({
         ))}
       </div>
 
-      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreating(true)}>
+      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setCreating("fork")}>
         <Plus className="size-3.5" />
         Add Another Size Spec
       </Button>

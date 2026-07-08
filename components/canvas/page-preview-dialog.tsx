@@ -36,7 +36,7 @@ export function PagePreviewDialog({
         <DialogHeader>
           <DialogTitle>Preview page</DialogTitle>
           <DialogDescription>
-            Exactly what this page exports to PDF — all layers composed,
+            Exactly what this page exports to PDF, all layers composed,
             read-only. Framing, pins and spacing match the export because both
             use the same layout.
           </DialogDescription>

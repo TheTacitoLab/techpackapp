@@ -26,7 +26,7 @@ export const DEMOGRAPHIC_OPTIONS: readonly DemographicOption[] = [
   {
     value: "youth",
     label: "Youth Unisex",
-    description: "Kids' sizing, YXXS–YXL — lengths grade too.",
+    description: "Kids' sizing, YXXS–YXL, lengths grade too.",
   },
   {
     value: "mens",
@@ -36,7 +36,7 @@ export const DEMOGRAPHIC_OPTIONS: readonly DemographicOption[] = [
   {
     value: "womens",
     label: "Women's",
-    description: "Adult women's — alpha (XS–6XL) or numeric (0, 2, 4…).",
+    description: "Adult women's, alpha (XS–6XL) or numeric (0, 2, 4…).",
   },
   {
     value: "custom",

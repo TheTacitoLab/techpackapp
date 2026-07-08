@@ -33,7 +33,7 @@ const STEPS: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Layers,
     title: "Layers organise your annotations",
-    body: "The factory sees them grouped by layer in the page's callout column — colourways, fabrics, measurements, construction, branding.",
+    body: "The factory sees them grouped by layer in the page's callout column, colourways, fabrics, measurements, construction, branding.",
   },
   {
     icon: ListOrdered,
@@ -48,7 +48,7 @@ const STEPS: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Layers3,
     title: "Preview with “All layers”",
-    body: "Switch to All layers to see every pin on the page at once — exactly what the PDF will show.",
+    body: "Switch to All layers to see every pin on the page at once, exactly what the PDF will show.",
   },
   {
     icon: StickyNote,

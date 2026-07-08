@@ -26,6 +26,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { demographicLabel } from "@/components/spec/spec-demographics";
 import { normalizeSizeLabel, roundTo1dp } from "@/lib/spec-grading";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
@@ -230,6 +231,31 @@ function dedupeSizeLabels(labels: readonly string[]): string[] {
   return result;
 }
 
+const MAX_SHEET_NAME = 80;
+
+/**
+ * Tweak 4 — a Spec Sheet's auto-name: "{Product title} - {Size category}"
+ * (e.g. "ERSKEN Hybrid Hoodie - Men's"; normal hyphen, spaces around it).
+ */
+function autoSheetName(productName: string, demographic: SpecDemographic): string {
+  return `${productName} - ${demographicLabel(demographic)}`.slice(0, MAX_SHEET_NAME);
+}
+
+/**
+ * Whether the sheet's current name is a system default we may overwrite when the
+ * demographic changes: unset, the template name it seeded from, or a previously
+ * auto-generated name for any demographic. A name the user typed themselves is
+ * left alone so the auto-name never clobbers a manual override.
+ */
+function isDefaultSheetName(
+  current: string | null,
+  templateName: string | null,
+  productName: string,
+): boolean {
+  if (!current || current === templateName) return true;
+  return DEMOGRAPHICS.some((d) => autoSheetName(productName, d) === current);
+}
+
 /** Copy a template's POMs into product-owned sheet rows. */
 async function copyTemplateRows(
   supabase: ActionCtx["supabase"],
@@ -366,6 +392,19 @@ export async function setSpecSizeRun(
     runKeys.has(normalizeSizeLabel(s)),
   );
 
+  // Tweak 4 — auto-name the sheet "{Product title} - {Size category}" once the
+  // demographic is known, but only while the name is still a system default;
+  // a name the user typed is preserved.
+  const { data: product } = await supabase
+    .from("products")
+    .select("name")
+    .eq("id", sheet.product_id)
+    .single();
+  const nextName =
+    product?.name && isDefaultSheetName(sheet.name, sheet.template_name, product.name)
+      ? autoSheetName(product.name, parsed.demographic)
+      : sheet.name;
+
   const { error } = await supabase
     .from("product_spec_sheets")
     .update({
@@ -374,6 +413,7 @@ export async function setSpecSizeRun(
       size_run: sizeRun,
       sample_sizes: nextSamples,
       sample_size_label: nextSamples[0] ?? null,
+      name: nextName,
       // Changing the columns re-opens the sheet — re-confirm to complete again.
       is_complete: false,
     })

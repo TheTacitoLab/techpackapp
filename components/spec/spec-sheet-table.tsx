@@ -275,7 +275,7 @@ export function SpecSheetTable({
                           null
                         }
                         onCommit={(value) => onSaveCell(row.id, label, value)}
-                        ariaLabel={`${row.name} — ${label}`}
+                        ariaLabel={`${row.name}, ${label}`}
                       />
                     </TableCell>
                   );

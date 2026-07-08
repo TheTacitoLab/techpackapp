@@ -360,7 +360,7 @@ export function ConstructionPinEditor(
             id="cpe-note"
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
-            placeholder="e.g. Reinforce here — match grain direction across seam"
+            placeholder="e.g. Reinforce here, match grain direction across seam"
             className="min-h-24"
           />
         </div>

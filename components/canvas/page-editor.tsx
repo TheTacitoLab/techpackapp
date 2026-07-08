@@ -335,7 +335,7 @@ export function PageEditor({
           type="button"
           onClick={onViewAllLayers}
           aria-pressed={viewAllLayers}
-          title="Preview every layer at once — exactly what the PDF page will show"
+          title="Preview every layer at once, exactly what the PDF page will show"
           className={cn(
             "flex h-8 shrink-0 items-center gap-1.5 rounded-lg border-2 border-dashed px-2 text-xs transition-colors",
             viewAllLayers

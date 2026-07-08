@@ -396,7 +396,7 @@ export function CoverPage({ data }: { data: PdfCoverData }) {
                     <Text style={{ fontFamily: "Helvetica-Bold" }}>
                       {fabric.label}
                     </Text>
-                    {" — "}
+                    {", "}
                   </>
                 ) : null}
                 {fabric.name}

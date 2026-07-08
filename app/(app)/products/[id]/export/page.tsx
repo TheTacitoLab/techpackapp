@@ -35,7 +35,7 @@ export default async function ExportHubPage({ params }: PageProps) {
         <FileOutput className="size-7" />
       </span>
       <div className="space-y-1">
-        <h1 className="text-lg font-semibold">Export Hub — coming soon</h1>
+        <h1 className="text-lg font-semibold">Export Hub, coming soon</h1>
         <p className="text-muted-foreground max-w-md text-sm">
           Per-page selection, page thumbnails, renaming and Excel export for{" "}
           <span className="text-foreground font-medium">{product.name}</span>{" "}

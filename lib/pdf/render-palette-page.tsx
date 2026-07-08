@@ -125,8 +125,8 @@ export function PalettePage({ data }: { data: PdfPalettePageData }) {
                 : null,
             ]
               .filter((v): v is string => !!v)
-              .join(" · ")}{" "}
-            — see the online tech pack for the full palette.
+              .join(" · ")},{" "}
+            see the online tech pack for the full palette.
           </Text>
         )}
       </View>

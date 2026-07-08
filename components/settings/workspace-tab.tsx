@@ -20,19 +20,19 @@ export function WorkspaceTab() {
 
       <SectionCard title="Team Members" icon={<Users />}>
         <p className="text-muted-foreground text-sm">
-          Team management — coming in Phase 3.
+          Team management, coming in Phase 3.
         </p>
       </SectionCard>
 
       <SectionCard title="Billing" icon={<CreditCard />}>
         <p className="text-muted-foreground text-sm">
-          Billing and subscription — coming in Phase 3.
+          Billing and subscription, coming in Phase 3.
         </p>
       </SectionCard>
 
       <SectionCard title="Export Preferences" icon={<Download />}>
         <p className="text-muted-foreground text-sm">
-          PDF and export configuration — coming in Phase 3.
+          PDF and export configuration, coming in Phase 3.
         </p>
       </SectionCard>
     </>

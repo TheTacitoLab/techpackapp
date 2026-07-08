@@ -36,10 +36,15 @@ export function SpecTemplatePicker({
   templates,
   onPick,
   disabled = false,
+  showBlankOption = true,
 }: {
   templates: ResolvedSpecTemplate[];
   onPick: (templateId: string | null) => void;
   disabled?: boolean;
+  // The create flow now forks "template vs blank" up front (Tweak 1), so the
+  // template list there hides its own "Start blank" card. Other callers (the
+  // in-flow "change template" dialog) keep it.
+  showBlankOption?: boolean;
 }) {
   // Which card was clicked, so only it shows the pending state.
   const [pickedId, setPickedId] = useState<string | null | undefined>(undefined);
@@ -100,27 +105,29 @@ export function SpecTemplatePicker({
         </div>
       ))}
 
-      <div className="border-t pt-4">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => pick(null)}
-          className={cn(
-            "bg-card hover:ring-brand/40 flex w-full items-center gap-3 rounded-lg border border-dashed p-3 text-left transition-shadow hover:ring-2 disabled:opacity-60",
-            pickedId === null && disabled && "ring-brand ring-2",
-          )}
-        >
-          <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full">
-            <FilePlus2 className="size-4" />
-          </span>
-          <span>
-            <span className="block text-sm font-medium">Start blank</span>
-            <span className="text-muted-foreground block text-xs">
-              An empty Spec Sheet — add your own measurements one by one.
+      {showBlankOption && (
+        <div className="border-t pt-4">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => pick(null)}
+            className={cn(
+              "bg-card hover:ring-brand/40 flex w-full items-center gap-3 rounded-lg border border-dashed p-3 text-left transition-shadow hover:ring-2 disabled:opacity-60",
+              pickedId === null && disabled && "ring-brand ring-2",
+            )}
+          >
+            <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full">
+              <FilePlus2 className="size-4" />
             </span>
-          </span>
-        </button>
-      </div>
+            <span>
+              <span className="block text-sm font-medium">Start blank</span>
+              <span className="text-muted-foreground block text-xs">
+                An empty Spec Sheet, add your own measurements one by one.
+              </span>
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -821,7 +821,7 @@ function CalloutColumn({
       })}
       {hidden > 0 && (
         <Text style={{ fontSize: 6.5, color: MUTED, marginTop: 2 }}>
-          +{hidden} more — see the online tech pack for the full list.
+          +{hidden} more, see the online tech pack for the full list.
         </Text>
       )}
     </View>
@@ -953,7 +953,7 @@ export function Footer({ data }: { data: PdfFooterData }) {
       }}
     >
       <Text style={{ fontSize: 6.5, color: MUTED }}>
-        Confidential — property of {data.brandName}. For production purposes only.
+        Confidential, property of {data.brandName}. For production purposes only.
       </Text>
       <View style={{ flexDirection: "row" }}>
         <Link src={shareHref} style={{ fontSize: 6.5, color: LINK_BLUE }}>
@@ -1036,7 +1036,7 @@ export function TechPackCanvasPage({ data }: { data: PdfPageData }) {
 export function TechPackPage({ data }: { data: PdfPageData }) {
   return (
     <Document
-      title={`${data.styleName} — Technical Details`}
+      title={`${data.styleName}, Technical Details`}
       author={PDF_BRAND_NAME}
     >
       <TechPackCanvasPage data={data} />

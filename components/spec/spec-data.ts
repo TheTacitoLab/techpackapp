@@ -147,55 +147,55 @@ export const CATEGORY_CHOICES: readonly CategoryChoice[] = [
     value: "primary_girth",
     gradeCategory: "primary_girth",
     subKind: null,
-    label: "Width — main (chest, waist, hip, hem)",
+    label: "Width, main (chest, waist, hip, hem)",
   },
   {
     value: "secondary_girth",
     gradeCategory: "secondary_girth",
     subKind: null,
-    label: "Width — secondary (thigh, bicep, armhole, knee)",
+    label: "Width, secondary (thigh, bicep, armhole, knee)",
   },
   {
     value: "body_length",
     gradeCategory: "body_length",
     subKind: null,
-    label: "Length — body (HPS to hem, outseam)",
+    label: "Length, body (HPS to hem, outseam)",
   },
   {
     value: "limb_length",
     gradeCategory: "limb_length",
     subKind: null,
-    label: "Length — sleeve",
+    label: "Length, sleeve",
   },
   {
     value: "small:shoulder",
     gradeCategory: "small",
     subKind: "shoulder",
-    label: "Small point — shoulder",
+    label: "Small point, shoulder",
   },
   {
     value: "small:neck",
     gradeCategory: "small",
     subKind: "neck",
-    label: "Small point — neck",
+    label: "Small point, neck",
   },
   {
     value: "small:cuff_opening",
     gradeCategory: "small",
     subKind: "cuff_opening",
-    label: "Small point — cuff / leg opening",
+    label: "Small point, cuff / leg opening",
   },
   {
     value: "small:rise",
     gradeCategory: "small",
     subKind: "rise",
-    label: "Small point — rise",
+    label: "Small point, rise",
   },
   {
     value: "small:strap",
     gradeCategory: "small",
     subKind: "strap",
-    label: "Small point — strap",
+    label: "Small point, strap",
   },
   {
     value: "fixed:inseam",
@@ -207,7 +207,7 @@ export const CATEGORY_CHOICES: readonly CategoryChoice[] = [
     value: "fixed",
     gradeCategory: "fixed",
     subKind: null,
-    label: "Fixed — same on every size",
+    label: "Fixed, same on every size",
   },
 ];
 
@@ -268,10 +268,10 @@ export const INCREMENT_FIELDS: readonly {
   label: string;
   placeholder: string;
 }[] = [
-  { key: "primary_girth", label: "Width — main (chest, waist, hip, hem)", placeholder: "2.5" },
-  { key: "secondary_girth", label: "Width — secondary (thigh, bicep, armhole)", placeholder: "1.2" },
-  { key: "body_length", label: "Length — body", placeholder: "1.5" },
-  { key: "limb_length", label: "Length — sleeve", placeholder: "1.2" },
+  { key: "primary_girth", label: "Width, main (chest, waist, hip, hem)", placeholder: "2.5" },
+  { key: "secondary_girth", label: "Width, secondary (thigh, bicep, armhole)", placeholder: "1.2" },
+  { key: "body_length", label: "Length, body", placeholder: "1.5" },
+  { key: "limb_length", label: "Length, sleeve", placeholder: "1.2" },
   { key: "small_shoulder", label: "Shoulder", placeholder: "1.2" },
   { key: "small_neck", label: "Neck", placeholder: "0.6" },
   { key: "small_cuff_opening", label: "Cuff / leg opening", placeholder: "0.6" },
@@ -286,10 +286,10 @@ export const TOLERANCE_FIELDS: readonly {
   placeholderKnit: string;
   placeholderWoven: string;
 }[] = [
-  { key: "primary_girth", label: "Width — main", placeholderKnit: "1.2", placeholderWoven: "0.6" },
-  { key: "secondary_girth", label: "Width — secondary", placeholderKnit: "1.0", placeholderWoven: "0.6" },
-  { key: "body_length", label: "Length — body", placeholderKnit: "1.0", placeholderWoven: "1.0" },
-  { key: "limb_length", label: "Length — sleeve / inseam", placeholderKnit: "1.0", placeholderWoven: "1.0" },
+  { key: "primary_girth", label: "Width, main", placeholderKnit: "1.2", placeholderWoven: "0.6" },
+  { key: "secondary_girth", label: "Width, secondary", placeholderKnit: "1.0", placeholderWoven: "0.6" },
+  { key: "body_length", label: "Length, body", placeholderKnit: "1.0", placeholderWoven: "1.0" },
+  { key: "limb_length", label: "Length, sleeve / inseam", placeholderKnit: "1.0", placeholderWoven: "1.0" },
   { key: "small", label: "Small points", placeholderKnit: "0.5", placeholderWoven: "0.5" },
   { key: "fixed", label: "Fixed points", placeholderKnit: "0.5", placeholderWoven: "0.5" },
 ];

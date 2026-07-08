@@ -534,7 +534,7 @@ export function AnnotationPin({
           </TooltipTrigger>
           <TooltipContent side="top">
             <span className="font-semibold">{annotation.reference_code}</span>
-            {" — "}
+            {", "}
             {summary.title}
             {summary.detail ? ` · ${summary.detail}` : ""}
           </TooltipContent>

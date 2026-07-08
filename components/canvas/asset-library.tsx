@@ -151,7 +151,7 @@ function AssetTile({
           aria-label={
             isHero ? `Remove ${asset.name} as hero` : `Set ${asset.name} as hero`
           }
-          title={isHero ? "Remove as hero" : "Set as hero — the PDF cover image"}
+          title={isHero ? "Remove as hero" : "Set as hero, the PDF cover image"}
           className={
             isHero
               ? "absolute top-1.5 right-9 size-7 shadow-sm"
@@ -317,7 +317,7 @@ function RenameDialog({
         <DialogHeader>
           <DialogTitle>Rename asset</DialogTitle>
           <DialogDescription>
-            Give this image a clear name — it&apos;s how you&apos;ll find it when
+            Give this image a clear name, it&apos;s how you&apos;ll find it when
             filling canvas slots.
           </DialogDescription>
         </DialogHeader>
@@ -560,7 +560,7 @@ export function AssetLibrary({
           <EmptyState
             icon={ImageIcon}
             title="No assets yet"
-            description="Upload your garment sketches, references and close-up photos — they'll be available across all canvas pages."
+            description="Upload your garment sketches, references and close-up photos, they'll be available across all canvas pages."
             action={
               <Button onClick={() => inputRef.current?.click()}>
                 <Upload className="size-4" />

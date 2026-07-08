@@ -267,7 +267,7 @@ export function GradingProfileDialog({
           </DialogTitle>
           <DialogDescription>
             How much each kind of measurement changes per size step, in cm.
-            The defaults are industry-typical — adjust to your fit block.
+            The defaults are industry-typical, adjust to your fit block.
           </DialogDescription>
         </DialogHeader>
 
@@ -314,7 +314,7 @@ export function GradingProfileDialog({
 
           <div className="space-y-1.5">
             <Label className="text-xs" htmlFor="gp-break">
-              Break size (bigger jumps from this size up — leave empty for none)
+              Break size (bigger jumps from this size up, leave empty for none)
             </Label>
             <Input
               id="gp-break"
@@ -333,7 +333,7 @@ export function GradingProfileDialog({
             {flagged.size > 0 && (
               <p className="text-xs text-amber-600">
                 The amber-marked increments came out negative or inconsistent
-                across your entered measurements — double-check them before
+                across your entered measurements, double-check them before
                 saving.
               </p>
             )}

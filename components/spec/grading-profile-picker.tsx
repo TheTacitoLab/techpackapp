@@ -125,7 +125,7 @@ export function GradingProfilePicker({
             className="gap-1.5"
             disabled={disabled || duplicating}
             onClick={handleCustomise}
-            title="Seeded profiles are read-only — customise a copy"
+            title="Seeded profiles are read-only, customise a copy"
           >
             <Copy className="size-3.5" />
             {duplicating ? "Copying…" : "Customise"}

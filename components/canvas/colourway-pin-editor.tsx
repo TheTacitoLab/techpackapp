@@ -400,7 +400,7 @@ export function ColourwayPinEditor(
         </div>
         {resampleFailed && (
           <p className="text-muted-foreground text-xs">
-            Couldn&apos;t read colour from this image — enter it manually.
+            Couldn&apos;t read colour from this image, enter it manually.
           </p>
         )}
       </div>

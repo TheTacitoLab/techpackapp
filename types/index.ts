@@ -116,7 +116,7 @@ export const MAX_ANNOTATIONS_PER_PAGE = 12;
 export const ANNOTATION_CAP_AMBER_FROM = 10;
 /** Shown (client and server) when a create is blocked by the per-page cap. */
 export const PAGE_ANNOTATION_LIMIT_MESSAGE =
-  "This page has reached 12 annotations — duplicate the page to keep annotating this image.";
+  "This page has reached 12 annotations, duplicate the page to keep annotating this image.";
 
 /**
  * A slot resolved for rendering: the chosen asset (null when the slot is empty)

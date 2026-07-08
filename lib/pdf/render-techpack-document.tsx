@@ -46,7 +46,7 @@ export type TechPackDocumentData = {
 export function TechPackDocument({ data }: { data: TechPackDocumentData }) {
   return (
     <Document
-      title={`${data.cover.productName} — Tech Pack`}
+      title={`${data.cover.productName}, Tech Pack`}
       author={PDF_BRAND_NAME}
     >
       <CoverPage data={data.cover} />

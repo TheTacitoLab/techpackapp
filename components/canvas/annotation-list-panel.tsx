@@ -82,7 +82,7 @@ export function AnnotationListPanel({
       <div className="flex-1 overflow-y-auto p-2">
         {isEmpty ? (
           <p className="text-muted-foreground p-3 text-xs">
-            No {layer.label.toLowerCase()} annotations yet — click the drawing
+            No {layer.label.toLowerCase()} annotations yet, click the drawing
             to add one.
           </p>
         ) : grouped ? (

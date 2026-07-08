@@ -51,7 +51,7 @@ export function BomTable({ annotations }: { annotations: CanvasAnnotation[] }) {
           <ListTree className="size-6" />
         </span>
         <p className="text-muted-foreground max-w-sm text-sm">
-          No materials annotated yet — add Fabrics &amp; Trim pins in{" "}
+          No materials annotated yet, add Fabrics &amp; Trim pins in{" "}
           <Link
             href="#section-technical_details"
             className="text-foreground font-medium underline underline-offset-2"

@@ -41,6 +41,12 @@ export function SpecSizeRunStep({
   const [demographic, setDemographic] = useState<SpecDemographic>(
     sheet.demographic,
   );
+  // Progressive reveal (Tweak 2): show only the demographic choices until one is
+  // picked, then reveal its size options. A sheet that already has a run was
+  // configured before, so start revealed.
+  const [hasChosen, setHasChosen] = useState<boolean>(
+    () => (sheet.size_run ?? []).length > 0,
+  );
   const [sizingSystem, setSizingSystem] = useState<SpecSizingSystem>(
     sheet.sizing_system,
   );
@@ -57,6 +63,10 @@ export function SpecSizeRunStep({
   const ladder = ladderFor(demographic, sizingSystem);
 
   function pickDemographic(next: SpecDemographic) {
+    // Reveal the size options even when re-picking the already-selected
+    // demographic (the sheet's default is 'custom', so a first tap on Custom
+    // must still open its entry).
+    setHasChosen(true);
     if (next === demographic) return;
     setDemographic(next);
     // Fresh ladder → default to every size ticked (users usually want the whole
@@ -133,7 +143,7 @@ export function SpecSizeRunStep({
               onClick={() => pickDemographic(opt.value)}
               className={cn(
                 "bg-card flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-shadow hover:ring-2",
-                demographic === opt.value
+                hasChosen && demographic === opt.value
                   ? "border-brand ring-brand ring-2"
                   : "hover:ring-brand/40",
               )}
@@ -147,8 +157,8 @@ export function SpecSizeRunStep({
         </div>
       </div>
 
-      {/* Sizing system (women's only) */}
-      {hasSizingSystemChoice(demographic) && (
+      {/* Sizing system (women's only) — revealed after a demographic is picked */}
+      {hasChosen && hasSizingSystemChoice(demographic) && (
         <div className="space-y-2">
           <Label className="text-[13px] font-medium">Sizing system</Label>
           <div className="flex gap-2">
@@ -172,8 +182,9 @@ export function SpecSizeRunStep({
         </div>
       )}
 
-      {/* Size ticks / custom entry */}
-      {custom ? (
+      {/* Size ticks / custom entry — revealed after a demographic is picked */}
+      {hasChosen &&
+        (custom ? (
         <div className="space-y-1.5">
           <Label className="text-[13px] font-medium" htmlFor="spec-custom-run">
             Your sizes
@@ -226,20 +237,22 @@ export function SpecSizeRunStep({
             })}
           </div>
         </div>
-      )}
+        ))}
 
       <div className="flex items-center justify-between gap-3 pt-1">
         <Button variant="ghost" onClick={onBack} disabled={busy}>
           Back
         </Button>
-        <span className="flex items-center gap-3">
-          <span className="text-muted-foreground text-xs tabular-nums">
-            {run.length} size{run.length === 1 ? "" : "s"}
+        {hasChosen && (
+          <span className="flex items-center gap-3">
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {run.length} size{run.length === 1 ? "" : "s"}
+            </span>
+            <Button onClick={handleContinue} disabled={busy || run.length === 0}>
+              {busy ? "Saving…" : "Continue"}
+            </Button>
           </span>
-          <Button onClick={handleContinue} disabled={busy || run.length === 0}>
-            {busy ? "Saving…" : "Continue"}
-          </Button>
-        </span>
+        )}
       </div>
     </div>
   );

@@ -547,7 +547,7 @@ export function IdentitySection({
           >
             <div className="space-y-3">
               <p className="text-muted-foreground text-xs">
-                Optional — fill in once you&apos;re working with a factory.
+                Optional, fill in once you&apos;re working with a factory.
               </p>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -743,9 +743,9 @@ export function IdentitySection({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Internal Notes{" "}
+                      Internal Notes,{" "}
                       <span className="text-muted-foreground font-normal">
-                        — Internal only, not included in export
+                        Internal only, not included in export
                       </span>
                     </FormLabel>
                     <FormControl>

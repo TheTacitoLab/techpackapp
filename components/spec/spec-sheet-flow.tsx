@@ -433,7 +433,7 @@ export function SpecSheetFlow({
     );
     if (!detected) {
       toast.error(
-        "Couldn't detect a grade — a graded measurement needs values in at least two sizes.",
+        "Couldn't detect a grade, a graded measurement needs values in at least two sizes.",
       );
       return;
     }
@@ -527,7 +527,13 @@ export function SpecSheetFlow({
       try {
         await setSpecComplete(sheet.id, next);
         router.refresh();
-        if (next) toast.success("Spec Sheet marked complete.");
+        if (next) {
+          toast.success("Spec Sheet marked complete.");
+          // Tweak 3 — completing puts the sheet away: collapse the editor and
+          // return to the Spec Sheet list, where it shows collapsed and
+          // re-openable.
+          onClose();
+        }
       } catch (error) {
         toast.error(
           error instanceof Error && error.message.includes("Finish")
@@ -621,7 +627,7 @@ export function SpecSheetFlow({
       {step === 3 && (
         <StepShell
           title="Select the sample size(s)"
-          hint="The size(s) you physically measured — distinct from the full run."
+          hint="The size(s) you physically measured, distinct from the full run."
         >
           <SpecSampleStep sheet={sheet} onBack={() => setStep(2)} onSaved={() => setStep(4)} />
         </StepShell>
@@ -634,7 +640,7 @@ export function SpecSheetFlow({
             step === 4
               ? `Type the measurements you took off your ${sampleSizes.join(" & ")} sample${sampleSizes.length > 1 ? "s" : ""} into the highlighted column${sampleSizes.length > 1 ? "s" : ""}. Hover each ⓘ for how to measure.`
               : localSettings.mode === "manual"
-                ? "Every cell is editable — fill in the whole sheet."
+                ? "Every cell is editable, fill in the whole sheet."
                 : "Every other size fills in live from your profile. Adjust the sample or profile and it re-grades instantly."
           }
         >
@@ -671,7 +677,7 @@ export function SpecSheetFlow({
                   <Ruler className="size-6" />
                 </span>
                 <p className="text-muted-foreground max-w-sm text-sm">
-                  A blank sheet — add your first measurement to get started.
+                  A blank sheet, add your first measurement to get started.
                 </p>
                 <SpecRowEditor
                   mode="create"
@@ -830,7 +836,7 @@ export function SpecSheetFlow({
           <DialogHeader>
             <DialogTitle>Choose spec template</DialogTitle>
             <DialogDescription>
-              Replaces every measurement row with the new template&rsquo;s — entered
+              Replaces every measurement row with the new template&rsquo;s, entered
               values reset. Your size range, samples and grading are kept.
             </DialogDescription>
           </DialogHeader>
@@ -880,7 +886,7 @@ export function SpecSheetFlow({
           <AlertDialogHeader>
             <AlertDialogTitle>Switch to auto-grading?</AlertDialogTitle>
             <AlertDialogDescription>
-              Auto-grading fills every size from your sample and the profile — your
+              Auto-grading fills every size from your sample and the profile, your
               manual edits to the other size columns will be discarded. The sample
               column(s) are kept.
             </AlertDialogDescription>

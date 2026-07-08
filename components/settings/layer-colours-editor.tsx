@@ -91,7 +91,7 @@ export function LayerColoursEditor() {
       <p className="text-muted-foreground pb-2 text-sm">
         Choose a marker colour for each annotation layer. Pick colours that
         contrast with your typical garment images so markers stay visible, and
-        keep them consistent — these colours appear on every tech pack and in
+        keep them consistent, these colours appear on every tech pack and in
         your PDF exports, so your factory sees the same colours throughout.
       </p>
       <div className="divide-border divide-y">
