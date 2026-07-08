@@ -21,19 +21,26 @@
  * Seeded (global) templates/profiles are read-only by RLS and by the
  * `source = 'workspace'` filters here — duplicateGradingProfile is the
  * supported customisation path, mirroring `duplicateProduct`.
+ *
+ * Change Log: sheet-level spec mutations append an entry via `logChange`
+ * (lib/change-log.ts). Deliberately NOT logged: `setSpecComplete` (completion
+ * marks are workflow meta) and the Grading Profile CRUD (workspace-library
+ * entities, not one product's spec — APPLYING a profile to a sheet IS
+ * logged via setSpecGradingProfile).
  */
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { demographicLabel } from "@/components/spec/spec-demographics";
+import { logChange } from "@/lib/change-log";
+import { recomputeSectionStatus } from "@/lib/section-status";
 import { normalizeSizeLabel, roundTo1dp } from "@/lib/spec-grading";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
 import type {
   GradingProfile,
   ProductSpecRow,
-  SectionStatus,
   SpecDemographic,
   SpecFabricType,
   SpecGradeCategory,
@@ -76,7 +83,10 @@ const SIZING_SYSTEMS = [
 
 const gradeCategorySchema = z.enum(GRADE_CATEGORIES);
 const subKindSchema = z.enum(SUB_KINDS).nullable();
-const fabricTypeSchema = z.enum(["knit", "woven"] as const satisfies readonly SpecFabricType[]);
+const fabricTypeSchema = z.enum([
+  "knit",
+  "woven",
+] as const satisfies readonly SpecFabricType[]);
 const demographicSchema = z.enum(DEMOGRAPHICS);
 const sizingSystemSchema = z.enum(SIZING_SYSTEMS);
 // Size labels: alpha ladders, numeric sizes, or free-entry custom labels. The
@@ -100,8 +110,10 @@ function isValidSubKind(
   gradeCategory: SpecGradeCategory,
   subKind: SpecPomSubKind | null,
 ): boolean {
-  if (gradeCategory === "small") return subKind !== null && subKind !== "inseam";
-  if (gradeCategory === "fixed") return subKind === null || subKind === "inseam";
+  if (gradeCategory === "small")
+    return subKind !== null && subKind !== "inseam";
+  if (gradeCategory === "fixed")
+    return subKind === null || subKind === "inseam";
   return subKind === null;
 }
 
@@ -153,38 +165,26 @@ async function getSheetContext(
 
 /**
  * Recompute the Size Specifications section's status (section_key 'grading')
- * across the product's LIST of Spec Sheets (0037 — a product now holds many):
- * no sheets → not_started; every sheet marked complete → complete; otherwise
- * in_progress. A sheet's own `is_complete` flag (set by "Mark complete", gated
- * on having real data — see setSpecComplete) is the per-sheet truth, so the
- * section rolls those up rather than re-deriving each sheet's completeness here.
+ * across the product's LIST of Spec Sheets: no sheets → not_started; every
+ * sheet marked complete → complete; otherwise in_progress. The derivation
+ * lives in the shared `recomputeSectionStatus` (lib/section-status.ts) since
+ * 0038 — which also honours a DURABLE manual "Mark complete" on the section
+ * banner by never demoting while `completed_manually` is set.
  */
 async function recomputeSpecSectionStatus(
   supabase: ActionCtx["supabase"],
   productId: string,
   workspaceId: string,
 ): Promise<void> {
-  const { data: sheets, error: readError } = await supabase
-    .from("product_spec_sheets")
-    .select("id, is_complete")
-    .eq("product_id", productId)
-    .eq("workspace_id", workspaceId);
+  await recomputeSectionStatus(supabase, productId, workspaceId, "grading");
+}
 
-  // A transient read failure must not silently reset the section to
-  // not_started — leave the last-known status in place until a recompute reads
-  // cleanly (recompute runs on nearly every mutation, so it self-heals).
-  if (readError) return;
-
-  let status: SectionStatus = "not_started";
-  if (sheets && sheets.length > 0) {
-    status = sheets.every((s) => s.is_complete) ? "complete" : "in_progress";
-  }
-
-  await supabase
-    .from("product_sections")
-    .update({ status })
-    .eq("product_id", productId)
-    .eq("section_key", "grading");
+/** The sheet's display name for Change Log descriptions. */
+function sheetDisplayName(sheet: {
+  name: string | null;
+  template_name: string | null;
+}): string {
+  return sheet.name ?? sheet.template_name ?? "Untitled";
 }
 
 /**
@@ -237,8 +237,14 @@ const MAX_SHEET_NAME = 80;
  * Tweak 4 — a Spec Sheet's auto-name: "{Product title} - {Size category}"
  * (e.g. "ERSKEN Hybrid Hoodie - Men's"; normal hyphen, spaces around it).
  */
-function autoSheetName(productName: string, demographic: SpecDemographic): string {
-  return `${productName} - ${demographicLabel(demographic)}`.slice(0, MAX_SHEET_NAME);
+function autoSheetName(
+  productName: string,
+  demographic: SpecDemographic,
+): string {
+  return `${productName} - ${demographicLabel(demographic)}`.slice(
+    0,
+    MAX_SHEET_NAME,
+  );
 }
 
 /**
@@ -272,18 +278,20 @@ async function copyTemplateRows(
 
   if (!poms || poms.length === 0) return;
 
-  const { error: insertError } = await supabase.from("product_spec_rows").insert(
-    poms.map((pom) => ({
-      sheet_id: sheetId,
-      workspace_id: workspaceId,
-      code: pom.code,
-      name: pom.name,
-      how_to_measure: pom.how_to_measure,
-      grade_category: pom.grade_category,
-      sub_kind: pom.sub_kind,
-      sort_order: pom.sort_order,
-    })),
-  );
+  const { error: insertError } = await supabase
+    .from("product_spec_rows")
+    .insert(
+      poms.map((pom) => ({
+        sheet_id: sheetId,
+        workspace_id: workspaceId,
+        code: pom.code,
+        name: pom.name,
+        how_to_measure: pom.how_to_measure,
+        grade_category: pom.grade_category,
+        sub_kind: pom.sub_kind,
+        sort_order: pom.sort_order,
+      })),
+    );
   if (insertError) throw new Error(insertError.message);
 }
 
@@ -354,6 +362,14 @@ export async function createSpecSheet(
   }
 
   await recomputeSpecSectionStatus(supabase, input.productId, workspaceId);
+  await logChange(supabase, {
+    productId: input.productId,
+    workspaceId,
+    area: "specs",
+    description: template
+      ? `Spec Sheet added from the '${template.name}' template`
+      : "Blank Spec Sheet added",
+  });
   revalidatePath(`/products/${input.productId}`);
   return { id: sheet.id };
 }
@@ -401,7 +417,8 @@ export async function setSpecSizeRun(
     .eq("id", sheet.product_id)
     .single();
   const nextName =
-    product?.name && isDefaultSheetName(sheet.name, sheet.template_name, product.name)
+    product?.name &&
+    isDefaultSheetName(sheet.name, sheet.template_name, product.name)
       ? autoSheetName(product.name, parsed.demographic)
       : sheet.name;
 
@@ -422,6 +439,25 @@ export async function setSpecSizeRun(
 
   await pruneValuesOutsideLabels(supabase, sheet.id, sizeRun);
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  // The wizard re-invokes this on every "Continue" — a byte-identical
+  // re-confirmation is not a spec change, so it writes no entry.
+  const runChanged =
+    sheet.demographic !== parsed.demographic ||
+    sheet.sizing_system !== parsed.sizingSystem ||
+    JSON.stringify((sheet.size_run ?? []).map(normalizeSizeLabel)) !==
+      JSON.stringify(sizeRun.map(normalizeSizeLabel));
+  if (runChanged) {
+    await logChange(supabase, {
+      productId: sheet.product_id,
+      workspaceId,
+      area: "specs",
+      description: `Size run set on '${nextName ?? sheetDisplayName(sheet)}' (${
+        sizeRun.length > 0
+          ? `${sizeRun[0]}–${sizeRun[sizeRun.length - 1]}`
+          : "no sizes"
+      })`,
+    });
+  }
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -447,7 +483,9 @@ export async function setSpecSampleSizes(
   const { supabase, workspaceId } = await requireActionContext();
   const sheet = await getSheetContext(supabase, parsed.sheetId, workspaceId);
 
-  const runKeys = new Set((sheet.size_run ?? []).map((l) => normalizeSizeLabel(l)));
+  const runKeys = new Set(
+    (sheet.size_run ?? []).map((l) => normalizeSizeLabel(l)),
+  );
   const next = dedupeSizeLabels(parsed.sampleSizes).filter((s) =>
     runKeys.has(normalizeSizeLabel(s)),
   );
@@ -497,6 +535,18 @@ export async function setSpecSampleSizes(
   if (error) throw new Error(error.message);
 
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  // Same no-change guard as the size-run step — re-confirming isn't a change.
+  const samplesChanged =
+    JSON.stringify(prev.map(normalizeSizeLabel)) !==
+    JSON.stringify(next.map(normalizeSizeLabel));
+  if (samplesChanged) {
+    await logChange(supabase, {
+      productId: sheet.product_id,
+      workspaceId,
+      area: "specs",
+      description: `Sample size set on '${sheetDisplayName(sheet)}' (${next.join(" + ") || "none"})`,
+    });
+  }
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -518,6 +568,15 @@ export async function renameSpecSheet(
     .update({ name: input.name })
     .eq("id", sheet.id);
   if (error) throw new Error(error.message);
+
+  if (sheetDisplayName(sheet) !== input.name) {
+    await logChange(supabase, {
+      productId: sheet.product_id,
+      workspaceId,
+      area: "specs",
+      description: `Spec Sheet '${sheetDisplayName(sheet)}' renamed to '${input.name}'`,
+    });
+  }
 
   revalidatePath(`/products/${sheet.product_id}`);
 }
@@ -603,6 +662,14 @@ export async function changeSpecTemplate(
   }
 
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description: template
+      ? `Template changed to '${template.name}' on '${sheetDisplayName(sheet)}'`
+      : `Template cleared on '${sheetDisplayName(sheet)}'`,
+  });
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -619,6 +686,12 @@ export async function deleteSpecSheet(sheetId: string): Promise<void> {
   if (error) throw new Error(error.message);
 
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description: `Spec Sheet '${sheetDisplayName(sheet)}' deleted`,
+  });
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -635,16 +708,18 @@ export async function setSpecGradingProfile(
   const { supabase, workspaceId } = await requireActionContext();
   const sheet = await getSheetContext(supabase, input.sheetId, workspaceId);
 
+  let profileName: string | null = null;
   if (input.profileId) {
     const { data: profile } = await supabase
       .from("grading_profiles")
-      .select("id")
+      .select("id, name")
       .eq("id", input.profileId)
       .or(
         `and(source.eq.global,is_active.eq.true),and(source.eq.workspace,workspace_id.eq.${workspaceId})`,
       )
       .single();
     if (!profile) throw new Error("Grading profile not found.");
+    profileName = profile.name;
   }
 
   const { error } = await supabase
@@ -659,6 +734,15 @@ export async function setSpecGradingProfile(
   if (error) throw new Error(error.message);
 
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description:
+      profileName !== null
+        ? `Grading profile '${profileName}' applied to '${sheetDisplayName(sheet)}'`
+        : `Grading profile cleared on '${sheetDisplayName(sheet)}'`,
+  });
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -678,6 +762,15 @@ export async function setSpecFabricType(
     .update({ fabric_type: input.fabricType })
     .eq("id", sheet.id);
   if (error) throw new Error(error.message);
+
+  if (sheet.fabric_type !== input.fabricType) {
+    await logChange(supabase, {
+      productId: sheet.product_id,
+      workspaceId,
+      area: "specs",
+      description: `Fabric type set to ${input.fabricType} on '${sheetDisplayName(sheet)}'`,
+    });
+  }
 
   revalidatePath(`/products/${sheet.product_id}`);
 }
@@ -704,7 +797,10 @@ export async function switchSpecSheetMode(
   const input = z
     .object({
       sheetId: z.uuid(),
-      mode: z.enum(["auto", "manual"] as const satisfies readonly SpecSheetMode[]),
+      mode: z.enum([
+        "auto",
+        "manual",
+      ] as const satisfies readonly SpecSheetMode[]),
       snapshot: z.array(snapshotEntrySchema).max(5000).optional(),
     })
     .parse({ sheetId, mode, snapshot });
@@ -754,6 +850,17 @@ export async function switchSpecSheetMode(
   if (modeError) throw new Error(modeError.message);
 
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  // One entry for the whole switch — the snapshot may write hundreds of
+  // cells, but it is a single user action.
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description:
+      input.mode === "manual"
+        ? `Manual sizing enabled on '${sheetDisplayName(sheet)}' (graded values snapshotted)`
+        : `Auto grading enabled on '${sheetDisplayName(sheet)}'`,
+  });
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -779,7 +886,7 @@ export async function saveSpecValue(
 
   const { data: row } = await supabase
     .from("product_spec_rows")
-    .select("id, sheet_id")
+    .select("id, sheet_id, name")
     .eq("id", input.rowId)
     .eq("workspace_id", workspaceId)
     .single();
@@ -827,6 +934,16 @@ export async function saveSpecValue(
   }
 
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  // One cell save = one user action = one entry (the log paginates).
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description:
+      input.value === null
+        ? `Measurement '${row.name}' (${storedLabel}) cleared on '${sheetDisplayName(sheet)}'`
+        : `Measurement '${row.name}' (${storedLabel}) set to ${roundTo1dp(input.value)} on '${sheetDisplayName(sheet)}'`,
+  });
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -888,6 +1005,13 @@ export async function addSpecRow(
     throw new Error(error?.message ?? "Could not add the measurement.");
   }
 
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description: `POM '${input.row.name}' added to '${sheetDisplayName(sheet)}'`,
+  });
+
   revalidatePath(`/products/${sheet.product_id}`);
   return data;
 }
@@ -915,7 +1039,9 @@ export async function updateSpecRow(
 
   const { data: row } = await supabase
     .from("product_spec_rows")
-    .select("id, sheet_id")
+    .select(
+      "id, sheet_id, name, how_to_measure, grade_category, sub_kind, tolerance_override",
+    )
     .eq("id", input.rowId)
     .eq("workspace_id", workspaceId)
     .single();
@@ -934,6 +1060,23 @@ export async function updateSpecRow(
     .eq("id", input.rowId);
   if (error) throw new Error(error.message);
 
+  // Saving the edit dialog untouched is not a spec change — log only when
+  // some field actually differs from the stored row.
+  const rowChanged =
+    row.name !== input.patch.name ||
+    row.how_to_measure !== input.patch.howToMeasure ||
+    row.grade_category !== input.patch.gradeCategory ||
+    row.sub_kind !== input.patch.subKind ||
+    row.tolerance_override !== input.patch.toleranceOverride;
+  if (rowChanged) {
+    await logChange(supabase, {
+      productId: sheet.product_id,
+      workspaceId,
+      area: "specs",
+      description: `POM '${input.patch.name}' updated on '${sheetDisplayName(sheet)}'`,
+    });
+  }
+
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -944,7 +1087,7 @@ export async function deleteSpecRow(rowId: string): Promise<void> {
 
   const { data: row } = await supabase
     .from("product_spec_rows")
-    .select("id, sheet_id")
+    .select("id, sheet_id, name")
     .eq("id", input.rowId)
     .eq("workspace_id", workspaceId)
     .single();
@@ -958,6 +1101,12 @@ export async function deleteSpecRow(rowId: string): Promise<void> {
   if (error) throw new Error(error.message);
 
   await recomputeSpecSectionStatus(supabase, sheet.product_id, workspaceId);
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description: `POM '${row.name}' removed from '${sheetDisplayName(sheet)}'`,
+  });
   revalidatePath(`/products/${sheet.product_id}`);
 }
 
@@ -984,6 +1133,13 @@ export async function reorderSpecRows(
   );
   const failed = results.find((r) => r.error);
   if (failed?.error) throw new Error(failed.error.message);
+
+  await logChange(supabase, {
+    productId: sheet.product_id,
+    workspaceId,
+    area: "specs",
+    description: `Measurement rows reordered on '${sheetDisplayName(sheet)}'`,
+  });
 
   revalidatePath(`/products/${sheet.product_id}`);
 }
@@ -1050,12 +1206,21 @@ function profileColumns(payload: ProfilePayload) {
     description: payload.description,
     size_run_labels: payload.sizeRunLabels,
     break_size_label: payload.breakSizeLabel,
-    base_increments: pickNumericKeys(payload.baseIncrements, INCREMENT_KEYS) as unknown as Json,
+    base_increments: pickNumericKeys(
+      payload.baseIncrements,
+      INCREMENT_KEYS,
+    ) as unknown as Json,
     extended_increments: (payload.extendedIncrements
       ? pickNumericKeys(payload.extendedIncrements, INCREMENT_KEYS)
       : null) as unknown as Json,
-    tolerances_knit: pickNumericKeys(payload.tolerancesKnit, TOLERANCE_KEYS) as unknown as Json,
-    tolerances_woven: pickNumericKeys(payload.tolerancesWoven, TOLERANCE_KEYS) as unknown as Json,
+    tolerances_knit: pickNumericKeys(
+      payload.tolerancesKnit,
+      TOLERANCE_KEYS,
+    ) as unknown as Json,
+    tolerances_woven: pickNumericKeys(
+      payload.tolerancesWoven,
+      TOLERANCE_KEYS,
+    ) as unknown as Json,
   };
 }
 
@@ -1223,7 +1388,9 @@ export async function duplicateGradingProfile(
     .select("*")
     .single();
   if (error || !copy) {
-    throw new Error(error?.message ?? "Could not duplicate the grading profile.");
+    throw new Error(
+      error?.message ?? "Could not duplicate the grading profile.",
+    );
   }
 
   revalidatePath(`/products/${input.productId}`);

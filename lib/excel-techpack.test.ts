@@ -320,6 +320,7 @@ describe("buildTechpackWorkbook", () => {
     const buffer = await buildTechpackWorkbook({
       productName: "ERSKEN Hybrid Hoodie",
       styleNumber: "ERK-014",
+      versionLabel: "v1.0",
       bomRows: buildBomRows(BOM_ANNOTATIONS),
       specTables: [],
     });
@@ -369,6 +370,7 @@ describe("buildTechpackWorkbook", () => {
     const buffer = await buildTechpackWorkbook({
       productName: "ERSKEN Hybrid Hoodie",
       styleNumber: "ERK-014",
+      versionLabel: "v1.2",
       bomRows: [],
       specTables,
     });
@@ -383,15 +385,14 @@ describe("buildTechpackWorkbook", () => {
     assert.notEqual(names[0], names[1]);
 
     const mens = workbook.worksheets[0];
-    // Header context block.
+    // Header context block (incl. the product version row).
     assert.equal(mens.getCell("A1").value, "Product");
     assert.equal(mens.getCell("B1").value, "ERSKEN Hybrid Hoodie");
     assert.equal(mens.getCell("B2").value, "ERK-014");
-    assert.equal(
-      mens.getCell("B3").value,
-      `${SHARED_SHEET_NAME} (Men's)`,
-    );
-    const grading = mens.getCell("B4").value;
+    assert.equal(mens.getCell("A3").value, "Version");
+    assert.equal(mens.getCell("B3").value, "v1.2");
+    assert.equal(mens.getCell("B4").value, `${SHARED_SHEET_NAME} (Men's)`);
+    const grading = mens.getCell("B5").value;
     assert.ok(
       typeof grading === "string" &&
         grading.includes("Men's") &&
@@ -400,41 +401,42 @@ describe("buildTechpackWorkbook", () => {
 
     // Frozen panes: table header row + the Code/Measurement/Tol columns.
     assert.equal(mens.views[0]?.state, "frozen");
-    assert.equal(mens.views[0]?.ySplit, 6);
+    assert.equal(mens.views[0]?.ySplit, 7);
     assert.equal(mens.views[0]?.xSplit, 3);
     assert.equal(mens.model.merges?.length ?? 0, 0);
 
     // Table header + the graded rows: values are NUMBERS (summable).
-    assert.equal(mens.getCell("A6").value, "Code");
-    assert.equal(mens.getCell("D6").value, "S");
-    assert.equal(mens.getCell("E6").value, "M");
+    assert.equal(mens.getCell("A7").value, "Code");
+    assert.equal(mens.getCell("D7").value, "S");
+    assert.equal(mens.getCell("E7").value, "M");
     assert.deepEqual(
-      ["D7", "E7", "F7", "G7", "H7"].map((ref) => mens.getCell(ref).value),
+      ["D8", "E8", "F8", "G8", "H8"].map((ref) => mens.getCell(ref).value),
       [49.5, 52, 54.5, 57, 60.5],
     );
-    assert.equal(mens.getCell("C7").value, 1.2);
-    assert.ok(mens.getCell("C7").numFmt.includes("±"));
+    assert.equal(mens.getCell("C8").value, 1.2);
+    assert.ok(mens.getCell("C8").numFmt.includes("±"));
 
     // The sample column (M) is marked: tinted header carrying a note.
-    const sampleHead = mens.getCell("E6");
+    const sampleHead = mens.getCell("E7");
     const fill = sampleHead.fill;
     assert.ok(fill.type === "pattern" && fill.fgColor?.argb === "FFEDECEA");
     assert.ok(sampleHead.note, "sample header carries a note");
 
     // The manual women's numeric tab: stored numbers verbatim, gaps stay empty.
     const womens = workbook.worksheets[1];
-    assert.equal(womens.getCell("B3").value, `${SHARED_SHEET_NAME} (Women's)`);
+    assert.equal(womens.getCell("B4").value, `${SHARED_SHEET_NAME} (Women's)`);
     assert.deepEqual(
-      ["D7", "E7", "F7"].map((ref) => womens.getCell(ref).value),
+      ["D8", "E8", "F8"].map((ref) => womens.getCell(ref).value),
       [30, 32, 34],
     );
-    assert.equal(womens.getCell("C7").value, 0.5);
+    assert.equal(womens.getCell("C8").value, 0.5);
   });
 
   it("both datasets empty: still a valid workbook with an Info tab", async () => {
     const buffer = await buildTechpackWorkbook({
       productName: "Blank Product",
       styleNumber: null,
+      versionLabel: "v1.0",
       bomRows: [],
       specTables: [],
     });

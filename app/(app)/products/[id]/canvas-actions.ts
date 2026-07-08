@@ -25,11 +25,28 @@
  * deliberately: these actions only ever scope queries by `workspaceId` (never
  * read the full workspace row), so the lean 2-round-trip helper is a strict
  * win over the 3-round-trip one pages use for rendering.
+ *
+ * ── CHANGE LOG + ASSETS AUTO-COMPLETE ────────────────────────────────────────
+ * Spec-changing mutations here append a Change Log entry via `logChange`
+ * (lib/change-log.ts) after they succeed. Deliberately NOT logged: slot
+ * framing (debounced pan/zoom), pin moves and badge offsets (pure geometry),
+ * lock/unlock (workflow mechanics), and page notes (meta). Mutations that can
+ * change whether every asset is "in use" (upload/delete/place/hero/page
+ * delete+duplicate) also recompute the Asset Upload section's automatic
+ * completion via `recomputeSectionStatus` (lib/section-status.ts).
  */
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import {
+  changeAreaForLayer,
+  changedFieldLabels,
+  describeChangedFields,
+  LAYER_NOUN,
+  logChange,
+} from "@/lib/change-log";
+import { recomputeSectionStatus } from "@/lib/section-status";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
 import {
@@ -195,7 +212,22 @@ export async function uploadAssetMetadata(
     })
     .select("id")
     .single();
-  if (error || !data) throw new Error(error?.message ?? "Failed to save asset.");
+  if (error || !data)
+    throw new Error(error?.message ?? "Failed to save asset.");
+
+  // A fresh (unplaced) asset can flip the section out of complete.
+  await recomputeSectionStatus(
+    supabase,
+    input.productId,
+    workspaceId,
+    "assets",
+  );
+  await logChange(supabase, {
+    productId: input.productId,
+    workspaceId,
+    area: "assets",
+    description: `Image '${input.name}' uploaded`,
+  });
 
   revalidatePath(`/products/${input.productId}`);
   return { id: data.id };
@@ -212,7 +244,7 @@ export async function renameAsset(id: string, name: string): Promise<void> {
 
   const { data: asset } = await supabase
     .from("product_assets")
-    .select("id, product_id")
+    .select("id, product_id, name")
     .eq("id", input.id)
     .eq("workspace_id", workspaceId)
     .single();
@@ -223,6 +255,15 @@ export async function renameAsset(id: string, name: string): Promise<void> {
     .update({ name: input.name })
     .eq("id", input.id);
   if (error) throw new Error(error.message);
+
+  if (asset.name !== input.name) {
+    await logChange(supabase, {
+      productId: asset.product_id,
+      workspaceId,
+      area: "assets",
+      description: `Image '${asset.name}' renamed to '${input.name}'`,
+    });
+  }
 
   revalidatePath(`/products/${asset.product_id}`);
 }
@@ -239,7 +280,7 @@ export async function deleteAsset(id: string): Promise<{ warning?: string }> {
 
   const { data: asset } = await supabase
     .from("product_assets")
-    .select("id, product_id, file_path")
+    .select("id, product_id, file_path, name")
     .eq("id", input.id)
     .eq("workspace_id", workspaceId)
     .single();
@@ -260,6 +301,20 @@ export async function deleteAsset(id: string): Promise<{ warning?: string }> {
   // Storage cleanup is best-effort: the DB row (the source of truth) is already
   // gone, so a stale object must not fail the action.
   await supabase.storage.from("product-assets").remove([asset.file_path]);
+
+  // Recompute AFTER the delete so the FK set-null on slots has landed.
+  await recomputeSectionStatus(
+    supabase,
+    asset.product_id,
+    workspaceId,
+    "assets",
+  );
+  await logChange(supabase, {
+    productId: asset.product_id,
+    workspaceId,
+    area: "assets",
+    description: `Image '${asset.name}' deleted`,
+  });
 
   revalidatePath(`/products/${asset.product_id}`);
   return (lockedCount ?? 0) > 0
@@ -289,15 +344,17 @@ export async function setProductHeroAsset(
 
   await assertProductInWorkspace(supabase, input.productId, workspaceId);
 
+  let heroName: string | null = null;
   if (input.assetId !== null) {
     const { data: asset } = await supabase
       .from("product_assets")
-      .select("id")
+      .select("id, name")
       .eq("id", input.assetId)
       .eq("product_id", input.productId)
       .eq("workspace_id", workspaceId)
       .single();
     if (!asset) throw new Error("Not found in your workspace.");
+    heroName = asset.name;
   }
 
   const { error } = await supabase
@@ -307,12 +364,50 @@ export async function setProductHeroAsset(
     .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
 
+  // The hero counts as "in use", so this can flip the section either way.
+  await recomputeSectionStatus(
+    supabase,
+    input.productId,
+    workspaceId,
+    "assets",
+  );
+  await logChange(supabase, {
+    productId: input.productId,
+    workspaceId,
+    area: "assets",
+    description:
+      heroName !== null
+        ? `Cover image set to '${heroName}'`
+        : "Cover image cleared",
+  });
+
   revalidatePath(`/products/${input.productId}`);
 }
 
 // ============================================================================
 // Pages
 // ============================================================================
+
+/**
+ * A page's display name for Change Log descriptions: its label, else the
+ * positional "Page N" every UI surface and export uses. Position is counted
+ * in the sort-ordered list — deletion leaves sort_order gappy, so the stored
+ * value itself must never be shown as a number.
+ */
+async function pageDisplayName(
+  supabase: ActionCtx["supabase"],
+  page: { product_id: string; label: string | null; sort_order: number },
+  workspaceId: string,
+): Promise<string> {
+  if (page.label) return page.label;
+  const { count } = await supabase
+    .from("canvas_pages")
+    .select("id", { count: "exact", head: true })
+    .eq("product_id", page.product_id)
+    .eq("workspace_id", workspaceId)
+    .lt("sort_order", page.sort_order);
+  return `Page ${(count ?? 0) + 1}`;
+}
 
 const createPageSchema = z.object({
   productId: z.uuid(),
@@ -331,9 +426,12 @@ export async function createCanvasPage(
   const { supabase, workspaceId } = await requireActionContext();
   await assertProductInWorkspace(supabase, input.productId, workspaceId);
 
-  const { data: last } = await supabase
+  // `count` rides along on the same query: the UI numbers unnamed pages by
+  // POSITION in the sorted list (not by sort_order, which deletion can leave
+  // gappy), so the appended page's display name is "Page {count + 1}".
+  const { data: last, count: pageCount } = await supabase
     .from("canvas_pages")
-    .select("sort_order")
+    .select("sort_order", { count: "exact" })
     .eq("product_id", input.productId)
     .eq("workspace_id", workspaceId)
     .order("sort_order", { ascending: false })
@@ -350,14 +448,24 @@ export async function createCanvasPage(
     })
     .select("id")
     .single();
-  if (error || !page) throw new Error(error?.message ?? "Failed to create page.");
+  if (error || !page)
+    throw new Error(error?.message ?? "Failed to create page.");
 
   const slots = Array.from({ length: SLOT_COUNT[input.template] }, (_, i) => ({
     page_id: page.id,
     slot_index: i,
   }));
-  const { error: slotError } = await supabase.from("canvas_slots").insert(slots);
+  const { error: slotError } = await supabase
+    .from("canvas_slots")
+    .insert(slots);
   if (slotError) throw new Error(slotError.message);
+
+  await logChange(supabase, {
+    productId: input.productId,
+    workspaceId,
+    area: "pages",
+    description: `Page ${(pageCount ?? 0) + 1} added (${input.template} layout)`,
+  });
 
   revalidatePath(`/products/${input.productId}`);
   return { id: page.id };
@@ -379,7 +487,7 @@ export async function duplicateCanvasPage(
 
   const { data: page } = await supabase
     .from("canvas_pages")
-    .select("id, product_id, template, label, notes")
+    .select("id, product_id, template, label, notes, sort_order")
     .eq("id", input.pageId)
     .eq("workspace_id", workspaceId)
     .single();
@@ -442,6 +550,21 @@ export async function duplicateCanvasPage(
     if (insertError) throw new Error(insertError.message);
   }
 
+  // The copy re-places the source's assets, which cannot un-complete the
+  // section but keeps the recompute invariant local to every slot write.
+  await recomputeSectionStatus(
+    supabase,
+    page.product_id,
+    workspaceId,
+    "assets",
+  );
+  await logChange(supabase, {
+    productId: page.product_id,
+    workspaceId,
+    area: "pages",
+    description: `Page '${await pageDisplayName(supabase, page, workspaceId)}' duplicated`,
+  });
+
   revalidatePath(`/products/${page.product_id}`);
   return { id: newPage.id };
 }
@@ -452,11 +575,14 @@ export async function deleteCanvasPage(id: string): Promise<void> {
 
   const { data: page } = await supabase
     .from("canvas_pages")
-    .select("id, product_id")
+    .select("id, product_id, label, sort_order")
     .eq("id", input.id)
     .eq("workspace_id", workspaceId)
     .single();
   if (!page) throw new Error("Not found in your workspace.");
+
+  // Resolved BEFORE the delete — the positional name counts sibling pages.
+  const pageName = await pageDisplayName(supabase, page, workspaceId);
 
   // Cascades to canvas_slots → canvas_annotations.
   const { error } = await supabase
@@ -464,6 +590,20 @@ export async function deleteCanvasPage(id: string): Promise<void> {
     .delete()
     .eq("id", input.id);
   if (error) throw new Error(error.message);
+
+  // The cascade can leave assets unplaced — recompute after it lands.
+  await recomputeSectionStatus(
+    supabase,
+    page.product_id,
+    workspaceId,
+    "assets",
+  );
+  await logChange(supabase, {
+    productId: page.product_id,
+    workspaceId,
+    area: "pages",
+    description: `Page '${pageName}' deleted`,
+  });
 
   revalidatePath(`/products/${page.product_id}`);
 }
@@ -494,6 +634,16 @@ export async function renameCanvasPage(
     .update({ label: input.label.length > 0 ? input.label : null })
     .eq("id", input.id);
   if (error) throw new Error(error.message);
+
+  await logChange(supabase, {
+    productId: page.product_id,
+    workspaceId,
+    area: "pages",
+    description:
+      input.label.length > 0
+        ? `Page renamed to '${input.label}'`
+        : "Page name cleared",
+  });
 
   revalidatePath(`/products/${page.product_id}`);
 }
@@ -563,6 +713,13 @@ export async function reorderCanvasPages(
   const failed = results.find((r) => r.error);
   if (failed?.error) throw new Error(failed.error.message);
 
+  await logChange(supabase, {
+    productId: input.productId,
+    workspaceId,
+    area: "pages",
+    description: "Pages reordered",
+  });
+
   revalidatePath(`/products/${input.productId}`);
 }
 
@@ -576,11 +733,15 @@ const fillSlotSchema = z.object({ slotId: z.uuid(), assetId: z.uuid() });
 export async function fillSlot(slotId: string, assetId: string): Promise<void> {
   const input = fillSlotSchema.parse({ slotId, assetId });
   const { supabase, workspaceId } = await requireActionContext();
-  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+  const { productId } = await getSlotContext(
+    supabase,
+    input.slotId,
+    workspaceId,
+  );
 
   const { data: asset } = await supabase
     .from("product_assets")
-    .select("id")
+    .select("id, name")
     .eq("id", input.assetId)
     .eq("workspace_id", workspaceId)
     .single();
@@ -606,6 +767,15 @@ export async function fillSlot(slotId: string, assetId: string): Promise<void> {
     .eq("id", input.slotId);
   if (error) throw new Error(error.message);
 
+  // Placing an image is the only way an asset becomes "in use".
+  await recomputeSectionStatus(supabase, productId, workspaceId, "assets");
+  await logChange(supabase, {
+    productId,
+    workspaceId,
+    area: "pages",
+    description: `Image '${asset.name}' placed on a canvas page`,
+  });
+
   revalidatePath(`/products/${productId}`);
 }
 
@@ -625,13 +795,28 @@ export async function updateSlotName(
 ): Promise<void> {
   const input = updateSlotNameSchema.parse({ slotId, name });
   const { supabase, workspaceId } = await requireActionContext();
-  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+  const { productId } = await getSlotContext(
+    supabase,
+    input.slotId,
+    workspaceId,
+  );
 
   const { error } = await supabase
     .from("canvas_slots")
     .update({ name: input.name.length > 0 ? input.name : null })
     .eq("id", input.slotId);
   if (error) throw new Error(error.message);
+
+  // The slot name is printed on the exported page — a spec change.
+  await logChange(supabase, {
+    productId,
+    workspaceId,
+    area: "pages",
+    description:
+      input.name.length > 0
+        ? `Image box renamed to '${input.name}'`
+        : "Image box name cleared",
+  });
 
   revalidatePath(`/products/${productId}`);
 }
@@ -654,7 +839,11 @@ export async function updateSlotFraming(
 ): Promise<void> {
   const input = framingSchema.parse({ slotId, cropX, cropY, zoom, fitMode });
   const { supabase, workspaceId } = await requireActionContext();
-  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+  const { productId } = await getSlotContext(
+    supabase,
+    input.slotId,
+    workspaceId,
+  );
 
   const { error } = await supabase
     .from("canvas_slots")
@@ -691,7 +880,11 @@ export async function lockSlot(
 ): Promise<void> {
   const input = lockSlotSchema.parse({ slotId, lockWidth, lockHeight });
   const { supabase, workspaceId } = await requireActionContext();
-  const { productId } = await getSlotContext(supabase, input.slotId, workspaceId);
+  const { productId } = await getSlotContext(
+    supabase,
+    input.slotId,
+    workspaceId,
+  );
 
   const { error } = await supabase
     .from("canvas_slots")
@@ -827,6 +1020,13 @@ export async function createAnnotation(
     throw new Error(error?.message ?? "Failed to create annotation.");
   }
 
+  await logChange(supabase, {
+    productId,
+    workspaceId,
+    area: changeAreaForLayer(input.layerType),
+    description: `${LAYER_NOUN[input.layerType]} ${referenceCode} added`,
+  });
+
   revalidatePath(`/products/${productId}`);
   console.timeEnd("[createAnnotation] TOTAL");
   // Best case: 2 (auth + profile) + 1 (slot+page) + 1 (reference-code count)
@@ -852,7 +1052,7 @@ export async function updateAnnotation(
 
   const { data: annotation } = await supabase
     .from("canvas_annotations")
-    .select("id, slot_id, data")
+    .select("id, slot_id, data, layer_type, reference_code")
     .eq("id", input.id)
     .eq("workspace_id", workspaceId)
     .single();
@@ -872,6 +1072,19 @@ export async function updateAnnotation(
     .update({ data: merged as unknown as Json })
     .eq("id", input.id);
   if (error) throw new Error(error.message);
+
+  // Log what genuinely changed ("Fabric F2 updated (width, unit cost)") —
+  // this IS the BOM edit path, so these entries carry the material changes.
+  // A save that changed nothing logs nothing.
+  const changed = changedFieldLabels(existing, input.data);
+  if (changed.length > 0) {
+    await logChange(supabase, {
+      productId,
+      workspaceId,
+      area: changeAreaForLayer(annotation.layer_type),
+      description: `${LAYER_NOUN[annotation.layer_type]} ${annotation.reference_code} updated ${describeChangedFields(changed)}`,
+    });
+  }
 
   revalidatePath(`/products/${productId}`);
 }
@@ -975,7 +1188,7 @@ export async function deleteAnnotation(id: string): Promise<void> {
 
   const { data: annotation } = await supabase
     .from("canvas_annotations")
-    .select("id, slot_id")
+    .select("id, slot_id, layer_type, reference_code")
     .eq("id", input.id)
     .eq("workspace_id", workspaceId)
     .single();
@@ -992,6 +1205,13 @@ export async function deleteAnnotation(id: string): Promise<void> {
     .delete()
     .eq("id", input.id);
   if (error) throw new Error(error.message);
+
+  await logChange(supabase, {
+    productId,
+    workspaceId,
+    area: changeAreaForLayer(annotation.layer_type),
+    description: `${LAYER_NOUN[annotation.layer_type]} ${annotation.reference_code} removed`,
+  });
 
   revalidatePath(`/products/${productId}`);
 }
@@ -1042,7 +1262,10 @@ export async function createColourway(
     .eq("workspace_id", workspaceId);
 
   const sequenceNumber = (count ?? 0) + 1;
-  const finalName = input.name && input.name.length > 0 ? input.name : `Colourway ${sequenceNumber}`;
+  const finalName =
+    input.name && input.name.length > 0
+      ? input.name
+      : `Colourway ${sequenceNumber}`;
 
   const { data: row, error } = await supabase
     .from("canvas_colourways")
@@ -1057,6 +1280,13 @@ export async function createColourway(
   if (error || !row) {
     throw new Error(error?.message ?? "Failed to create colourway.");
   }
+
+  await logChange(supabase, {
+    productId: input.productId,
+    workspaceId,
+    area: "colourways",
+    description: `Colourway '${finalName}' added`,
+  });
 
   revalidatePath(`/products/${input.productId}`);
   return row;
@@ -1078,7 +1308,7 @@ export async function renameColourway(id: string, name: string): Promise<void> {
 
   const { data: colourway } = await supabase
     .from("canvas_colourways")
-    .select("id, product_id")
+    .select("id, product_id, name")
     .eq("id", input.id)
     .eq("workspace_id", workspaceId)
     .single();
@@ -1089,6 +1319,15 @@ export async function renameColourway(id: string, name: string): Promise<void> {
     .update({ name: input.name })
     .eq("id", input.id);
   if (error) throw new Error(error.message);
+
+  if (colourway.name !== input.name) {
+    await logChange(supabase, {
+      productId: colourway.product_id,
+      workspaceId,
+      area: "colourways",
+      description: `Colourway '${colourway.name}' renamed to '${input.name}'`,
+    });
+  }
 
   revalidatePath(`/products/${colourway.product_id}`);
 }
@@ -1172,6 +1411,16 @@ export async function createColourwayAnnotation(
         throw new Error(createErr?.message ?? "Failed to create colourway.");
       }
       colourway = created;
+      // The zero-extra-steps auto-create is the same spec change as the
+      // explicit "Add colourway" path — logged identically (and immediately,
+      // so the entry stands even if the pin insert below fails: the
+      // colourway row persists either way).
+      await logChange(supabase, {
+        productId,
+        workspaceId,
+        area: "colourways",
+        description: `Colourway '${created.name}' added`,
+      });
     }
   }
 
@@ -1203,6 +1452,13 @@ export async function createColourwayAnnotation(
   if (error || !row) {
     throw new Error(error?.message ?? "Failed to create colourway pin.");
   }
+
+  await logChange(supabase, {
+    productId,
+    workspaceId,
+    area: "colourways",
+    description: `Colourway pin ${referenceCode} added to '${colourway.name}'`,
+  });
 
   revalidatePath(`/products/${productId}`);
   return { id: row.id, referenceCode, colourway };

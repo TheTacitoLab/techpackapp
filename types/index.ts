@@ -140,7 +140,12 @@ export type ResolvedCanvasPage = CanvasPage & {
  * reference code (matching how real tech packs number trims: one Trims
  * section, sequentially numbered, with a type column).
  */
-export type TrimKind = "fastener" | "elastic" | "binding" | "drawcord" | "other";
+export type TrimKind =
+  | "fastener"
+  | "elastic"
+  | "binding"
+  | "drawcord"
+  | "other";
 
 /**
  * Structured `data` jsonb shape for Fabrics & Trim annotations (`layer_type` in
@@ -402,3 +407,14 @@ export type ResolvedSpecSheet = ProductSpecSheet & {
   rows: ProductSpecRow[];
   values: ProductSpecValue[];
 };
+
+// ---- Change Log & Versioning --------------------------------------------------
+
+/**
+ * One specification change, stamped with the product version it happened
+ * under. Written append-only by `logChange` (lib/change-log.ts) from the
+ * spec-mutating server actions; `actor_id` stays null until collaboration
+ * ships. Meta activity (notes, exports, views, completion marks) is never
+ * logged.
+ */
+export type ProductChangeLogEntry = Tables<"product_change_log">;

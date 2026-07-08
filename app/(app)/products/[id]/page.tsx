@@ -1,19 +1,29 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { History } from "lucide-react";
 
 import { BomTable } from "@/components/bom/bom-table";
 import { AssetUploadSection } from "@/components/canvas/asset-upload-section";
 import { isFabricFamilyType } from "@/components/canvas/fabric-trim-data";
 import { TechnicalDetailsSection } from "@/components/canvas/technical-details-section";
+import { ChangeLogSection } from "@/components/change-log-section";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { IdentitySection } from "@/components/identity-section";
 import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
+import { ProductVersionControl } from "@/components/product-version-control";
 import { QuickExportDialog } from "@/components/quick-export-dialog";
+import { SectionCompleteToggle } from "@/components/section-complete-toggle";
 import { SectionIcon } from "@/components/section-icon";
 import { SizeSpecificationsSection } from "@/components/spec/size-specifications-section";
 import { Progress } from "@/components/ui/progress";
+import { CHANGE_LOG_FETCH_LIMIT } from "@/lib/change-log";
 import { getWorkspaceLibrary } from "@/lib/library";
+import { productVersionLabel } from "@/lib/product-version";
+import {
+  COMPLETABLE_SECTION_KEYS,
+  type CompletableSectionKey,
+} from "@/lib/section-status";
 import { getGradingProfiles, getSpecTemplates } from "@/lib/spec-library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -26,6 +36,7 @@ import type {
   IdentitySectionData,
   Label,
   ProductAsset,
+  ProductChangeLogEntry,
   ProductSpecRow,
   ProductSpecSheet,
   ProductSpecValue,
@@ -70,6 +81,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
     specSheetResult,
     specTemplates,
     gradingProfiles,
+    { data: changeLogRows },
   ] = await Promise.all([
     supabase
       .from("product_sections")
@@ -79,7 +91,11 @@ export default async function ProductDetailPage({ params }: PageProps) {
       .order("sort_order", { ascending: true }),
     supabase.from("section_templates").select("*"),
     product.brand_id
-      ? supabase.from("brands").select("id, name").eq("id", product.brand_id).single()
+      ? supabase
+          .from("brands")
+          .select("id, name")
+          .eq("id", product.brand_id)
+          .single()
       : Promise.resolve({ data: null }),
     product.collection_id
       ? supabase
@@ -123,6 +139,14 @@ export default async function ProductDetailPage({ params }: PageProps) {
       .order("created_at", { ascending: true }),
     getSpecTemplates(),
     getGradingProfiles(),
+    // Change Log: the newest entries, grouped by version in the section
+    // body. Capped — the section notes when the cap is hit.
+    supabase
+      .from("product_change_log")
+      .select("*")
+      .eq("product_id", product.id)
+      .order("created_at", { ascending: false })
+      .limit(CHANGE_LOG_FETCH_LIMIT),
   ]);
 
   // Canvas data (Phase 4b): the product's image assets and its pages with slots
@@ -211,6 +235,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
   const brand = brandResult.data;
   const collection = collectionResult.data;
+  const changeLogEntries: ProductChangeLogEntry[] = changeLogRows ?? [];
   const labels: Label[] = workspaceLabels ?? [];
   const assignedIds = (assignedRows ?? []).map((r) => r.label_id);
   const seasons: Season[] = workspaceSeasons ?? [];
@@ -225,7 +250,11 @@ export default async function ProductDetailPage({ params }: PageProps) {
   const resolved: ResolvedSection[] = (sections ?? [])
     .map((section) => {
       const tmpl = templateByKey.get(section.section_key);
-      return { ...section, label: tmpl?.label ?? section.section_key, icon: tmpl?.icon ?? "Component" };
+      return {
+        ...section,
+        label: tmpl?.label ?? section.section_key,
+        icon: tmpl?.icon ?? "Component",
+      };
     })
     // Deterministic order. Some products (created before migration 0016 renamed
     // `canvas`→`technical_details`) carry a stale sort_order tie between
@@ -350,7 +379,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
               {product.name}
             </span>
             <span className="text-muted-foreground shrink-0">
-              {product.style_number ? `· ${product.style_number}` : "· No style #"}
+              {product.style_number
+                ? `· ${product.style_number}`
+                : "· No style #"}
             </span>
           </nav>
 
@@ -360,10 +391,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
               header width) so the row degrades gracefully instead of
               overflowing. */}
           <div className="flex shrink-0 items-center gap-3">
-            <Progress
-              value={progressPercentage}
-              className="w-24 @3xl:w-40"
-            />
+            <Progress value={progressPercentage} className="w-24 @3xl:w-40" />
             <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
               <span className="hidden @3xl:inline">
                 {completedCount} of {statuses.length} sections complete
@@ -376,8 +404,13 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
           <span aria-hidden className="bg-border h-5 w-px shrink-0" />
 
-          {/* Right zone: export + labels + status */}
+          {/* Right zone: version + export + labels + status */}
           <div className="flex shrink-0 items-center gap-3">
+            <ProductVersionControl
+              productId={product.id}
+              versionMajor={product.version_major}
+              versionMinor={product.version_minor}
+            />
             <QuickExportDialog productId={product.id} />
             <ProductLabels
               productId={product.id}
@@ -401,11 +434,42 @@ export default async function ProductDetailPage({ params }: PageProps) {
             title={section.label}
             icon={<SectionIcon name={section.icon} />}
             status={section.status}
+            action={
+              (COMPLETABLE_SECTION_KEYS as readonly string[]).includes(
+                section.section_key,
+              ) ? (
+                <SectionCompleteToggle
+                  productId={activeProduct.id}
+                  sectionKey={section.section_key as CompletableSectionKey}
+                  status={section.status}
+                  completedManually={section.completed_manually}
+                />
+              ) : undefined
+            }
             defaultOpen={index === 0}
           >
             {renderSectionBody(section.section_key)}
           </CollapsibleSection>
         ))}
+
+        {/* Change Log — a record, not a task: always present, deliberately
+            NOT a product_sections row so it never counts in any "X of N
+            sections complete" denominator (header, product cards, launchpad),
+            and never offers a completion toggle. */}
+        <CollapsibleSection
+          sectionKey="change_log"
+          title="Change Log"
+          icon={<History />}
+          status={null}
+        >
+          <ChangeLogSection
+            entries={changeLogEntries}
+            currentVersion={productVersionLabel(
+              product.version_major,
+              product.version_minor,
+            )}
+          />
+        </CollapsibleSection>
       </div>
     </div>
   );

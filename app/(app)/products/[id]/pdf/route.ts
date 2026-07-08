@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 
 import { parseLayerColours } from "@/components/canvas/layers";
+import { STATUS_LABELS } from "@/components/status-pill";
+import { productVersionLabel } from "@/lib/product-version";
 import {
   createImageFetcher,
   buildPdfSlots,
@@ -75,7 +77,11 @@ export async function GET(
           .single()
       : Promise.resolve({ data: null }),
     product.season_id
-      ? supabase.from("seasons").select("name").eq("id", product.season_id).single()
+      ? supabase
+          .from("seasons")
+          .select("name")
+          .eq("id", product.season_id)
+          .single()
       : Promise.resolve({ data: null }),
   ]);
 
@@ -102,8 +108,8 @@ export async function GET(
     brandName: brand?.name ?? "Brand",
     logo,
     designerName: product.designer_name ?? "—",
-    // Spike hardcodes: versioning ships with the approval flow.
-    versionLabel: "V1 · Draft",
+    // The real version + status, matching the full-document route.
+    versionLabel: `${productVersionLabel(product.version_major, product.version_minor)} · ${STATUS_LABELS[product.status]}`,
     dateLabel: new Date().toISOString().slice(0, 10),
     pageNumber: pageIndex + 1,
     pageCount: allPages.length,

@@ -167,6 +167,8 @@ export type Database = {
           status: Database["public"]["Enums"]["product_status"];
           share_token: string;
           hero_asset_id: string | null;
+          version_major: number;
+          version_minor: number;
           created_at: string;
           updated_at: string;
           archived_at: string | null;
@@ -193,6 +195,8 @@ export type Database = {
           status?: Database["public"]["Enums"]["product_status"];
           share_token?: string;
           hero_asset_id?: string | null;
+          version_major?: number;
+          version_minor?: number;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -219,6 +223,8 @@ export type Database = {
           status?: Database["public"]["Enums"]["product_status"];
           share_token?: string;
           hero_asset_id?: string | null;
+          version_major?: number;
+          version_minor?: number;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -261,6 +267,7 @@ export type Database = {
           product_id: string;
           section_key: string;
           status: Database["public"]["Enums"]["section_status"];
+          completed_manually: boolean;
           sort_order: number;
           is_enabled: boolean;
           data: Json;
@@ -270,6 +277,7 @@ export type Database = {
           product_id: string;
           section_key: string;
           status?: Database["public"]["Enums"]["section_status"];
+          completed_manually?: boolean;
           sort_order?: number;
           is_enabled?: boolean;
           data?: Json;
@@ -279,6 +287,7 @@ export type Database = {
           product_id?: string;
           section_key?: string;
           status?: Database["public"]["Enums"]["section_status"];
+          completed_manually?: boolean;
           sort_order?: number;
           is_enabled?: boolean;
           data?: Json;
@@ -900,6 +909,42 @@ export type Database = {
           value?: number;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      product_change_log: {
+        Row: {
+          id: string;
+          product_id: string;
+          workspace_id: string;
+          version: string;
+          area: string;
+          description: string;
+          data: Json;
+          actor_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          workspace_id: string;
+          version: string;
+          area: string;
+          description: string;
+          data?: Json;
+          actor_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          product_id?: string;
+          workspace_id?: string;
+          version?: string;
+          area?: string;
+          description?: string;
+          data?: Json;
+          actor_id?: string | null;
+          created_at?: string;
         };
         Relationships: [];
       };

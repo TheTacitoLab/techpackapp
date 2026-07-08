@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { STATUS_LABELS } from "@/components/status-pill";
+import { logChange } from "@/lib/change-log";
+import {
+  COMPLETABLE_SECTION_KEYS,
+  recomputeSectionStatus,
+} from "@/lib/section-status";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { ProductStatus } from "@/types";
 
@@ -57,6 +63,14 @@ export async function createProduct(input: CreateProductInput) {
     if (sectionsError) throw new Error(sectionsError.message);
   }
 
+  // The product's Change Log opens with its creation, under v1.0.
+  await logChange(supabase, {
+    productId: product.id,
+    workspaceId,
+    area: "product_setup",
+    description: "Product created",
+  });
+
   revalidatePath("/dashboard");
   revalidatePath("/products");
   return { id: product.id };
@@ -83,7 +97,8 @@ export async function createBrand(input: z.input<typeof brandSchema>) {
     .insert({ workspace_id: workspaceId, name })
     .select("id")
     .single();
-  if (error || !data) throw new Error(error?.message ?? "Could not create brand.");
+  if (error || !data)
+    throw new Error(error?.message ?? "Could not create brand.");
   revalidatePath("/dashboard");
   revalidatePath("/products");
   return { id: data.id };
@@ -226,7 +241,8 @@ export async function createSeason(input: z.input<typeof seasonSchema>) {
     .insert({ workspace_id: workspaceId, name, year })
     .select("id")
     .single();
-  if (error || !data) throw new Error(error?.message ?? "Could not create season.");
+  if (error || !data)
+    throw new Error(error?.message ?? "Could not create season.");
   revalidatePath("/dashboard");
   revalidatePath("/products");
   return { id: data.id };
@@ -338,16 +354,34 @@ export async function duplicateProduct(id: string) {
     .eq("product_id", id);
 
   if (srcSections && srcSections.length > 0) {
+    // Completion is NOT copied: the duplicate carries none of the content the
+    // source's completion described (no assets, pages, pins or spec sheets
+    // are duplicated, and style_number resets) — a copied green tick would be
+    // a durable lie the recompute could never correct. Each section's status
+    // is re-derived from the copy's actual content below.
     const rows = srcSections.map((s) => ({
       product_id: copy.id,
       section_key: s.section_key,
-      status: s.status,
+      status: "not_started" as const,
+      completed_manually: false,
       sort_order: s.sort_order,
       is_enabled: s.is_enabled,
       data: s.data,
     }));
     await supabase.from("product_sections").insert(rows);
+    for (const key of COMPLETABLE_SECTION_KEYS) {
+      await recomputeSectionStatus(supabase, copy.id, workspaceId, key);
+    }
   }
+
+  // The copy starts its own history (at v1.0) — the source's log stays with
+  // the source; only the provenance is recorded here.
+  await logChange(supabase, {
+    productId: copy.id,
+    workspaceId,
+    area: "product_setup",
+    description: `Product created as a copy of '${src.name}'`,
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/products");
@@ -386,6 +420,15 @@ export async function updateProductStatus(id: string, status: ProductStatus) {
     .eq("id", id)
     .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
+
+  // The status prints on the tech pack cover, so its change is spec-visible.
+  await logChange(supabase, {
+    productId: id,
+    workspaceId,
+    area: "product_setup",
+    description: `Status changed to ${STATUS_LABELS[status]}`,
+  });
+
   revalidatePath("/dashboard");
   revalidatePath("/products");
   revalidatePath(`/products/${id}`);

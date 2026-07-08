@@ -35,6 +35,8 @@ import {
 export type TechpackWorkbookInput = {
   productName: string;
   styleNumber: string | null;
+  /** The product's version label ("v1.1") — the factory sees which pack this is. */
+  versionLabel: string;
   bomRows: BomRow[];
   specTables: ResolvedSpecTable[];
 };
@@ -188,7 +190,7 @@ function addBomSheet(
 // ---- Spec Sheet tabs -----------------------------------------------------------
 
 /** Rows of header context above the spec table (labels in A, values in B). */
-const SPEC_INFO_ROWS = 4;
+const SPEC_INFO_ROWS = 5;
 /** The table header row number: info block + one blank spacer. */
 const SPEC_HEADER_ROW = SPEC_INFO_ROWS + 2;
 /** Code / Measurement / Tol — the columns frozen when scrolling sizes. */
@@ -220,6 +222,7 @@ function addSpecSheet(
   const info: [string, string][] = [
     ["Product", input.productName],
     ["Style #", input.styleNumber ?? ""],
+    ["Version", input.versionLabel],
     [
       "Sheet",
       `${table.displayName} (${demographicLabel(table.sheet.demographic)})`,

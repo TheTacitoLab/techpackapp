@@ -12,6 +12,7 @@ import {
 } from "@/components/canvas/layers";
 import { STATUS_LABELS } from "@/components/status-pill";
 import { exportFilename } from "@/lib/export-filename";
+import { productVersionLabel } from "@/lib/product-version";
 import {
   createImageFetcher,
   buildPdfSlots,
@@ -417,9 +418,9 @@ export async function GET(
   const brandName = brand?.name ?? "Brand";
   const seasonName = seasonResult.data?.name ?? "—";
   const designerName = product.designer_name ?? "—";
-  // Versioning ships with the approval flow — same fixed label as the
-  // single-page route until then.
-  const versionLabel = "V1 · Draft";
+  // The product's real version (manual bump, 0038) plus its status — every
+  // export reflects the current numbers, so a bump shows on the next download.
+  const versionLabel = `${productVersionLabel(product.version_major, product.version_minor)} · ${STATUS_LABELS[product.status]}`;
   const dateLabel = new Date().toISOString().slice(0, 10);
   const shareToken =
     (product.share_token as string | undefined) ?? "preview-no-token";

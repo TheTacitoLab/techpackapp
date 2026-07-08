@@ -1,6 +1,7 @@
 import { buildBomRows } from "@/lib/bom-rows";
 import { buildTechpackWorkbook } from "@/lib/excel-techpack";
 import { exportFilename } from "@/lib/export-filename";
+import { productVersionLabel } from "@/lib/product-version";
 import { resolveSpecTables } from "@/lib/spec-sheet-resolve";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -38,7 +39,7 @@ export async function GET(
   const supabase = await createClient();
   const { data: product } = await supabase
     .from("products")
-    .select("id, name, style_number")
+    .select("id, name, style_number, version_major, version_minor")
     .eq("id", id)
     .eq("workspace_id", user.profile.workspace_id)
     .single();
@@ -104,6 +105,10 @@ export async function GET(
     xlsx = await buildTechpackWorkbook({
       productName: product.name,
       styleNumber: product.style_number,
+      versionLabel: productVersionLabel(
+        product.version_major,
+        product.version_minor,
+      ),
       bomRows,
       specTables,
     });

@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { productVersionLabel } from "@/lib/product-version";
 import { cn } from "@/lib/utils";
 import type {
   Collection,
@@ -249,8 +250,7 @@ export function IdentitySection({
   });
 
   const collectionName = useMemo(
-    () =>
-      collections.find((c) => c.id === product.collection_id)?.name ?? "—",
+    () => collections.find((c) => c.id === product.collection_id)?.name ?? "—",
     [collections, product.collection_id],
   );
 
@@ -280,9 +280,12 @@ export function IdentitySection({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <div className="divide-border divide-y">
-
           {/* ---- Sub-section 1 — Core Identity -------------------------------- */}
-          <SubSection title="Core Identity" status={coreStatus} defaultOpen={true}>
+          <SubSection
+            title="Core Identity"
+            status={coreStatus}
+            defaultOpen={true}
+          >
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -294,7 +297,10 @@ export function IdentitySection({
                         Style Name <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. Aero Training Tee" {...field} />
+                        <Input
+                          placeholder="e.g. Aero Training Tee"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -488,9 +494,15 @@ export function IdentitySection({
 
               <ReadOnlyField label="Tech Pack Version">
                 <span className="flex items-center gap-2">
-                  <StatusPill status="draft" />
+                  <span className="text-foreground font-medium">
+                    {productVersionLabel(
+                      product.version_major,
+                      product.version_minor,
+                    )}
+                  </span>
                   <span className="text-xs">
-                    Versioning begins once the tech pack is approved.
+                    Promote a new version from the product header when you send
+                    an updated pack.
                   </span>
                 </span>
               </ReadOnlyField>
@@ -504,7 +516,9 @@ export function IdentitySection({
             defaultOpen={true}
           >
             <div className="grid grid-cols-2 gap-4">
-              <ReadOnlyField label="Brand Name">{brandName ?? "—"}</ReadOnlyField>
+              <ReadOnlyField label="Brand Name">
+                {brandName ?? "—"}
+              </ReadOnlyField>
               <ReadOnlyField label="Collection">{collectionName}</ReadOnlyField>
               <FormField
                 control={form.control}
@@ -557,7 +571,10 @@ export function IdentitySection({
                     <FormItem>
                       <FormLabel>Factory / Vendor Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. Apex Garments Ltd" {...field} />
+                        <Input
+                          placeholder="e.g. Apex Garments Ltd"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -653,11 +670,7 @@ export function IdentitySection({
           </SubSection>
 
           {/* ---- Sub-section 4 — Use & Fit ------------------------------------ */}
-          <SubSection
-            title="Use & Fit"
-            status={fitStatus}
-            defaultOpen={false}
-          >
+          <SubSection title="Use & Fit" status={fitStatus} defaultOpen={false}>
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -728,7 +741,12 @@ export function IdentitySection({
                   <StatusPill status={product.status} />
                 </ReadOnlyField>
                 <ReadOnlyField label="Tech Pack Version">
-                  <StatusPill status="draft" />
+                  <span className="text-foreground font-medium">
+                    {productVersionLabel(
+                      product.version_major,
+                      product.version_minor,
+                    )}
+                  </span>
                 </ReadOnlyField>
                 <ReadOnlyField label="Date Created">
                   {formatDate(product.created_at)}
@@ -761,7 +779,6 @@ export function IdentitySection({
               />
             </div>
           </SubSection>
-
         </div>
 
         {/* ---- Section footer: save action, right-aligned ------------------- */}
