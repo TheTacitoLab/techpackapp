@@ -14,11 +14,8 @@
 
 import { Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-import {
-  TRIM_KIND_LABEL,
-  isFabricFamilyType,
-  readFabricTrimData,
-} from "@/components/canvas/fabric-trim-data";
+import { TRIM_KIND_LABEL } from "@/components/canvas/fabric-trim-data";
+import { BOM_GROUP_LABEL, rowTotal, type BomRow } from "@/lib/bom-rows";
 import { BOX_BG, HAIRLINE, INK, MUTED } from "@/lib/pdf/branding";
 import {
   FOOTER_H,
@@ -33,40 +30,15 @@ import {
   type PdfFooterData,
   type PdfHeaderData,
 } from "@/lib/pdf/render-techpack-page";
-import type { CanvasAnnotation, FabricTrimAnnotationData } from "@/types";
+import type { FabricTrimAnnotationData } from "@/types";
 
 // ---- Rows ---------------------------------------------------------------------
 
-export type BomRow = {
-  group: "fabric" | "trim";
-  ref: string;
-  data: FabricTrimAnnotationData;
-};
+// Row derivation lives in `lib/bom-rows.ts` (shared with the Excel export);
+// this module owns only the PDF presentation of those rows.
+export { buildBomRows, rowTotal, type BomRow } from "@/lib/bom-rows";
 
-const GROUP_LABEL: Record<BomRow["group"], string> = {
-  fabric: "Fabrics",
-  trim: "Trims",
-};
-
-/** The rows exactly as the on-screen BOM shows them: fabric/trim annotations
- *  only, grouped Fabrics then Trims, reference-code order within each group. */
-export function buildBomRows(annotations: CanvasAnnotation[]): BomRow[] {
-  const groups: BomRow["group"][] = ["fabric", "trim"];
-  return groups.flatMap((group) =>
-    annotations
-      .filter((a) => a.layer_type === group && isFabricFamilyType(a.layer_type))
-      .sort((a, b) =>
-        a.reference_code.localeCompare(b.reference_code, undefined, {
-          numeric: true,
-        }),
-      )
-      .map((a) => ({
-        group,
-        ref: a.reference_code,
-        data: readFabricTrimData(a.data),
-      })),
-  );
-}
+const GROUP_LABEL = BOM_GROUP_LABEL;
 
 // ---- Columns --------------------------------------------------------------------
 
@@ -85,13 +57,6 @@ function formatNumber(value: number): string {
 
 function formatMoney(value: number): string {
   return value.toFixed(2);
-}
-
-/** Total = qty × unit cost, only when BOTH are present. */
-export function rowTotal(d: FabricTrimAnnotationData): number | null {
-  return d.quantity !== null && d.unit_cost !== null
-    ? d.quantity * d.unit_cost
-    : null;
 }
 
 export type BomColumn = {

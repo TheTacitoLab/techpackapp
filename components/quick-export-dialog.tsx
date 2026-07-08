@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, FileDown } from "lucide-react";
+import { Check, FileDown, FileSpreadsheet } from "lucide-react";
 
 import {
   ANNOTATION_LAYERS,
@@ -66,6 +66,11 @@ function ToggleRow({
  * omits the spec pages — it's a document section, not an annotation layer).
  * All-defaults is the full document. "More options" goes to the Export Hub (a
  * later session — placeholder route for now).
+ *
+ * Beside the PDF button, "Export Excel" downloads the STRUCTURED DATA twin
+ * (`/products/{id}/techpack.xlsx`): the BOM plus every Spec Sheet as a
+ * spreadsheet for the factory's ERP/QC tools. Whole-product scope in V1 — the
+ * layer/section toggles above shape the PDF only.
  */
 export function QuickExportDialog({ productId }: { productId: string }) {
   const [open, setOpen] = useState(false);
@@ -83,6 +88,15 @@ export function QuickExportDialog({ productId }: { productId: string }) {
     });
   }
 
+  // The routes answer with Content-Disposition: attachment, so navigating an
+  // anchor downloads without leaving the page.
+  function download(url: string) {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.click();
+    setOpen(false);
+  }
+
   function handleExport() {
     // Everything at its default is the canonical full document — no params.
     const params = new URLSearchParams();
@@ -91,13 +105,12 @@ export function QuickExportDialog({ productId }: { productId: string }) {
     }
     if (!includeSpecs) params.set("specs", "0");
     const query = params.toString();
-    const url = `/products/${productId}/techpack.pdf${query ? `?${query}` : ""}`;
-    // The route answers with Content-Disposition: attachment, so navigating
-    // an anchor downloads without leaving the page.
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.click();
-    setOpen(false);
+    download(`/products/${productId}/techpack.pdf${query ? `?${query}` : ""}`);
+  }
+
+  function handleExportExcel() {
+    // Whole-product data scope (BOM + all Spec Sheets) — no params in V1.
+    download(`/products/${productId}/techpack.xlsx`);
   }
 
   const bomIncluded = selected.has("fabric");
@@ -125,7 +138,8 @@ export function QuickExportDialog({ productId }: { productId: string }) {
           <DialogTitle>Quick Export</DialogTitle>
           <DialogDescription>
             One PDF: cover page, every canvas page with the layers you pick,
-            the Bill of Materials and the Size Specifications.
+            the Bill of Materials and the Size Specifications. Or take the BOM
+            and Spec Sheets as an Excel workbook.
           </DialogDescription>
         </DialogHeader>
 
@@ -155,16 +169,17 @@ export function QuickExportDialog({ productId }: { productId: string }) {
 
         <p className="text-muted-foreground text-xs">
           {selected.size === 0
-            ? "Select at least one layer to export."
+            ? "Select at least one layer to export the PDF."
             : bomIncluded
               ? "Includes the Bill of Materials (from Fabrics & Trim)."
-              : "Bill of Materials is omitted without Fabrics & Trim."}
+              : "Bill of Materials is omitted without Fabrics & Trim."}{" "}
+          Export Excel always carries the full data: BOM + all Spec Sheets.
         </p>
 
         <div className="flex items-center justify-between gap-2">
-          {/* Export Hub (per-page selection, rename, Excel) is a later
-              session — TODO: replace this placeholder destination with the
-              real hub when it ships. */}
+          {/* Export Hub (per-page selection, rename) is a later session —
+              TODO: replace this placeholder destination with the real hub
+              when it ships. */}
           <Link
             href={`/products/${productId}/export`}
             className="text-muted-foreground hover:text-foreground text-xs font-medium underline underline-offset-2"
@@ -172,14 +187,20 @@ export function QuickExportDialog({ productId }: { productId: string }) {
           >
             More options
           </Link>
-          <Button
-            size="sm"
-            disabled={selected.size === 0}
-            onClick={handleExport}
-          >
-            <FileDown className="size-4" />
-            Export
-          </Button>
+          <span className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handleExportExcel}>
+              <FileSpreadsheet className="size-4" />
+              Export Excel
+            </Button>
+            <Button
+              size="sm"
+              disabled={selected.size === 0}
+              onClick={handleExport}
+            >
+              <FileDown className="size-4" />
+              Export PDF
+            </Button>
+          </span>
         </div>
       </DialogContent>
     </Dialog>

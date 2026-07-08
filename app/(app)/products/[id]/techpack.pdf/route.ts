@@ -11,6 +11,7 @@ import {
   type LayerKey,
 } from "@/components/canvas/layers";
 import { STATUS_LABELS } from "@/components/status-pill";
+import { exportFilename } from "@/lib/export-filename";
 import {
   createImageFetcher,
   buildPdfSlots,
@@ -164,15 +165,6 @@ function buildCoverColourways(
       return { name: colourway.name, swatches };
     })
     .filter((c) => c.swatches.length > 0);
-}
-
-/** `{style-number-or-name}-techpack.pdf`, sanitised for a filename. */
-function exportFilename(styleNumber: string | null, name: string): string {
-  const base = (styleNumber?.trim() || name)
-    .replace(/[^\w-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  return `${base || "product"}-techpack.pdf`;
 }
 
 /**
@@ -517,7 +509,7 @@ export async function GET(
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${exportFilename(product.style_number, product.name)}"`,
+      "Content-Disposition": `attachment; filename="${exportFilename(product.style_number, product.name, "pdf")}"`,
       "Cache-Control": "no-store",
     },
   });

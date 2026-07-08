@@ -22,14 +22,7 @@
 
 import { Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-import {
-  formatSpecValue,
-  gradableRow,
-  gradingRulesFromProfile,
-  storedValuesByRow,
-  toleranceSetForFabric,
-} from "@/components/spec/spec-data";
-import { demographicLabel } from "@/components/spec/spec-demographics";
+import { formatSpecValue } from "@/components/spec/spec-data";
 import { BOX_BG, HAIRLINE, INK, MUTED } from "@/lib/pdf/branding";
 import {
   FOOTER_H,
@@ -44,12 +37,7 @@ import {
   type PdfFooterData,
   type PdfHeaderData,
 } from "@/lib/pdf/render-techpack-page";
-import {
-  findSizeIndex,
-  gradeSheet,
-  normalizeSizeLabel,
-  toleranceForRow,
-} from "@/lib/spec-grading";
+import { resolveSpecTables, specSheetCaption } from "@/lib/spec-sheet-resolve";
 import type { GradingProfile, ResolvedSpecSheet } from "@/types";
 
 // ---- Table geometry --------------------------------------------------------------
@@ -118,36 +106,12 @@ export type PdfSpecSheetPageData = {
   content: SpecSheetPageContent;
 };
 
-/** The caption naming the profile and tolerance basis, so the factory knows
- *  where the graded numbers came from. */
-function sheetCaption(
-  sheet: ResolvedSpecSheet,
-  profile: GradingProfile | null,
-  anchor: string | null,
-): string {
-  const parts: string[] = [];
-  if (sheet.mode === "manual") {
-    parts.push("Measurements entered manually");
-  } else if (profile) {
-    parts.push(
-      anchor
-        ? `Graded from the ${anchor} sample with the “${profile.name}” profile`
-        : `Graded with the “${profile.name}” profile`,
-    );
-    if (profile.break_size_label) {
-      parts.push(`size break at ${profile.break_size_label}`);
-    }
-  } else {
-    parts.push("No grading profile applied — sample column(s) only");
-  }
-  parts.push(`${sheet.fabric_type === "woven" ? "woven" : "knit"} tolerances`);
-  parts.push(`values in ${sheet.unit || "cm"}`);
-  return parts.join(" · ");
-}
-
 /**
- * Resolve and paginate every Spec Sheet into page contents. Sheets with no
- * size run or no rows have nothing to table and are skipped; a product with
+ * Resolve and paginate every Spec Sheet into page contents. Resolution (the
+ * engine pass producing the numeric table) lives in `lib/spec-sheet-resolve.ts`
+ * — shared with the Excel export so both show identical numbers; this builder
+ * owns only the PDF concerns (formatting, chunking, pagination). Sheets with
+ * no size run or no rows have nothing to table and are skipped; a product with
  * no sheets at all yields [] and the document simply has no spec pages.
  */
 export function buildSpecSheetPages(
@@ -156,97 +120,39 @@ export function buildSpecSheetPages(
 ): SpecSheetPageContent[] {
   const pages: SpecSheetPageContent[] = [];
 
-  for (const sheet of sheets) {
-    const sizeRun = sheet.size_run ?? [];
-    const rows = [...sheet.rows].sort(
-      (a, b) =>
-        a.sort_order - b.sort_order ||
-        a.code.localeCompare(b.code, undefined, { numeric: true }),
-    );
-    if (sizeRun.length === 0 || rows.length === 0) continue;
-
-    const stored = storedValuesByRow(sheet.values ?? []);
-    const profile = sheet.grading_profile_id
-      ? (profilesById.get(sheet.grading_profile_id) ?? null)
-      : null;
-    const sampleSizes = sheet.sample_sizes ?? [];
-    const anchor = sampleSizes[0] ?? sheet.sample_size_label ?? null;
-
-    // Auto sheets re-grade through the SAME engine the on-screen sheet uses —
-    // stored sample column(s) + profile are the single source of truth.
-    let computed: Record<string, Record<string, number | null>> | null = null;
-    if (
-      sheet.mode === "auto" &&
-      profile &&
-      anchor !== null &&
-      findSizeIndex(sizeRun, anchor) !== -1
-    ) {
-      const sampleValues: Record<string, number | null> = {};
-      for (const r of rows) {
-        sampleValues[r.id] = stored[r.id]?.[normalizeSizeLabel(anchor)] ?? null;
-      }
-      computed = gradeSheet(
-        rows.map(gradableRow),
-        anchor,
-        sampleValues,
-        gradingRulesFromProfile(profile),
-        sizeRun,
-      );
-    }
-
-    const toleranceSet = profile
-      ? toleranceSetForFabric(profile, sheet.fabric_type)
-      : {};
-    const sampleKeys = new Set(sampleSizes.map((s) => normalizeSizeLabel(s)));
-    const displayName =
-      sheet.name ?? sheet.template_name ?? demographicLabel(sheet.demographic);
-    const baseTitle = `Size Specification — ${displayName}`;
-    const caption = sheetCaption(sheet, profile, anchor);
+  for (const table of resolveSpecTables(sheets, profilesById)) {
+    const baseTitle = `Size Specification — ${table.displayName}`;
+    const caption = specSheetCaption(table);
 
     // Wide runs: size columns split across chunk pages; code/name/tolerance
     // repeat on every chunk so each page reads standalone.
-    const chunks: string[][] = [];
-    for (let i = 0; i < sizeRun.length; i += MAX_SIZE_COLS) {
-      chunks.push(sizeRun.slice(i, i + MAX_SIZE_COLS));
-    }
-
-    for (const chunk of chunks) {
-      const columns: SpecPageColumn[] = chunk.map((label) => ({
-        label,
-        isSample: sampleKeys.has(normalizeSizeLabel(label)),
+    for (let start = 0; start < table.columns.length; start += MAX_SIZE_COLS) {
+      const chunk = table.columns.slice(start, start + MAX_SIZE_COLS);
+      const columns: SpecPageColumn[] = chunk.map((col) => ({
+        label: col.label,
+        isSample: col.isSample,
       }));
       const chunkTitle =
-        chunks.length > 1
-          ? `${baseTitle} (${chunk[0]}–${chunk[chunk.length - 1]})`
+        table.columns.length > MAX_SIZE_COLS
+          ? `${baseTitle} (${chunk[0].label}–${chunk[chunk.length - 1].label})`
           : baseTitle;
 
-      const displayRows: SpecPageRow[] = rows.map((row) => {
-        const tolerance = toleranceForRow(
-          row.grade_category,
-          row.sub_kind,
-          row.tolerance_override,
-          toleranceSet,
-        );
-        return {
-          code: row.code,
-          name: row.name,
-          tolerance: tolerance !== null ? `±${formatSpecValue(tolerance)}` : null,
-          values: chunk.map((label) => {
-            const value =
-              stored[row.id]?.[normalizeSizeLabel(label)] ??
-              computed?.[row.id]?.[label] ??
-              null;
-            return value !== null ? formatSpecValue(value) : null;
-          }),
-        };
-      });
+      const displayRows: SpecPageRow[] = table.rows.map((row) => ({
+        code: row.code,
+        name: row.name,
+        tolerance:
+          row.tolerance !== null ? `±${formatSpecValue(row.tolerance)}` : null,
+        values: row.values
+          .slice(start, start + MAX_SIZE_COLS)
+          .map((value) => (value !== null ? formatSpecValue(value) : null)),
+      }));
 
       // Tall sheets: continue onto pages that repeat the column captions.
-      for (let start = 0; start < displayRows.length; start += ROWS_PER_PAGE) {
+      for (let from = 0; from < displayRows.length; from += ROWS_PER_PAGE) {
         pages.push({
-          title: start === 0 ? chunkTitle : `${chunkTitle} (continued)`,
+          title: from === 0 ? chunkTitle : `${chunkTitle} (continued)`,
           columns,
-          rows: displayRows.slice(start, start + ROWS_PER_PAGE),
+          rows: displayRows.slice(from, from + ROWS_PER_PAGE),
           caption,
         });
       }
