@@ -66,9 +66,10 @@ const COVER_FABRICS_MAX = 5;
 
 /**
  * The Quick Export layer filter: `?layers=fabric,measurement` → the set of
- * selected layer KEYS, defaulting to all five when absent. Unknown keys are
- * ignored; a param that names no valid layer at all is a 400 (the UI disables
- * Export at zero — reaching that state means a hand-built URL).
+ * selected layer KEYS, defaulting to all five when absent. `layers=none` is
+ * the deliberate empty set (all layers off, the other sections still export).
+ * Unknown keys are ignored; a param that names no valid layer at all is a 400
+ * (reaching that state means a hand-built URL).
  */
 function parseLayersParam(
   raw: string | null,
@@ -76,6 +77,7 @@ function parseLayersParam(
   if (raw === null || raw.trim() === "") {
     return { keys: new Set<LayerKey>(ALL_LAYER_KEYS) };
   }
+  if (raw.trim() === "none") return { keys: new Set<LayerKey>() };
   const keys = new Set<LayerKey>();
   for (const part of raw.split(",")) {
     const key = part.trim() as LayerKey;
@@ -168,15 +170,18 @@ function buildCoverColourways(
 }
 
 /**
- * GET /products/{id}/techpack.pdf?layers=fabric,colourway,…&specs=0
+ * GET /products/{id}/techpack.pdf?layers=fabric,colourway,…&bom=0&specs=0
  *
  * The FULL tech pack as one PDF document: cover page (logo, identity,
  * description/end-use, hero image, key fabrics, colour palette) → a
  * dedicated Colour Palette page when the palette outgrows the cover → every
  * canvas page in order (the proven composed renderer, filtered to the
- * selected layers) → Bill of Materials page(s) (only when the Fabrics & Trim
- * layer is selected and rows exist) → Size Specification page(s) (one titled
- * table per Spec Sheet, omitted via `?specs=0` or when there are no sheets).
+ * selected layers) → Bill of Materials page(s) (its OWN section since the
+ * BOM/fabric-layer decoupling: omitted via `?bom=0`, otherwise built from
+ * every fabric/trim pin regardless of the layer filter — no rows still means
+ * no BOM pages) → Size Specification page(s) (one titled table per Spec
+ * Sheet, omitted via `?specs=0` or when there are no sheets). Every section
+ * is content-only: a selected section with no data simply renders no pages.
  * Page numbering runs across the whole document; the cover is page 1. Auth +
  * workspace scoping match every other data path. A product with no canvas
  * pages exports as a cover-only document.
@@ -196,9 +201,15 @@ export async function GET(
   }
   const selectedKeys = layersParam.keys;
   const allowedTypes = allowedLayerTypes(selectedKeys);
-  // The Quick Export "Size Specifications" toggle — ticked by default, so
-  // only an explicit `specs=0` omits the spec pages.
+  // The Quick Export section toggles — ticked by default, so only an
+  // explicit `bom=0`/`specs=0` omits those pages.
+  const includeBom = url.searchParams.get("bom") !== "0";
   const includeSpecs = url.searchParams.get("specs") !== "0";
+  // The UI disables Export with nothing ticked — zero sections here means a
+  // hand-built URL.
+  if (selectedKeys.size === 0 && !includeBom && !includeSpecs) {
+    return new Response("At least one section is required.", { status: 400 });
+  }
 
   const supabase = await createClient();
   const { data: product } = await supabase
@@ -343,10 +354,17 @@ export async function GET(
     coverPaletteFits(coverColourways, coverContent);
   const hasPalettePage = coverColourways.length > 0 && !paletteOnCover;
 
-  // BOM: derived from the SAME filtered annotations the pages render — the
-  // fabric layer deselected means no fabric/trim pins anywhere, so no BOM.
+  // BOM: its own section, independent of the Fabrics & Trim LAYER toggle
+  // (pins on pages vs the materials table are separate concerns) — so its
+  // rows come from the product's RAW annotations, not the layer-filtered
+  // set. buildBomRows keeps only fabric/trim pins; zero rows means
+  // paginateBom yields no pages (content-only, never an empty section).
   const bomRows = buildBomRows(
-    selectedKeys.has("fabric") ? filteredAnnotations : [],
+    includeBom
+      ? allPages
+          .flatMap((p) => p.canvas_slots)
+          .flatMap((s) => s.canvas_annotations)
+      : [],
   );
   const bomRowPages = paginateBom(bomRows);
   const bomColumns = visibleBomColumns(bomRows);

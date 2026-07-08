@@ -4,10 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Check, FileDown, FileSpreadsheet } from "lucide-react";
 
-import {
-  ANNOTATION_LAYERS,
-  type LayerKey,
-} from "@/components/canvas/layers";
+import { ANNOTATION_LAYERS, type LayerKey } from "@/components/canvas/layers";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -57,15 +54,18 @@ function ToggleRow({
 
 /**
  * The product header's "Quick Export" — the one-click full tech pack PDF.
- * Opens a small pop-up with the five annotation layers (ALL ticked by
- * default), exporting `/products/{id}/techpack.pdf` filtered to the
- * selection: cover always included, canvas pages composed from the selected
- * layers only, and the Bill of Materials only when Fabrics & Trim is in (it
- * is derived from that layer's pins). Below the layers, an "Also include"
- * group carries the Size Specifications toggle (ticked by default; `?specs=0`
- * omits the spec pages — it's a document section, not an annotation layer).
- * All-defaults is the full document. "More options" goes to the Export Hub (a
- * later session — placeholder route for now).
+ * Opens a small pop-up listing EVERY includable document section as a
+ * pre-ticked checkbox — the five annotation layers, then an "Also include"
+ * group with the Bill of Materials and the Size Specifications — exporting
+ * `/products/{id}/techpack.pdf` filtered to the selection. The cover is
+ * always included (never a checkbox), and a ticked section with no content
+ * is simply omitted by the route, so all-defaults means "everything the
+ * product actually contains" — the full document, no params. Off-default
+ * selections travel as `?layers=…` (`none` for zero layers), `?bom=0` and
+ * `?specs=0`; the BOM is its OWN section, independent of the Fabrics & Trim
+ * layer toggle (pins on pages and the BOM table are separate concerns).
+ * "More options" goes to the Export Hub (a later session — placeholder route
+ * for now).
  *
  * Beside the PDF button, "Export Excel" downloads the STRUCTURED DATA twin
  * (`/products/{id}/techpack.xlsx`): the BOM plus every Spec Sheet as a
@@ -77,6 +77,7 @@ export function QuickExportDialog({ productId }: { productId: string }) {
   const [selected, setSelected] = useState<Set<LayerKey>>(
     () => new Set(ALL_KEYS),
   );
+  const [includeBom, setIncludeBom] = useState(true);
   const [includeSpecs, setIncludeSpecs] = useState(true);
 
   function toggle(key: LayerKey) {
@@ -101,8 +102,14 @@ export function QuickExportDialog({ productId }: { productId: string }) {
     // Everything at its default is the canonical full document — no params.
     const params = new URLSearchParams();
     if (selected.size !== ALL_KEYS.length) {
-      params.set("layers", [...selected].join(","));
+      // `none` = deliberately zero layers (a bare comma list would read as a
+      // malformed param) — the export is then cover + the other sections.
+      params.set(
+        "layers",
+        selected.size === 0 ? "none" : [...selected].join(","),
+      );
     }
+    if (!includeBom) params.set("bom", "0");
     if (!includeSpecs) params.set("specs", "0");
     const query = params.toString();
     download(`/products/${productId}/techpack.pdf${query ? `?${query}` : ""}`);
@@ -113,7 +120,10 @@ export function QuickExportDialog({ productId }: { productId: string }) {
     download(`/products/${productId}/techpack.xlsx`);
   }
 
-  const bomIncluded = selected.has("fabric");
+  // Cover aside (always in), the export needs at least one ticked section —
+  // a layer, the BOM or the Size Specifications all count.
+  const sectionCount =
+    selected.size + (includeBom ? 1 : 0) + (includeSpecs ? 1 : 0);
 
   return (
     <Dialog
@@ -123,6 +133,7 @@ export function QuickExportDialog({ productId }: { productId: string }) {
         // Fresh dialog = everything ticked again (the quick path's default).
         if (next) {
           setSelected(new Set(ALL_KEYS));
+          setIncludeBom(true);
           setIncludeSpecs(true);
         }
       }}
@@ -137,13 +148,15 @@ export function QuickExportDialog({ productId }: { productId: string }) {
         <DialogHeader>
           <DialogTitle>Quick Export</DialogTitle>
           <DialogDescription>
-            One PDF: cover page, every canvas page with the layers you pick,
-            the Bill of Materials and the Size Specifications. Or take the BOM
-            and Spec Sheets as an Excel workbook.
+            One PDF with the sections you tick — the cover page is always
+            included. Or take the BOM and Spec Sheets as an Excel workbook.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1">
+          <p className="text-muted-foreground px-2 text-[11px] font-semibold tracking-wide uppercase">
+            Annotation layers
+          </p>
           {ANNOTATION_LAYERS.map((layer) => (
             <ToggleRow
               key={layer.key}
@@ -154,12 +167,17 @@ export function QuickExportDialog({ productId }: { productId: string }) {
           ))}
         </div>
 
-        {/* Includable document SECTIONS (not annotation layers) — the BOM has
-            no row here because it is derived from Fabrics & Trim above. */}
+        {/* Includable document SECTIONS (not annotation layers) — the BOM is
+            its own toggle, independent of the Fabrics & Trim layer above. */}
         <div className="space-y-1">
           <p className="text-muted-foreground px-2 text-[11px] font-semibold tracking-wide uppercase">
             Also include
           </p>
+          <ToggleRow
+            checked={includeBom}
+            label="Bill of Materials"
+            onToggle={() => setIncludeBom((prev) => !prev)}
+          />
           <ToggleRow
             checked={includeSpecs}
             label="Size Specifications"
@@ -168,11 +186,9 @@ export function QuickExportDialog({ productId }: { productId: string }) {
         </div>
 
         <p className="text-muted-foreground text-xs">
-          {selected.size === 0
-            ? "Select at least one layer to export the PDF."
-            : bomIncluded
-              ? "Includes the Bill of Materials (from Fabrics & Trim)."
-              : "Bill of Materials is omitted without Fabrics & Trim."}{" "}
+          {sectionCount === 0
+            ? "Select at least one section to export the PDF."
+            : "Ticked sections with nothing in them are left out automatically."}{" "}
           Export Excel always carries the full data: BOM + all Spec Sheets.
         </p>
 
@@ -194,7 +210,7 @@ export function QuickExportDialog({ productId }: { productId: string }) {
             </Button>
             <Button
               size="sm"
-              disabled={selected.size === 0}
+              disabled={sectionCount === 0}
               onClick={handleExport}
             >
               <FileDown className="size-4" />

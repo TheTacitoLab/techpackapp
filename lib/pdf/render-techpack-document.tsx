@@ -36,7 +36,7 @@ export type TechPackDocumentData = {
    *  overflowed palette page). */
   pages: PdfPageData[];
   /** BOM pages (already paginated); empty when there is nothing to list or
-   *  the Fabrics & Trim layer was deselected. */
+   *  the export deselected the BOM section. */
   bomPages: PdfBomPageData[];
   /** Size Specification table page(s), after the BOM; empty when the product
    *  has no Spec Sheets or the export deselected them. */
