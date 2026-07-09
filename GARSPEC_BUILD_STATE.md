@@ -2,6 +2,16 @@
 
 Read-only audit of the codebase as it exists on branch `claude/new-session-b2eecq` at commit `e672232` (2026-07-08). Every claim below is grounded in the actual code; anything uncertain is marked **unverified**. The most important distinction throughout: **implemented** vs **stubbed** vs **not present**.
 
+> **Addendum — housekeeping session applied after this snapshot:** migration
+> `0039` fixed the Branding & Labels marker-colour bug (§4); the TechPack →
+> GarSpec rebrand sweep landed (shell/auth/metadata/package name, Zustand key
+> now `garspec-ui`); the dead "View online" link was removed from the PDF
+> footer (token plumbing kept); an `/update-password` page now completes the
+> reset flow; the `[DIAG]`/`console.time` instrumentation was stripped; and
+> `README.md`, `CODEBASE_CONTEXT.md` and the grading reference doc were
+> corrected against reality. Statements below about those items describe the
+> pre-session state.
+
 ---
 
 ## 1. Stack & Infrastructure

@@ -2,6 +2,8 @@
 
 Research-grounded reference for GarSpec's starter **Grading Profiles** — the increment rules that turn one sample size into a full graded Spec Sheet. Drafted from current industry grading references, published teamwear graded specs, and pattern-grading conventions (US 2"/5cm and European 4cm systems, ASTM-informed sizing behaviour).
 
+**Status: shipped.** The three profiles below are seeded in `supabase/migrations/0035_spec_seed_profiles.sql` and the grading engine lives in `lib/spec-grading.ts` (unit-tested in `lib/spec-grading.test.ts`, with the seeded values as fixtures). This document remains the rationale/reference for those numbers.
+
 **Positioning (important):** these ship as **"industry-typical defaults — adjust to your fit block."** Grade rules legitimately vary by brand, market, and fit philosophy; there is no single universal standard. These defaults are defensible, conventional starting points — exactly what a student or founder needs — with every value editable.
 
 **Category coverage — teamwear, streetwear, casualwear, formalwear:** these three profiles serve ALL of these categories, because grade increments are driven by DEMOGRAPHIC (how bodies change between sizes), not by garment category. A men's chest grades the same on a jersey, a hoodie, a tee, or a formal overshirt. What differs across categories is handled elsewhere: the FIT/EASE lives in the sample measurements the user enters (boxy streetwear vs slim formal are different samples, graded identically); the TOLERANCES differ by fabric discipline (the knit/woven toggle — teamwear/streetwear knits run looser, formal/casual wovens tighter); and formal SIZE CONVENTIONS (numeric chest sizes 38/40/42, collar sizing) are a size-labelling matter — runs come from Product Setup sizing, so custom-labelled runs are supported by the model rather than needing separate profiles.
@@ -101,10 +103,6 @@ A profile carries a knit/woven toggle (or per-POM override). Convention check: t
 
 1. Grading runs FROM the base size OUT in both directions (sample can be any size in the run — commonly M for adults; the engine applies +increment upward, −increment downward per size step, honouring the 2XL+ break).
 2. Custom Grading Profiles = same structure (per-category increments + break point + tolerances), user-defined; the three starters are seeded read-only (duplicate-to-edit, matching the Master Library global/workspace pattern).
-3. Rounding: grade to 0.1cm; display per the user's unit setting.
+3. Rounding: grade to 0.1cm; sheets are cm-only in V1 (a per-user unit setting is a later phase).
 4. The Spec Sheet stores the sample column as entered and computes the rest live from the profile — so changing profile or sample re-grades instantly (same "read live" philosophy as marker colours).
-5. Route B (auto-detect increments from 2–3 entered sizes) comes later; the category model above makes it straightforward (detected increments just populate a custom profile).
-
----
-
-**Review checklist for Rob:** (1) the three runs and the split — confirmed as proposed; (2) the increment values — sanity-check against your own fit experience, especially youth; (3) tolerances — happy with knit/woven defaults?; (4) the per-category model — approve as the engine design?
+5. Route B (auto-detect increments from 2+ entered sizes) is **built**: `detectGrade()` in `lib/spec-grading.ts` averages per-step deltas per grade category (inferring the break when 3+ sizes are entered, flagging inconsistent data) and pre-fills a custom-profile dialog for review before anything is applied.

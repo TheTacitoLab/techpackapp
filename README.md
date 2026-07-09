@@ -1,23 +1,30 @@
-# TechPackApp
+# GarSpec
 
 A commercial SaaS web app that lets fashion designers create industry-standard
-tech packs visually and export them to factories. This repository is the
-**Phase 1 foundation**: scaffold, brand design system, Supabase data model with
-Row Level Security, email/password auth with route protection, and the
-authenticated app shell with a data-driven dashboard. Product features (canvas,
-BOM, measurements, PDF export, factory portal) come in later phases.
+tech packs visually and export them to factories. The working feature set:
+product hierarchy (brands → collections → products), a canvas annotation system
+(five layers: Colourways, Fabrics & Trim, Measurements, Construction,
+Branding & Labels), an auto-generated Bill of Materials, multi-sheet Size
+Specifications with a live grading engine (auto-grade from seeded profiles or
+detect the grade from entered samples), PDF export (cover, canvas pages, BOM,
+spec sheets), Excel export (BOM + spec sheets), section completion tracking,
+and product versioning with an append-only change log.
+
+For the full audited inventory of what exists (and what's stubbed or absent),
+see `GARSPEC_BUILD_STATE.md`.
 
 ## Tech stack
 
 - **Next.js 16** (App Router) + **React 19** + **TypeScript** (strict)
 - **Tailwind CSS v4** (CSS-first `@theme`, no `tailwind.config.js`)
 - **shadcn/ui** (new-york style) + **Lucide** icons + **Inter** font + **sonner** toasts
-- **Supabase** (PostgreSQL + Auth) via `@supabase/ssr`
-- **Zustand** (client state) + **TanStack Query v5** (server-state fetching)
-- **React Hook Form** + **Zod** (forms/validation)
+- **Supabase** (PostgreSQL + RLS, Auth, Storage) via `@supabase/ssr`
+- **@react-pdf/renderer** (PDF export) + **ExcelJS** (.xlsx export)
+- **Zustand** (client UI state) + **React Hook Form** + **Zod**
 
-Dark mode only, desktop-first (min 1280px). Brand: primary/accent `#C8F000`
-(lime), background `#1A1A2E` (navy) — referenced via theme tokens, never raw hex.
+Light warm-neutral theme, desktop-first (min 1280px). Brand accent `#C8F000`
+(lime, reserved for progress/completion/active states), primary/sidebar
+`#1A1A2E` (navy) — referenced via theme tokens, never raw hex.
 
 ## Required environment variables
 
@@ -43,20 +50,15 @@ npm run dev          # http://localhost:3000
 ```
 
 Other scripts: `npm run build`, `npm run start`, `npm run lint`,
-`npm run typecheck`.
+`npm run typecheck`, `npm test` (grading-engine + Excel unit tests).
 
 ## Running the database migrations
 
-The schema lives in `supabase/migrations/` and must be applied to your Supabase
-project. Pick whichever fits your workflow.
+The schema lives in `supabase/migrations/` (`0001` … `0039`, sequential and
+idempotent) and must be applied to your Supabase project **in order**.
 
 **Option A — Supabase SQL Editor (no CLI):** open your project's SQL Editor and
-run the files in order, then verify:
-
-1. `0001_init_enums_and_tables.sql`
-2. `0002_functions_and_triggers.sql`
-3. `0003_rls_policies.sql`
-4. `0004_seed_section_templates.sql`
+run the files in numeric order.
 
 **Option B — Supabase CLI (hosted project):**
 
@@ -80,29 +82,40 @@ exactly like `supabase gen types` output, so regenerating it is a drop-in.
 
 ### What the schema gives you
 
-- `workspaces`, `profiles`, `brands`, `seasons`, `collections`, `products`,
-  `section_templates`, `product_sections` — the full relational hierarchy.
+- The full relational model: workspace hierarchy, products and sections,
+  canvas pages/slots/annotations/colourways, the two-layer Master Library,
+  spec templates/grading profiles/spec sheets, and the product change log.
+- **RLS on every table**, scoped by the `auth_workspace_id()` helper; global
+  library rows are read-only reference data.
 - A trigger (`handle_new_user`) that, on sign-up, creates the user's
   **workspace** (named from the workspace name they entered) and **profile**.
-- **RLS on every table**: a user can only read/write rows in their own
-  workspace; `section_templates` is global read-only reference data.
-- A seed of the 6 default tech-pack sections.
+- Seeded reference data: 6 section templates, ~96 Master Library items,
+  22 spec templates (255 POMs), and 3 grading profiles (Men's, Women's,
+  Youth Unisex).
 
 ## Folder structure
 
 ```
 app/                  # routes (App Router)
-  (auth)/             # login, signup, reset-password (bare layout)
+  (auth)/             # login, signup, reset-password, update-password
   (app)/              # authenticated routes wrapped in AppShell
-    dashboard/        # data-driven dashboard + createProduct server action
-  layout.tsx          # root layout: dark mode, Inter, providers, Toaster
-  providers.tsx       # TanStack Query provider
-components/           # app components (AppShell, SectionCard, CollapsibleSection,
-                      #   ProgressTracker, EmptyState, ...)
+    dashboard/        # launchpad dashboard + hierarchy server actions
+    products/[id]/    # THE tech pack page + actions, canvas-actions, spec-actions
+      techpack.pdf/   # full-document PDF export route
+      techpack.xlsx/  # Excel export route
+      pdf/            # single-page PDF preview route
+      export/         # Export Hub (placeholder)
+  auth/callback/      # PKCE code-exchange route handler
+components/           # app components (AppShell, sections, dialogs, ...)
+  canvas/             # the shared annotation-canvas system
+  spec/               # Size Specifications stepped flow + grading UI
+  bom/                # generated Bill of Materials table
+  settings/           # Settings page tabs
   ui/                 # shadcn/ui primitives
-lib/                  # cn() util + Supabase clients (client/server/proxy/auth)
-hooks/                # TanStack Query hooks
-stores/               # Zustand stores
+lib/                  # grading engine, BOM rows, change log, Supabase clients, ...
+  pdf/                # @react-pdf/renderer document (cover, pages, BOM, specs)
+hooks/                # small client hooks
+stores/               # Zustand UI store
 types/                # database.types.ts + domain types
 supabase/             # config.toml, seed.sql, migrations/
 proxy.ts              # Next.js 16 proxy (route protection + session refresh)
@@ -113,13 +126,13 @@ proxy.ts              # Next.js 16 proxy (route protection + session refresh)
 - Route protection lives in `proxy.ts` (Next.js 16 renamed `middleware` →
   `proxy`). Unauthenticated users hitting app routes are sent to `/login`;
   authenticated users on auth routes are sent to `/dashboard`.
-- Email sign-up confirmation routes through `app/auth/callback` (exchanges the
-  PKCE code for a session). In **Supabase → Auth → URL Configuration**, set the
-  **Site URL** to your deployed origin and add `<origin>/**` to **Redirect
-  URLs** (include `http://localhost:3000/**` for local dev). To skip the email
-  step in V1, turn off **Confirm email** in Auth → Providers → Email.
-- `/reset-password` sends the reset email; the update-password page is a later
-  phase.
-- Deferred to later phases (not built here): canvas/Konva, BOM, measurements,
-  construction/labels, PDF export, factory portal, versioning, billing,
-  Stripe/Resend/PostHog.
+- Email sign-up confirmation and password recovery route through
+  `app/auth/callback` (exchanges the PKCE code for a session). In
+  **Supabase → Auth → URL Configuration**, set the **Site URL** to your
+  deployed origin and add `<origin>/**` to **Redirect URLs** (include
+  `http://localhost:3000/**` for local dev).
+- Password reset: `/reset-password` sends the email; the link lands on
+  `/update-password` (via the callback) to set the new password.
+- Not built (deliberately or yet): the public `/view/{token}` share route
+  (PDF footers omit the link until it ships), Export Hub (placeholder page),
+  team members/multi-user, billing, factory portal, transactional email.
