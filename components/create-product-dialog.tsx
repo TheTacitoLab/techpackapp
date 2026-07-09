@@ -8,8 +8,15 @@ import { FilePlus2, LayoutTemplate, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { createProduct } from "@/app/(app)/dashboard/actions";
+import {
+  createProduct,
+  createProductFromSpecTemplate,
+} from "@/app/(app)/dashboard/actions";
 import { createFromTemplate } from "@/app/(app)/products/template-actions";
+import {
+  CATEGORY_LABEL,
+  CATEGORY_ORDER,
+} from "@/components/spec/spec-template-picker";
 import {
   TemplateContentIndicators,
   templateMetaLine,
@@ -41,7 +48,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { orderCollectionsForPicker } from "@/lib/collection-hierarchy";
+import type { SpecTemplateSummary } from "@/lib/spec-library";
 import type { TemplateSummary } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 import type { Brand, Collection } from "@/types";
@@ -57,23 +66,29 @@ type FormValues = z.infer<typeof schema>;
 
 type Mode = "choose" | "blank" | "template";
 
+type TemplateSource = "custom" | "garspec";
+
 /**
- * "+ New product" — two paths: A) Create New Tech Pack (the blank flow,
- * unchanged) or B) Use A Template (picker → name + collection → a full deep
- * copy lands on the new product page). With no templates in the workspace
- * the chooser is skipped and the dialog IS the blank flow, exactly as before
- * the feature existed.
+ * "+ New product" — two paths: A) Create New Tech Pack (the blank flow) or
+ * B) Use A Template. The template step has two sources: "My Templates"
+ * (workspace product templates — full deep copies) and "GarSpec Templates"
+ * (the seeded garment library — a fresh product whose Size Specifications
+ * sheet starts from the chosen garment's measurement points). With neither
+ * source available the chooser is skipped and the dialog IS the blank flow.
  */
 export function CreateProductDialog({
   collections = [],
   brands = [],
   templates = [],
+  specTemplates = [],
   defaultCollectionId,
 }: {
   collections?: Collection[];
   /** For the optional brand picker shown when no collection is chosen. */
   brands?: Brand[];
   templates?: TemplateSummary[];
+  /** The seeded GarSpec garment library (global spec templates). */
+  specTemplates?: SpecTemplateSummary[];
   /** Pre-selects a collection (e.g. "New Product" on a collection's page). */
   defaultCollectionId?: string;
 }) {
@@ -83,11 +98,16 @@ export function CreateProductDialog({
   const [isPending, startTransition] = useTransition();
 
   // ---- template path state ----
+  const [templateSource, setTemplateSource] = useState<TemplateSource>(
+    templates.length > 0 ? "custom" : "garspec",
+  );
   const [templateId, setTemplateId] = useState("");
+  const [specTemplateId, setSpecTemplateId] = useState("");
   const [templateProductName, setTemplateProductName] = useState("");
   const [templateCollectionId, setTemplateCollectionId] = useState(
     defaultCollectionId ?? "",
   );
+  const [templateBrandId, setTemplateBrandId] = useState("");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -99,13 +119,24 @@ export function CreateProductDialog({
     },
   });
 
-  const hasTemplates = templates.length > 0;
-  const effectiveMode: Mode = hasTemplates ? mode : "blank";
+  const hasTemplateSources =
+    templates.length > 0 || specTemplates.length > 0;
+  const effectiveMode: Mode = hasTemplateSources ? mode : "blank";
 
   // Sub-collections indented under their parents, in one flat picker list.
   const collectionOptions = useMemo(
     () => orderCollectionsForPicker(collections),
     [collections],
+  );
+
+  // The seeded garment library, grouped in the spec picker's category order.
+  const garspecGroups = useMemo(
+    () =>
+      CATEGORY_ORDER.map((category) => ({
+        category,
+        items: specTemplates.filter((t) => t.category === category),
+      })).filter((group) => group.items.length > 0),
+    [specTemplates],
   );
 
   // A product in a collection adopts the collection's brand server-side;
@@ -119,9 +150,12 @@ export function CreateProductDialog({
     setOpen(next);
     if (next) {
       setMode("choose");
+      setTemplateSource(templates.length > 0 ? "custom" : "garspec");
       setTemplateId("");
+      setSpecTemplateId("");
       setTemplateProductName("");
       setTemplateCollectionId(defaultCollectionId ?? "");
+      setTemplateBrandId("");
       form.reset();
     }
   }
@@ -176,7 +210,39 @@ export function CreateProductDialog({
     });
   }
 
+  function handleCreateFromGarspec() {
+    const trimmed = templateProductName.trim();
+    if (!trimmed || !specTemplateId) return;
+    startTransition(async () => {
+      try {
+        const result = await createProductFromSpecTemplate({
+          name: trimmed,
+          spec_template_id: specTemplateId,
+          collection_id: templateCollectionId || undefined,
+          brand_id: templateCollectionId
+            ? undefined
+            : templateBrandId || undefined,
+        });
+        if (result.error || !result.id) {
+          toast.error(result.error ?? "Could not create product.");
+          return;
+        }
+        toast.success("Product created from the GarSpec template.");
+        setOpen(false);
+        router.push(`/products/${result.id}`);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Could not create product.",
+        );
+      }
+    });
+  }
+
   const selectedTemplate = templates.find((t) => t.id === templateId) ?? null;
+  const selectedSpecTemplate =
+    specTemplates.find((t) => t.id === specTemplateId) ?? null;
+  const activeSelection =
+    templateSource === "custom" ? selectedTemplate : selectedSpecTemplate;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -195,9 +261,11 @@ export function CreateProductDialog({
           </DialogTitle>
           <DialogDescription>
             {effectiveMode === "choose"
-              ? "Start a new tech pack from scratch, or from one of your templates."
+              ? "Start a new tech pack from scratch, or from a template."
               : effectiveMode === "template"
-                ? "Everything the template contains carries over as a fresh, independent copy."
+                ? templateSource === "custom"
+                  ? "Everything the template contains carries over as a fresh, independent copy."
+                  : "A standard garment from the GarSpec library — your product starts with its Size Specifications sheet ready to size."
                 : "Start a new tech pack. Its sections are created automatically."}
           </DialogDescription>
         </DialogHeader>
@@ -230,7 +298,7 @@ export function CreateProductDialog({
               </span>
               <span className="text-sm font-semibold">Use A Template</span>
               <span className="text-muted-foreground text-xs">
-                Start from a reusable base garment.
+                A GarSpec garment or one of your saved templates.
               </span>
             </button>
           </div>
@@ -327,10 +395,10 @@ export function CreateProductDialog({
               )}
               <DialogFooter
                 className={cn(
-                  hasTemplates && "flex items-center sm:justify-between",
+                  hasTemplateSources && "flex items-center sm:justify-between",
                 )}
               >
-                {hasTemplates && (
+                {hasTemplateSources && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -351,30 +419,83 @@ export function CreateProductDialog({
 
         {effectiveMode === "template" && (
           <div className="space-y-4">
-            <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-              {templates.map((template) => (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => setTemplateId(template.id)}
-                  className={cn(
-                    "bg-card flex w-full flex-col gap-1.5 rounded-lg border p-3 text-left transition-shadow",
-                    templateId === template.id
-                      ? "border-brand ring-brand ring-2"
-                      : "hover:ring-brand/40 hover:ring-2",
-                  )}
-                  aria-pressed={templateId === template.id}
-                >
-                  <span className="text-sm font-medium">{template.name}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {templateMetaLine(template)}
-                  </span>
-                  <TemplateContentIndicators template={template} />
-                </button>
-              ))}
-            </div>
+            <Tabs
+              value={templateSource}
+              onValueChange={(v) => setTemplateSource(v as TemplateSource)}
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="custom">My Templates</TabsTrigger>
+                <TabsTrigger value="garspec">GarSpec Templates</TabsTrigger>
+              </TabsList>
+            </Tabs>
 
-            {selectedTemplate && (
+            {templateSource === "custom" ? (
+              templates.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No custom templates yet. Save any product as a template from
+                  its page header, and it will appear here.
+                </p>
+              ) : (
+                <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                  {templates.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => setTemplateId(template.id)}
+                      className={cn(
+                        "bg-card flex w-full flex-col gap-1.5 rounded-lg border p-3 text-left transition-shadow",
+                        templateId === template.id
+                          ? "border-brand ring-brand ring-2"
+                          : "hover:ring-brand/40 hover:ring-2",
+                      )}
+                      aria-pressed={templateId === template.id}
+                    >
+                      <span className="text-sm font-medium">{template.name}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {templateMetaLine(template)}
+                      </span>
+                      <TemplateContentIndicators template={template} />
+                    </button>
+                  ))}
+                </div>
+              )
+            ) : (
+              <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+                {garspecGroups.map((group) => (
+                  <div key={group.category} className="space-y-2">
+                    <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+                      {CATEGORY_LABEL[group.category]}
+                    </p>
+                    {group.items.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => setSpecTemplateId(template.id)}
+                        className={cn(
+                          "bg-card flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-shadow",
+                          specTemplateId === template.id
+                            ? "border-brand ring-brand ring-2"
+                            : "hover:ring-brand/40 hover:ring-2",
+                        )}
+                        aria-pressed={specTemplateId === template.id}
+                      >
+                        <span className="text-sm font-medium">
+                          {template.name}
+                        </span>
+                        <span className="text-muted-foreground text-xs">
+                          {template.pomCount}{" "}
+                          {template.pomCount === 1
+                            ? "measurement point"
+                            : "measurement points"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeSelection && (
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor="template-product-name">Product name</Label>
@@ -408,6 +529,31 @@ export function CreateProductDialog({
                     </Select>
                   </div>
                 )}
+                {/* A GarSpec garment has no source brand to carry over (a
+                    custom template does), so offer one when no collection
+                    will supply it. */}
+                {templateSource === "garspec" &&
+                  !templateCollectionId &&
+                  brands.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label>Brand (optional)</Label>
+                      <Select
+                        value={templateBrandId}
+                        onValueChange={setTemplateBrandId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {brands.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
               </>
             )}
 
@@ -422,9 +568,15 @@ export function CreateProductDialog({
                 Back
               </Button>
               <Button
-                onClick={handleCreateFromTemplate}
+                onClick={
+                  templateSource === "custom"
+                    ? handleCreateFromTemplate
+                    : handleCreateFromGarspec
+                }
                 disabled={
-                  isPending || !templateId || !templateProductName.trim()
+                  isPending ||
+                  !activeSelection ||
+                  !templateProductName.trim()
                 }
               >
                 {isPending ? "Creating…" : "Create product"}

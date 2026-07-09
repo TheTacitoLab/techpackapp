@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/section-card";
 import { groupSectionStatuses } from "@/lib/collection-card-data";
+import type { SpecTemplateSummary } from "@/lib/spec-library";
 import type { TemplateSummary } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 import type {
@@ -105,6 +106,7 @@ export function LaunchpadClient({
   products,
   sections,
   templates = [],
+  specTemplates = [],
   now,
 }: {
   workspaceName: string | null;
@@ -114,6 +116,7 @@ export function LaunchpadClient({
   products: Product[];
   sections: SectionSummary[];
   templates?: TemplateSummary[];
+  specTemplates?: SpecTemplateSummary[];
   now: number;
 }) {
   const router = useRouter();
@@ -379,6 +382,7 @@ export function LaunchpadClient({
                 collections={collections}
                 brands={brands}
                 templates={templates}
+                specTemplates={specTemplates}
               />
               <CreateCollectionDialog
                 brands={brands}

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
 import { groupSectionStatuses } from "@/lib/collection-card-data";
+import type { SpecTemplateSummary } from "@/lib/spec-library";
 import {
   collectionWithChildIds,
   orderCollectionsForPicker,
@@ -60,6 +61,7 @@ export function DashboardClient({
   labels,
   productLabels,
   templates = [],
+  specTemplates = [],
   view = "live",
 }: {
   workspaceName: string | null;
@@ -71,6 +73,7 @@ export function DashboardClient({
   labels: Label[];
   productLabels: ProductLabelLink[];
   templates?: TemplateSummary[];
+  specTemplates?: SpecTemplateSummary[];
   view?: "live" | "archived";
 }) {
   const [searchInput, setSearchInput] = useState("");
@@ -205,6 +208,7 @@ export function DashboardClient({
               collections={collections}
               brands={brands}
               templates={templates}
+              specTemplates={specTemplates}
             />
           </div>
         )}
@@ -295,6 +299,7 @@ export function DashboardClient({
                 collections={collections}
                 brands={brands}
                 templates={templates}
+                specTemplates={specTemplates}
               />
             )
           }

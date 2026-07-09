@@ -19,6 +19,7 @@ import { ProgressTracker } from "@/components/progress-tracker";
 import { ToggleRow } from "@/components/toggle-row";
 import { Button } from "@/components/ui/button";
 import { groupSectionStatuses } from "@/lib/collection-card-data";
+import type { SpecTemplateSummary } from "@/lib/spec-library";
 import type { TemplateSummary } from "@/lib/templates";
 import type {
   Brand,
@@ -52,6 +53,7 @@ export function CollectionDetailClient({
   sections,
   productLabels,
   templates = [],
+  specTemplates = [],
 }: {
   collection: Collection;
   parent: Collection | null;
@@ -68,6 +70,7 @@ export function CollectionDetailClient({
   sections: SectionSummary[];
   productLabels: ProductLabelLink[];
   templates?: TemplateSummary[];
+  specTemplates?: SpecTemplateSummary[];
 }) {
   const [includeSubs, setIncludeSubs] = useState(false);
   const hasSubs = subCards.length > 0;
@@ -115,6 +118,7 @@ export function CollectionDetailClient({
       collections={collections}
       brands={brands}
       templates={templates}
+      specTemplates={specTemplates}
       defaultCollectionId={collection.id}
     />
   );

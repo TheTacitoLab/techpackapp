@@ -5,6 +5,7 @@ import type {
   ResolvedGradingProfile,
   ResolvedSpecTemplate,
   SpecTemplate,
+  SpecTemplateCategory,
   SpecTemplatePom,
 } from "@/types";
 
@@ -45,6 +46,52 @@ export async function getSpecTemplates(): Promise<ResolvedSpecTemplate[]> {
       (a, b) => a.sort_order - b.sort_order,
     ),
     isGlobal: template.source === "global",
+  }));
+}
+
+/** The lean picker shape for listing spec templates outside the spec flow. */
+export type SpecTemplateSummary = {
+  id: string;
+  name: string;
+  category: SpecTemplateCategory;
+  pomCount: number;
+  isGlobal: boolean;
+};
+
+/**
+ * Global GarSpec garment templates as picker summaries (no POM bodies) — the
+ * "New product from a GarSpec template" flow only needs names, categories
+ * and measurement counts. Workspace spec templates are deliberately
+ * excluded: this list IS the seeded GarSpec library; custom structures live
+ * in the spec flow's own picker.
+ */
+export async function getGarspecTemplateSummaries(): Promise<
+  SpecTemplateSummary[]
+> {
+  const ctx = await getCurrentUser();
+  if (!ctx) return [];
+
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("spec_templates")
+    .select("id, name, category, spec_template_poms(count)")
+    .eq("source", "global")
+    .eq("is_active", true)
+    .order("sort_order")
+    .order("name");
+
+  type RawRow = {
+    id: string;
+    name: string;
+    category: SpecTemplateCategory;
+    spec_template_poms: { count: number }[];
+  };
+  return ((data ?? []) as unknown as RawRow[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    pomCount: row.spec_template_poms?.[0]?.count ?? 0,
+    isGlobal: true,
   }));
 }
 

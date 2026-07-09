@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { createSpecSheet } from "@/app/(app)/products/[id]/spec-actions";
 import { STATUS_LABELS } from "@/components/status-pill";
 import { logChange } from "@/lib/change-log";
 import { parentAssignmentError } from "@/lib/collection-hierarchy";
@@ -110,6 +111,55 @@ export async function createProduct(
   revalidatePath("/products");
   revalidatePath("/collections");
   return { id: product.id, error: null };
+}
+
+const createFromSpecTemplateSchema = z.object({
+  name: z.string().min(1),
+  spec_template_id: z.string().uuid(),
+  collection_id: z.string().uuid().optional(),
+  brand_id: z.string().uuid().optional(),
+});
+
+export type CreateFromSpecTemplateInput = z.input<
+  typeof createFromSpecTemplateSchema
+>;
+
+/**
+ * "New product from a GarSpec template": a fresh product whose Size
+ * Specifications sheet is already started from the chosen seeded garment
+ * template (POM rows copied; the size run/demographic get picked in the
+ * sheet's own flow). This is NOT a deep copy — that's what workspace product
+ * templates are for — it's the standard-garment jump start.
+ */
+export async function createProductFromSpecTemplate(
+  input: CreateFromSpecTemplateInput,
+): Promise<{ id: string | null; error: string | null }> {
+  const { name, spec_template_id, collection_id, brand_id } =
+    createFromSpecTemplateSchema.parse(input);
+  const { supabase } = await requireActionContext();
+
+  // Validate the template BEFORE creating anything, so a stale pick can't
+  // leave a half-made product behind. Global seeded templates only — the
+  // same visibility rule createSpecSheet re-checks.
+  const { data: template } = await supabase
+    .from("spec_templates")
+    .select("id")
+    .eq("id", spec_template_id)
+    .eq("source", "global")
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!template) {
+    return { id: null, error: "GarSpec template not found." };
+  }
+
+  const created = await createProduct({ name, collection_id, brand_id });
+  if (created.error || !created.id) return created;
+
+  // createSpecSheet owns the sheet mechanics (POM copy, section status,
+  // change log, revalidation) — reuse it rather than re-implementing.
+  await createSpecSheet(created.id, spec_template_id);
+
+  return { id: created.id, error: null };
 }
 
 // ---- Hierarchy CRUD ----------------------------------------------------------

@@ -9,6 +9,7 @@ import {
 import { collectionWithChildIds } from "@/lib/collection-hierarchy";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getGarspecTemplateSummaries } from "@/lib/spec-library";
 import { getTemplateSummaries } from "@/lib/templates";
 import type { Collection, Product, SectionStatus } from "@/types";
 
@@ -38,6 +39,7 @@ export default async function CollectionDetailPage({ params }: PageProps) {
     { data: collections },
     { data: labels },
     templates,
+    specTemplates,
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -52,6 +54,7 @@ export default async function CollectionDetailPage({ params }: PageProps) {
       .order("name"),
     supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
     getTemplateSummaries(supabase, wsId),
+    getGarspecTemplateSummaries(),
   ]);
 
   const allCollections: Collection[] = collections ?? [];
@@ -157,6 +160,7 @@ export default async function CollectionDetailPage({ params }: PageProps) {
       sections={sections}
       productLabels={productLabels}
       templates={templates}
+      specTemplates={specTemplates}
     />
   );
 }

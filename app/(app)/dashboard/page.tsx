@@ -1,6 +1,7 @@
 import { LaunchpadClient } from "@/components/launchpad-client";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getGarspecTemplateSummaries } from "@/lib/spec-library";
 import { getTemplateSummaries } from "@/lib/templates";
 import type { Product, SectionStatus } from "@/types";
 
@@ -17,6 +18,7 @@ export default async function DashboardPage() {
     { data: collections },
     { data: products },
     templates,
+    specTemplates,
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -38,6 +40,7 @@ export default async function DashboardPage() {
       .eq("is_template", false)
       .order("updated_at", { ascending: false }),
     getTemplateSummaries(supabase, wsId),
+    getGarspecTemplateSummaries(),
   ]);
 
   const allProducts: Product[] = products ?? [];
@@ -61,6 +64,7 @@ export default async function DashboardPage() {
       products={allProducts}
       sections={sectionsData ?? []}
       templates={templates}
+      specTemplates={specTemplates}
       // Server Component: reading the request-time clock is intentional.
       // eslint-disable-next-line react-hooks/purity
       now={Date.now()}

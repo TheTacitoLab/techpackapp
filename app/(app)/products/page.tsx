@@ -1,6 +1,7 @@
 import { DashboardClient } from "@/components/dashboard-client";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getGarspecTemplateSummaries } from "@/lib/spec-library";
 import { getTemplateSummaries } from "@/lib/templates";
 import type { Product, SectionStatus } from "@/types";
 
@@ -18,6 +19,7 @@ export default async function ProductsPage() {
     { data: products },
     { data: labels },
     templates,
+    specTemplates,
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -42,6 +44,7 @@ export default async function ProductsPage() {
       .order("created_at", { ascending: false }),
     supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
     getTemplateSummaries(supabase, wsId),
+    getGarspecTemplateSummaries(),
   ]);
 
   const allProducts: Product[] = products ?? [];
@@ -76,6 +79,7 @@ export default async function ProductsPage() {
       labels={labels ?? []}
       productLabels={productLabels ?? []}
       templates={templates}
+      specTemplates={specTemplates}
     />
   );
 }
