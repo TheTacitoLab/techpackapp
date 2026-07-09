@@ -31,6 +31,7 @@ import {
   layerForType,
   type LayerKey,
 } from "@/components/canvas/layers";
+import type { WorkspaceColourLibrary } from "@/components/canvas/colour-library-picker";
 import { PageCanvas } from "@/components/canvas/page-canvas";
 import { PageNotesEditor } from "@/components/canvas/page-notes-editor";
 import { PageThumbnailStrip } from "@/components/canvas/page-thumbnail-strip";
@@ -90,6 +91,7 @@ export function PageEditor({
   activeLayer,
   viewAllLayers,
   libraryItems,
+  colourLibrary,
   colourways,
   lastUsedColourwayId,
   onColourwayCreated,
@@ -109,6 +111,7 @@ export function PageEditor({
   /** The read-only All-layers composite is active (no single layer selected). */
   viewAllLayers: boolean;
   libraryItems: ResolvedLibraryItem[];
+  colourLibrary: WorkspaceColourLibrary;
   colourways: CanvasColourway[];
   lastUsedColourwayId: string | null;
   onColourwayCreated: (colourway: CanvasColourway) => void;
@@ -503,6 +506,7 @@ export function PageEditor({
       stageZoom={stageZoom}
       heightClassName="min-h-[calc(100vh-120px)]"
       libraryItems={libraryItems}
+      colourLibrary={colourLibrary}
       colourwayContext={{
         colourways,
         lastUsedColourwayId,

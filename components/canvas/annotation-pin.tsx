@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
 import { PinEditorDialog } from "@/components/canvas/pin-editor-dialog";
+import type { WorkspaceColourLibrary } from "@/components/canvas/colour-library-picker";
 import { readColourwayData } from "@/components/canvas/colourway-data";
 import {
   ColourwayPinEditor,
@@ -226,6 +227,7 @@ export function AnnotationPin({
   isSelected = false,
   libraryItems,
   colourways,
+  colourLibrary,
   getSlotRect,
   requestResample,
   onUpdated,
@@ -244,6 +246,7 @@ export function AnnotationPin({
   isSelected?: boolean;
   libraryItems: ResolvedLibraryItem[];
   colourways: CanvasColourway[];
+  colourLibrary: WorkspaceColourLibrary;
   getSlotRect: () => DOMRect | null;
   /**
    * Enter image pick-mode to re-sample a colourway pin's hex (see
@@ -568,6 +571,7 @@ export function AnnotationPin({
             mode="edit"
             annotation={annotation}
             libraryItems={libraryItems}
+            workspaceColours={colourLibrary.colours}
             onSaved={(data) => {
               setOpen(false);
               onUpdated?.(annotation.id, data);
@@ -582,6 +586,7 @@ export function AnnotationPin({
             mode="edit"
             annotation={annotation}
             colourways={colourways}
+            colourLibrary={colourLibrary}
             draft={colourwayDraft}
             onRequestResample={requestResample ? handleRequestResample : undefined}
             onSaved={(data) => {
