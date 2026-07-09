@@ -951,7 +951,6 @@ export async function createAnnotation(
   endY?: number | null,
   data?: Record<string, unknown>,
 ): Promise<{ id: string; referenceCode: string }> {
-  console.time("[createAnnotation] TOTAL");
   const input = createAnnotationSchema.parse({
     slotId,
     layerType,
@@ -963,19 +962,13 @@ export async function createAnnotation(
     data,
   });
 
-  // 2 round-trips: auth.getUser() + single-column profiles query.
-  console.time("[createAnnotation] requireActionContext (auth + profile)");
   const { supabase, workspaceId, userId } = await requireActionContext();
-  console.timeEnd("[createAnnotation] requireActionContext (auth + profile)");
 
-  // 1 round-trip: collapsed slot->page embedded-filter query.
-  console.time("[createAnnotation] getSlotContext (slot+page, 1 query)");
   const { productId, pageId } = await getSlotContext(
     supabase,
     input.slotId,
     workspaceId,
   );
-  console.timeEnd("[createAnnotation] getSlotContext (slot+page, 1 query)");
 
   // Authoritative per-page cap — before allocating a code or inserting.
   await assertPageUnderAnnotationCap(supabase, pageId, workspaceId);
@@ -983,7 +976,6 @@ export async function createAnnotation(
   // Single round-trip: join canvas_annotations -> canvas_slots -> canvas_pages
   // via PostgREST's embedded-resource filter syntax and count matches scoped to
   // this product, replacing the old page-ids -> slot-ids -> count sequence.
-  console.time("[createAnnotation] reference-code count query");
   const { count } = await supabase
     .from("canvas_annotations")
     .select("id, canvas_slots!inner(canvas_pages!inner(product_id))", {
@@ -993,10 +985,8 @@ export async function createAnnotation(
     .eq("workspace_id", workspaceId)
     .eq("layer_type", input.layerType)
     .eq("canvas_slots.canvas_pages.product_id", productId);
-  console.timeEnd("[createAnnotation] reference-code count query");
   const referenceCode = `${LAYER_PREFIX[input.layerType]}${(count ?? 0) + 1}`;
 
-  console.time("[createAnnotation] insert query");
   const { data: row, error } = await supabase
     .from("canvas_annotations")
     .insert({
@@ -1014,9 +1004,7 @@ export async function createAnnotation(
     })
     .select("id")
     .single();
-  console.timeEnd("[createAnnotation] insert query");
   if (error || !row) {
-    console.timeEnd("[createAnnotation] TOTAL");
     throw new Error(error?.message ?? "Failed to create annotation.");
   }
 
@@ -1028,12 +1016,6 @@ export async function createAnnotation(
   });
 
   revalidatePath(`/products/${productId}`);
-  console.timeEnd("[createAnnotation] TOTAL");
-  // Best case: 2 (auth + profile) + 1 (slot+page) + 1 (reference-code count)
-  // + 1 (insert) = 5 round-trips, down from up to 7 before this fix.
-  console.log(
-    "[createAnnotation] round-trips: 2 (requireActionContext) + 1 (getSlotContext) + 1 (count) + 1 (insert) = 5",
-  );
   return { id: row.id, referenceCode };
 }
 
