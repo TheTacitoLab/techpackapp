@@ -40,13 +40,9 @@ export async function updateSession(request: NextRequest) {
   // and gates access. Page/action handlers also call getUser() (via
   // getCurrentUser / requireActionContext) as the authoritative check — the
   // known-good pattern after a getSession()-based optimization was reverted.
-  const t0 = performance.now();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  console.log(
-    `[AUTH] proxy getUser (network): ${(performance.now() - t0).toFixed(1)}ms`,
-  );
 
   return { supabaseResponse, user };
 }
