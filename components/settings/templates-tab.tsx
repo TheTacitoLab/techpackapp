@@ -3,8 +3,11 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Copy, FilePlus2, LayoutTemplate, MoreHorizontal, Plus } from "lucide-react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Copy, FilePlus2, MoreHorizontal, Plus } from "lucide-react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import {
   createTemplate,
@@ -52,6 +55,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -83,6 +94,22 @@ export function TemplatesTab({
   const [newOpen, setNewOpen] = useState(false);
   const [renaming, setRenaming] = useState<TemplateSummary | null>(null);
   const [deleting, setDeleting] = useState<TemplateSummary | null>(null);
+  const [isDeleting, startDelete] = useTransition();
+
+  function handleDelete() {
+    const target = deleting;
+    if (!target) return;
+    startDelete(async () => {
+      try {
+        await deleteTemplate(target.id);
+        toast.success("Template deleted.");
+        setDeleting(null);
+        router.refresh();
+      } catch {
+        toast.error("Could not delete the template.");
+      }
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -103,13 +130,10 @@ export function TemplatesTab({
         </CardHeader>
         <CardContent>
           {templates.length === 0 ? (
-            <div className="text-muted-foreground flex flex-col items-center gap-2 py-10 text-center text-sm">
-              <LayoutTemplate className="size-8 opacity-40" />
-              <p>
-                No templates yet. Start blank, clone an existing product here,
-                or use &lsquo;Save as template&rsquo; on any product page.
-              </p>
-            </div>
+            <p className="text-muted-foreground text-sm">
+              No templates yet. Start blank, clone an existing product here, or
+              use &lsquo;Save as template&rsquo; on any product page.
+            </p>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {templates.map((template) => (
@@ -154,21 +178,13 @@ export function TemplatesTab({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
-              onClick={() => {
-                const target = deleting;
-                if (!target) return;
-                deleteTemplate(target.id)
-                  .then(() => {
-                    toast.success("Template deleted.");
-                    router.refresh();
-                  })
-                  .catch(() => toast.error("Could not delete the template."));
-              }}
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete template
+              {isDeleting ? "Deleting…" : "Delete template"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -186,8 +202,10 @@ function TemplateCard({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  // Same card chrome as ProductCard: shadow-card (no border), hover shadow,
+  // action menu revealed on hover.
   return (
-    <div className="bg-card shadow-card group flex flex-col gap-2 rounded-xl border p-4">
+    <div className="bg-card shadow-card hover:shadow-card-hover group flex flex-col gap-2 rounded-xl p-4 transition-shadow">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <Link
@@ -205,7 +223,7 @@ function TemplateCard({
             <Button
               variant="ghost"
               size="icon"
-              className="size-7 shrink-0"
+              className="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
               aria-label="Template actions"
             >
               <MoreHorizontal className="size-4" />
@@ -231,6 +249,10 @@ function TemplateCard({
   );
 }
 
+const renameSchema = z.object({
+  name: z.string().min(1, "Enter a template name.").max(120),
+});
+
 function RenameTemplateDialog({
   template,
   onOpenChange,
@@ -239,15 +261,16 @@ function RenameTemplateDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [name, setName] = useState(template.name);
   const [isPending, startTransition] = useTransition();
+  const form = useForm<z.infer<typeof renameSchema>>({
+    resolver: zodResolver(renameSchema),
+    defaultValues: { name: template.name },
+  });
 
-  function handleRename() {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+  function onSubmit(values: z.infer<typeof renameSchema>) {
     startTransition(async () => {
       try {
-        await renameTemplate(template.id, trimmed);
+        await renameTemplate(template.id, values.name);
         toast.success("Template renamed.");
         onOpenChange(false);
         router.refresh();
@@ -263,17 +286,28 @@ function RenameTemplateDialog({
         <DialogHeader>
           <DialogTitle>Rename template</DialogTitle>
         </DialogHeader>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={120}
-          autoFocus
-        />
-        <DialogFooter>
-          <Button onClick={handleRename} disabled={isPending || !name.trim()}>
-            {isPending ? "Renaming…" : "Rename"}
-          </Button>
-        </DialogFooter>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Template name</FormLabel>
+                  <FormControl>
+                    <Input maxLength={120} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Renaming…" : "Rename"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
@@ -389,7 +423,7 @@ function NewTemplateDialog({
 
         {mode === "clone" && (
           <div className="space-y-1.5">
-            <Label className="text-xs">Source product</Label>
+            <Label>Source product</Label>
             <Select value={sourceId} onValueChange={setSourceId}>
               <SelectTrigger>
                 <SelectValue placeholder="Choose a product" />
@@ -411,9 +445,7 @@ function NewTemplateDialog({
 
         {mode !== "choose" && (
           <div className="space-y-1.5">
-            <Label htmlFor="new-template-name" className="text-xs">
-              Template name
-            </Label>
+            <Label htmlFor="new-template-name">Template name</Label>
             <Input
               id="new-template-name"
               value={name}

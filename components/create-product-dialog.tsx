@@ -320,9 +320,7 @@ export function CreateProductDialog({
             {selectedTemplate && (
               <>
                 <div className="space-y-1.5">
-                  <Label htmlFor="template-product-name" className="text-xs">
-                    Product name
-                  </Label>
+                  <Label htmlFor="template-product-name">Product name</Label>
                   <Input
                     id="template-product-name"
                     value={templateProductName}
@@ -333,7 +331,7 @@ export function CreateProductDialog({
                 </div>
                 {collections.length > 0 && (
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Collection (optional)</Label>
+                    <Label>Collection (optional)</Label>
                     {/* Deliberately ALL collections, not just the active
                         brand's — templates are workspace-wide for use. */}
                     <Select

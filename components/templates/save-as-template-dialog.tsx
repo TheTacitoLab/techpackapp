@@ -85,9 +85,7 @@ export function SaveAsTemplateDialog({
         <SectionChecklist value={mask} onChange={setMask} />
 
         <div className="space-y-1.5">
-          <Label htmlFor="template-name" className="text-xs">
-            Template name
-          </Label>
+          <Label htmlFor="template-name">Template name</Label>
           <Input
             id="template-name"
             value={name}

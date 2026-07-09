@@ -123,6 +123,31 @@ collapsible renders alongside sections but is not a `product_sections` row.
 - **Styling:** `cn()` + theme tokens; per-layer/per-status dynamic colours are
   inline `style`, never ad-hoc hex in classNames. `bg-brand` (lime) is
   reserved app-wide for progress/completion/active states.
+- **Shared UI patterns — reuse these, never restyle ad hoc.** Any new chooser,
+  card, dialog or confirm must match the existing instance of its kind:
+  - *Option-card chooser* (Spec Sheet fork, New Product, New Template):
+    `bg-card hover:ring-brand/40 … rounded-lg border p-4 … hover:ring-2`
+    with a `bg-muted` icon circle (`size-10 rounded-full`), `text-sm
+    font-semibold` title, `text-muted-foreground text-xs` description.
+    Selected state: `border-brand ring-brand ring-2` (never `border-primary
+    bg-accent`).
+  - *Grid cards* (ProductCard, template cards): `bg-card shadow-card
+    hover:shadow-card-hover rounded-xl transition-shadow` — shadow, NO
+    border; action menu `size-7` ghost icon revealed via `opacity-0
+    group-hover:opacity-100`. Inline list rows instead use `border`, no
+    shadow.
+  - *Dialog forms*: react-hook-form + zod with `FormLabel` (standard size);
+    the `<Label className="text-xs">` compact pattern belongs to pin-editor
+    POPOVERS only.
+  - *Destructive confirms*: AlertDialog with `AlertDialogAction
+    className="bg-destructive text-destructive-foreground
+    hover:bg-destructive/90"`, `disabled={isPending}`, "Deleting…" pending
+    label.
+  - *Checkbox rows*: the Quick Export `ToggleRow` shape (no Radix checkbox
+    primitive is installed).
+  - *Settings empty lists*: a plain `text-muted-foreground text-sm`
+    paragraph; the big `EmptyState` component is for page-level empties
+    (dashboard/products).
 - **Radix popovers + capture overlays:** don't fade an open `PopoverContent`
   to let clicks through — its portal still intercepts them. Control the
   `open` prop (unmount during pick-mode) and lift draft form state into the
