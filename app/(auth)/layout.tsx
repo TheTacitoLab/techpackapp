@@ -1,5 +1,3 @@
-import { Shirt } from "lucide-react";
-
 export default function AuthLayout({
   children,
 }: {
@@ -7,12 +5,12 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-12">
-      <div className="mb-8 flex items-center gap-2">
-        <span className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
-          <Shirt className="size-5" />
-        </span>
-        <span className="text-xl font-semibold tracking-tight">GarSpec</span>
-      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/garspec-lockup.png"
+        alt="GarSpec"
+        className="mb-8 h-8 w-auto"
+      />
       <div className="w-full max-w-sm">{children}</div>
     </div>
   );

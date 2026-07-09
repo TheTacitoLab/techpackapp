@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, Shirt } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { AppNav, AppNavFooter, type PinnedNavItem } from "@/components/app-nav";
 import { Separator } from "@/components/ui/separator";
@@ -85,21 +85,29 @@ export function AppShell({
           collapsed ? "w-16" : "w-[280px]",
         )}
       >
-        {/* Logo */}
+        {/* Logo — the brand artwork is black on transparent; `invert` turns
+            it white for the dark sidebar. */}
         <Link
           href="/dashboard"
           className={cn(
             "flex h-16 shrink-0 cursor-pointer items-center",
-            collapsed ? "justify-center" : "gap-2 px-6",
+            collapsed ? "justify-center" : "px-6",
           )}
         >
-          <span className="bg-white/10 text-sidebar-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
-            <Shirt className="size-5" />
-          </span>
-          {!collapsed && (
-            <span className="text-lg font-semibold tracking-tight">
-              GarSpec
-            </span>
+          {collapsed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/garspec-icon.png"
+              alt="GarSpec"
+              className="h-6 w-auto invert"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/garspec-lockup.png"
+              alt="GarSpec"
+              className="h-6 w-auto invert"
+            />
           )}
         </Link>
 
