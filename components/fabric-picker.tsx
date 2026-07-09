@@ -62,7 +62,7 @@ function gsm(item: ResolvedLibraryItem): string | null {
  * zip, etc.) instead of the fabric-specific composition/GSM default, and the
  * Construction editor passes `thumbnailUrl` so each stitch row leads with its
  * SVG diagram. Searches both name and the summary line, and flags global
- * TechPackApp catalogue items with a small chip.
+ * GarSpec catalogue items with a small chip.
  *
  * `onCreateNew` (optional) adds the inline "add to library" entry point: a
  * pinned action below the result list — always visible, so it works both when
@@ -234,7 +234,7 @@ export function FabricPicker({
                         )}
                         {fabric.isGlobal && (
                           <Badge variant="outline" className="text-[10px]">
-                            TechPackApp
+                            GarSpec
                           </Badge>
                         )}
                       </span>

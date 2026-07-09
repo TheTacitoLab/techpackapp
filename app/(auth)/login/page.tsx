@@ -59,7 +59,7 @@ export default function LoginPage() {
     <Card>
       <CardHeader>
         <CardTitle>Welcome back</CardTitle>
-        <CardDescription>Log in to your TechPack workspace.</CardDescription>
+        <CardDescription>Log in to your GarSpec workspace.</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>

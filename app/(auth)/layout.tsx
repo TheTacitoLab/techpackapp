@@ -11,7 +11,7 @@ export default function AuthLayout({
         <span className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-lg">
           <Shirt className="size-5" />
         </span>
-        <span className="text-xl font-semibold tracking-tight">TechPack</span>
+        <span className="text-xl font-semibold tracking-tight">GarSpec</span>
       </div>
       <div className="w-full max-w-sm">{children}</div>
     </div>

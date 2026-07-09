@@ -4,12 +4,12 @@ import type { LibraryCategory, LibraryItem, ResolvedLibraryItem } from "@/types"
 
 /**
  * Resolves a workspace's visible Master Library: the merge of the active global
- * TechPackApp catalogue (minus the items this workspace has hidden) with the
+ * GarSpec catalogue (minus the items this workspace has hidden) with the
  * workspace's own items. This is the single entry point the canvas picker
  * (Phase 4) and BOM (Phase 6) consume.
  *
  * Each returned item is tagged:
- *   - `isGlobal`  — true for TechPackApp catalogue items, false for own items.
+ *   - `isGlobal`  — true for GarSpec catalogue items, false for own items.
  *   - `isHidden`  — true only for global items this workspace toggled off. These
  *     are excluded by default and only included when `includeHidden` is set
  *     (the Settings manager passes it so it can offer a "Show hidden" view).

@@ -33,7 +33,7 @@ export type ResolvedSection = ProductSection & {
 
 /**
  * A library item resolved for a workspace's view. `isGlobal` distinguishes the
- * TechPackApp catalogue from the workspace's own items; `isHidden` is true only
+ * GarSpec catalogue from the workspace's own items; `isHidden` is true only
  * for global items the workspace has toggled off (surfaced in the "hidden" view
  * of the manager, excluded from the default resolved library elsewhere).
  */

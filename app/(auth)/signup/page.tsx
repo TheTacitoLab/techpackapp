@@ -72,7 +72,7 @@ export default function SignupPage() {
       return;
     }
     if (data.session) {
-      toast.success("Welcome to TechPack!");
+      toast.success("Welcome to GarSpec!");
       router.push("/dashboard");
       router.refresh();
     } else {

@@ -12,7 +12,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "TechPackApp",
+  title: "GarSpec",
   description: "Create industry-standard fashion tech packs and export them to factories.",
 };
 

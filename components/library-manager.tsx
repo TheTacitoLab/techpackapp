@@ -52,7 +52,7 @@ import type { LibraryCategory, ResolvedLibraryItem } from "@/types";
 // one source of truth with the inline quick-add form the annotation editors
 // open from their picker (`library-quick-add-form.tsx`).
 
-type SourceFilter = "all" | "techpack" | "mine" | "hidden";
+type SourceFilter = "all" | "garspec" | "mine" | "hidden";
 
 /** Short one-line summary of an item's key properties for the card. */
 function summarise(category: LibraryCategory, props: Record<string, unknown>) {
@@ -258,7 +258,7 @@ function LibraryItemRow({ item }: { item: ResolvedLibraryItem }) {
           <p className="truncate text-sm font-medium">{item.name}</p>
           {item.isGlobal ? (
             <Badge variant="secondary" className="shrink-0">
-              TechPackApp
+              GarSpec
             </Badge>
           ) : (
             <Badge variant="outline" className="shrink-0">
@@ -368,7 +368,7 @@ function LibraryItemRow({ item }: { item: ResolvedLibraryItem }) {
 
 const SOURCE_FILTERS: { key: SourceFilter; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "techpack", label: "TechPackApp Library" },
+  { key: "garspec", label: "GarSpec Library" },
   { key: "mine", label: "My Library" },
   { key: "hidden", label: "Hidden" },
 ];
@@ -382,7 +382,7 @@ export function LibraryManager({ items }: { items: ResolvedLibraryItem[] }) {
     return items.filter((it) => {
       if (it.category !== category) return false;
       switch (source) {
-        case "techpack":
+        case "garspec":
           return it.isGlobal && !it.isHidden;
         case "mine":
           return !it.isGlobal;

@@ -34,7 +34,7 @@ export const useUiStore = create<UiState>()(
       setActiveCollectionId: (id) => set({ activeCollectionId: id }),
       setShowArchived: (v) => set({ showArchived: v }),
     }),
-    { name: "techpack-ui" },
+    { name: "garspec-ui" },
   ),
 );
 

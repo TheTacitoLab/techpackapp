@@ -98,7 +98,7 @@ export function AppShell({
           </span>
           {!collapsed && (
             <span className="text-lg font-semibold tracking-tight">
-              TechPack
+              GarSpec
             </span>
           )}
         </Link>
