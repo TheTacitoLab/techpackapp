@@ -169,6 +169,7 @@ export type Database = {
           hero_asset_id: string | null;
           version_major: number;
           version_minor: number;
+          is_template: boolean;
           created_at: string;
           updated_at: string;
           archived_at: string | null;
@@ -197,6 +198,7 @@ export type Database = {
           hero_asset_id?: string | null;
           version_major?: number;
           version_minor?: number;
+          is_template?: boolean;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
@@ -225,6 +227,7 @@ export type Database = {
           hero_asset_id?: string | null;
           version_major?: number;
           version_minor?: number;
+          is_template?: boolean;
           created_at?: string;
           updated_at?: string;
           archived_at?: string | null;
