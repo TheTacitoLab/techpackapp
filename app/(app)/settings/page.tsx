@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { BrandsTab } from "@/components/settings/brands-tab";
+import { ColoursTab } from "@/components/settings/colours-tab";
 import { LabelsTab } from "@/components/settings/labels-tab";
 import { LibraryTab } from "@/components/settings/library-tab";
 import { MarkerColoursTab } from "@/components/settings/marker-colours-tab";
@@ -47,6 +48,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     { data: products },
     { data: labels },
     { data: productLabels },
+    { data: colours },
     templates,
     { data: pickerProducts },
   ] = await Promise.all([
@@ -65,6 +67,12 @@ export default async function SettingsPage({ searchParams }: PageProps) {
       .not("brand_id", "is", null),
     supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
     supabase.from("product_labels").select("label_id"),
+    supabase
+      .from("workspace_colours")
+      .select("*")
+      .eq("workspace_id", wsId)
+      .order("sort_order")
+      .order("created_at"),
     getTemplateSummaries(supabase, wsId),
     // The "From Existing Product" picker: live (non-template, non-archived)
     // products only.
@@ -133,6 +141,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
             />
           ),
           labels: <LabelsTab labels={labelsWithUsage} />,
+          colours: <ColoursTab colours={colours ?? []} />,
           markers: <MarkerColoursTab />,
           library: <LibraryTab items={libraryItems} />,
           workspace: <WorkspaceTab />,

@@ -4,6 +4,7 @@ import {
   Library,
   MapPin,
   Palette,
+  SwatchBook,
   Tag,
   type LucideIcon,
 } from "lucide-react";
@@ -20,6 +21,7 @@ export const SETTINGS_TABS = [
   { key: "brands", label: "Brands", icon: Palette },
   { key: "templates", label: "Templates", icon: LayoutTemplate },
   { key: "labels", label: "Labels", icon: Tag },
+  { key: "colours", label: "Colours", icon: SwatchBook },
   { key: "markers", label: "Marker Colours", icon: MapPin },
   { key: "library", label: "Master Library", icon: Library },
   { key: "workspace", label: "Workspace", icon: CreditCard },
