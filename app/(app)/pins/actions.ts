@@ -34,8 +34,9 @@ type ActionSupabase = Awaited<
 
 /**
  * Drop pins whose target no longer exists in the workspace. Runs on every
- * rewrite of the array (the "lazy clean") so deleted products/collections
- * can't hold a slot against the 10-pin cap.
+ * rewrite of the array (the lazy clean) so deleted products/collections
+ * can't hold a slot against the 10-pin cap. A FAILED lookup must throw —
+ * treating it as "everything was deleted" would wipe the user's pins.
  */
 async function pruneAgainstDb(
   supabase: ActionSupabase,
@@ -55,15 +56,17 @@ async function pruneAgainstDb(
           .select("id")
           .in("id", productIds)
           .eq("workspace_id", workspaceId)
-      : Promise.resolve({ data: [] as { id: string }[] }),
+      : Promise.resolve({ data: [] as { id: string }[], error: null }),
     collectionIds.length > 0
       ? supabase
           .from("collections")
           .select("id")
           .in("id", collectionIds)
           .eq("workspace_id", workspaceId)
-      : Promise.resolve({ data: [] as { id: string }[] }),
+      : Promise.resolve({ data: [] as { id: string }[], error: null }),
   ]);
+  if (products.error) throw new Error(products.error.message);
+  if (collections.error) throw new Error(collections.error.message);
 
   const validKeys = new Set<string>();
   for (const row of products.data ?? []) {
@@ -73,25 +76,6 @@ async function pruneAgainstDb(
     validKeys.add(pinKey({ type: "collection", id: row.id }));
   }
   return prunePins(pins, validKeys);
-}
-
-async function writePins(
-  supabase: ActionSupabase,
-  userId: string,
-  basePreferences: unknown,
-  pins: PinEntry[],
-) {
-  const base =
-    basePreferences &&
-    typeof basePreferences === "object" &&
-    !Array.isArray(basePreferences)
-      ? basePreferences
-      : {};
-  const { error } = await supabase
-    .from("profiles")
-    .update({ preferences: { ...base, pins } })
-    .eq("id", userId);
-  if (error) throw new Error(error.message);
 }
 
 /**
@@ -105,21 +89,23 @@ export async function setPinned(
   const { type, id, pinned } = setPinnedSchema.parse(input);
   const { supabase, workspaceId, userId } = await requireActionContext();
 
-  // The pin target must exist in the caller's workspace.
+  // Only PINNING requires the target to exist — unpinning something that
+  // was just deleted is exactly what pruning wants to allow. The two reads
+  // are independent, so they share a round trip.
   const table = type === "product" ? "products" : "collections";
-  const { data: target } = await supabase
-    .from(table)
-    .select("id")
-    .eq("id", id)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  if (!target) throw new Error("Not found in your workspace.");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("preferences")
-    .eq("id", userId)
-    .single();
+  const [targetResult, profileResult] = await Promise.all([
+    pinned
+      ? supabase
+          .from(table)
+          .select("id")
+          .eq("id", id)
+          .eq("workspace_id", workspaceId)
+          .maybeSingle()
+      : Promise.resolve({ data: { id } }),
+    supabase.from("profiles").select("preferences").eq("id", userId).single(),
+  ]);
+  if (!targetResult.data) throw new Error("Not found in your workspace.");
+  const profile = profileResult.data;
   if (!profile) throw new Error("No profile found.");
 
   const current = await pruneAgainstDb(
@@ -137,35 +123,16 @@ export async function setPinned(
     next = removePin(current, { type, id });
   }
 
-  await writePins(supabase, userId, profile.preferences, next);
+  const raw = profile.preferences;
+  const base =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const { error } = await supabase
+    .from("profiles")
+    .update({ preferences: { ...base, pins: next } })
+    .eq("id", userId);
+  if (error) throw new Error(error.message);
 
   // The pinned list renders in the sidebar (app layout) on every page.
   revalidatePath("/", "layout");
   return { error: null };
-}
-
-/**
- * Re-validate every pin against the DB and persist the pruned array if
- * anything was dangling. Fired by the sidebar when it renders a pins array
- * that references deleted items — the render filters them out visually, this
- * makes the cleanup durable.
- */
-export async function pruneDanglingPins(): Promise<void> {
-  const { supabase, workspaceId, userId } = await requireActionContext();
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("preferences")
-    .eq("id", userId)
-    .single();
-  if (!profile) return;
-
-  const current = pinsFromPreferences(profile.preferences);
-  if (current.length === 0) return;
-
-  const pruned = await pruneAgainstDb(supabase, workspaceId, current);
-  if (pruned.length === current.length) return;
-
-  await writePins(supabase, userId, profile.preferences, pruned);
-  revalidatePath("/", "layout");
 }

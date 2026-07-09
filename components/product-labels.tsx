@@ -9,6 +9,7 @@ import {
   addLabelToProduct,
   removeLabelFromProduct,
 } from "@/app/(app)/settings/actions";
+import { LabelChip } from "@/components/label-chip";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -67,16 +68,12 @@ export function ProductLabels({
   return (
     <div className="flex items-center gap-1.5">
       {visibleLabels.map((label) => (
-        <span
+        <LabelChip
           key={label.id}
-          className="bg-muted text-foreground inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs"
-        >
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ backgroundColor: label.color }}
-          />
-          <span className="max-w-[7rem] truncate">{label.name}</span>
-        </span>
+          name={label.name}
+          color={label.color}
+          nameClassName="max-w-[7rem]"
+        />
       ))}
 
       {overflowCount > 0 && (

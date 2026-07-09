@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronRight, Pencil, PackagePlus, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Pencil, PackagePlus, Plus, Trash2 } from "lucide-react";
 
 import { CollectionCard, type CollectionCardData } from "@/components/collection-card";
 import { CollectionLabels } from "@/components/collection-labels";
@@ -15,9 +15,11 @@ import {
 } from "@/components/hierarchy-dialogs";
 import { PinToggle } from "@/components/pin-toggle";
 import { ProductCard } from "@/components/product-card";
+import { ProgressTracker } from "@/components/progress-tracker";
+import { ToggleRow } from "@/components/toggle-row";
 import { Button } from "@/components/ui/button";
+import { groupSectionStatuses } from "@/lib/collection-card-data";
 import type { TemplateSummary } from "@/lib/templates";
-import { cn } from "@/lib/utils";
 import type {
   Brand,
   Collection,
@@ -70,15 +72,10 @@ export function CollectionDetailClient({
   const [includeSubs, setIncludeSubs] = useState(false);
   const hasSubs = subCards.length > 0;
 
-  const sectionStatusMap = useMemo(() => {
-    const map = new Map<string, SectionStatus[]>();
-    for (const s of sections) {
-      const arr = map.get(s.product_id) ?? [];
-      arr.push(s.status);
-      map.set(s.product_id, arr);
-    }
-    return map;
-  }, [sections]);
+  const sectionStatusMap = useMemo(
+    () => groupSectionStatuses(sections),
+    [sections],
+  );
 
   const labelById = useMemo(
     () => new Map(labels.map((l) => [l.id, l])),
@@ -113,14 +110,10 @@ export function CollectionDetailClient({
     () => products.flatMap((p) => sectionStatusMap.get(p.id) ?? []),
     [products, sectionStatusMap],
   );
-  const rollupTotal = rollupStatuses.length;
-  const rollupDone = rollupStatuses.filter((s) => s === "complete").length;
-  const rollupPct =
-    rollupTotal === 0 ? 0 : Math.round((rollupDone / rollupTotal) * 100);
-
   const newProductDialog = (
     <CreateProductDialog
       collections={collections}
+      brands={brands}
       templates={templates}
       defaultCollectionId={collection.id}
     />
@@ -212,17 +205,7 @@ export function CollectionDetailClient({
         </div>
 
         {/* Roll-up progress across this collection and its subs. */}
-        <div className="flex max-w-md items-center gap-3">
-          <div className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
-            <div
-              className="bg-brand h-full rounded-full transition-all"
-              style={{ width: `${rollupPct}%` }}
-            />
-          </div>
-          <span className="text-muted-foreground text-xs whitespace-nowrap">
-            {rollupDone} of {rollupTotal} sections complete
-          </span>
-        </div>
+        <ProgressTracker statuses={rollupStatuses} />
       </div>
 
       {/* Sub-collections */}
@@ -244,26 +227,12 @@ export function CollectionDetailClient({
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold tracking-tight">Products</h2>
           {hasSubs && (
-            <button
-              type="button"
-              role="checkbox"
-              aria-checked={includeSubs}
-              onClick={() => setIncludeSubs((v) => !v)}
-              className="hover:bg-accent focus-visible:ring-ring flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-2"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-                  includeSubs
-                    ? "bg-primary border-primary text-primary-foreground"
-                    : "border-input bg-background",
-                )}
-              >
-                {includeSubs && <Check className="size-3" />}
-              </span>
-              Include sub-collections
-            </button>
+            <ToggleRow
+              checked={includeSubs}
+              label="Include sub-collections"
+              onToggle={() => setIncludeSubs((v) => !v)}
+              className="w-auto"
+            />
           )}
         </div>
 

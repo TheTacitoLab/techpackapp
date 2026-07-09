@@ -18,10 +18,9 @@ import {
 import { useDebounce } from "@/hooks/use-debounce";
 import type { Brand, Collection, Label, Season } from "@/types";
 
-/** A top-level collection card plus the raw ids its filters match on. */
+/** A top-level collection card plus the raw brand id its filter matches on. */
 export type DashboardCollection = CollectionCardData & {
   brandId: string;
-  labelIds: string[];
 };
 
 /**
@@ -56,7 +55,9 @@ export function CollectionsDashboardClient({
       result = result.filter((c) => c.brandId === brandFilter);
     }
     if (labelFilter !== "all") {
-      result = result.filter((c) => c.labelIds.includes(labelFilter));
+      result = result.filter((c) =>
+        c.labels.some((l) => l.id === labelFilter),
+      );
     }
     if (search) {
       const q = search.toLowerCase();

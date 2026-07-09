@@ -23,7 +23,9 @@ const createProductSchema = z.object({
 
 export type CreateProductInput = z.input<typeof createProductSchema>;
 
-export async function createProduct(input: CreateProductInput) {
+export async function createProduct(
+  input: CreateProductInput,
+): Promise<{ id: string | null; error: string | null }> {
   const { name, style_number, brand_id, collection_id } =
     createProductSchema.parse(input);
 
@@ -31,7 +33,9 @@ export async function createProduct(input: CreateProductInput) {
 
   // A product placed in a collection adopts that collection's brand — the
   // collection is the grouping surface, so the two can never disagree. This
-  // also ownership-checks the collection before attaching to it.
+  // also ownership-checks the collection before attaching to it. Stale-choice
+  // failures return { error } (thrown action errors are redacted in
+  // production and these messages must reach the user verbatim).
   let resolvedBrandId = brand_id ?? null;
   if (collection_id) {
     const { data: collection } = await supabase
@@ -40,8 +44,22 @@ export async function createProduct(input: CreateProductInput) {
       .eq("id", collection_id)
       .eq("workspace_id", workspaceId)
       .maybeSingle();
-    if (!collection) throw new Error("Collection not found in your workspace.");
+    if (!collection) {
+      return { id: null, error: "Collection not found in your workspace." };
+    }
     resolvedBrandId = collection.brand_id;
+  } else if (resolvedBrandId) {
+    // A directly-supplied brand gets the same ownership check the
+    // collection path has — never trust a raw client id.
+    const { data: brand } = await supabase
+      .from("brands")
+      .select("id")
+      .eq("id", resolvedBrandId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (!brand) {
+      return { id: null, error: "Brand not found in your workspace." };
+    }
   }
 
   const trimmedStyle = style_number?.trim();
@@ -91,7 +109,7 @@ export async function createProduct(input: CreateProductInput) {
   revalidatePath("/dashboard");
   revalidatePath("/products");
   revalidatePath("/collections");
-  return { id: product.id };
+  return { id: product.id, error: null };
 }
 
 // ---- Hierarchy CRUD ----------------------------------------------------------
@@ -297,6 +315,8 @@ export async function deleteSeason(id: string) {
   revalidatePath("/products");
 }
 
+type ParentRow = { id: string; parent_id: string | null; brand_id: string };
+
 /**
  * Fetch the requested parent collection (workspace-scoped) and validate the
  * assignment with the shared pure rule. Returns the parent row on success so
@@ -309,39 +329,34 @@ async function resolveParentAssignment(
   workspaceId: string,
   collectionId: string | null,
   parentId: string | null,
-): Promise<
-  | { parent: { id: string; parent_id: string | null; brand_id: string } | null }
-  | { error: string }
-> {
-  let parent: { id: string; parent_id: string | null; brand_id: string } | null =
-    null;
-  if (parentId) {
-    const { data } = await supabase
-      .from("collections")
-      .select("id, parent_id, brand_id")
-      .eq("id", parentId)
-      .eq("workspace_id", workspaceId)
-      .maybeSingle();
-    parent = data ?? null;
-  }
+): Promise<{ parent: ParentRow | null; error: string | null }> {
+  // The two lookups are independent — one round trip, not two.
+  const [parentResult, childCountResult] = await Promise.all([
+    parentId
+      ? supabase
+          .from("collections")
+          .select("id, parent_id, brand_id")
+          .eq("id", parentId)
+          .eq("workspace_id", workspaceId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    parentId && collectionId
+      ? supabase
+          .from("collections")
+          .select("id", { count: "exact", head: true })
+          .eq("parent_id", collectionId)
+          .eq("workspace_id", workspaceId)
+      : Promise.resolve({ count: 0 }),
+  ]);
 
-  let childCount = 0;
-  if (parentId && collectionId) {
-    const { count } = await supabase
-      .from("collections")
-      .select("id", { count: "exact", head: true })
-      .eq("parent_id", collectionId)
-      .eq("workspace_id", workspaceId);
-    childCount = count ?? 0;
-  }
-
+  const parent: ParentRow | null = parentResult.data ?? null;
   const error = parentAssignmentError({
     collectionId,
     parentId,
     parent,
-    childCount,
+    childCount: childCountResult.count ?? 0,
   });
-  return error ? { error } : { parent };
+  return { parent: error ? null : parent, error };
 }
 
 export async function createCollection(
@@ -357,7 +372,7 @@ export async function createCollection(
     null,
     parent_id ?? null,
   );
-  if ("error" in resolved) return { id: null, error: resolved.error };
+  if (resolved.error) return { id: null, error: resolved.error };
 
   // Sub-collections inherit their parent's brand; top-level ones pick their own.
   const resolvedBrandId = resolved.parent?.brand_id ?? brand_id;
@@ -416,18 +431,31 @@ export async function updateCollection(
     id,
     parent_id,
   );
-  if ("error" in resolved) return { error: resolved.error };
+  if (resolved.error) return { error: resolved.error };
 
+  const nextBrandId = resolved.parent?.brand_id ?? current.brand_id;
   const { error } = await supabase
     .from("collections")
     .update({
       name,
       parent_id,
-      brand_id: resolved.parent?.brand_id ?? current.brand_id,
+      brand_id: nextBrandId,
     })
     .eq("id", id)
     .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
+
+  // Products follow their collection's brand ("the two can never disagree" —
+  // see createProduct). A moved collection can't have children (guarded
+  // above), so only its direct products need re-branding.
+  if (nextBrandId !== current.brand_id) {
+    const { error: productsError } = await supabase
+      .from("products")
+      .update({ brand_id: nextBrandId })
+      .eq("collection_id", id)
+      .eq("workspace_id", workspaceId);
+    if (productsError) throw new Error(productsError.message);
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/products");

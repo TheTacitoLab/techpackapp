@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
@@ -53,6 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { eligibleParents } from "@/lib/collection-hierarchy";
 import type { Brand, Collection, Season } from "@/types";
 
 // ---- Create Brand ------------------------------------------------------------
@@ -264,7 +266,7 @@ export function CreateCollectionDialog({
     },
   });
 
-  const topLevelCollections = collections.filter((c) => c.parent_id === null);
+  const topLevelCollections = eligibleParents(collections);
   const watchedParentId = useWatch({
     control: form.control,
     name: "parent_id",
@@ -368,6 +370,14 @@ export function CreateCollectionDialog({
                 Sub-collections inherit their parent&rsquo;s brand
                 {parentBrandName ? ` (${parentBrandName})` : ""}.
               </p>
+            ) : brands.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                Collections belong to a brand.{" "}
+                <Link href="/settings" className="underline underline-offset-2">
+                  Create your first brand in Settings
+                </Link>{" "}
+                to continue.
+              </p>
             ) : (
               <FormField
                 control={form.control}
@@ -470,10 +480,20 @@ export function EditCollectionDialog({
     },
   });
 
+  // Re-seed from the CURRENT row on every open — mount-time defaults go
+  // stale after an external rename and would silently revert it on save.
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next) {
+      form.reset({
+        name: collection.name,
+        parent_id: collection.parent_id ?? NO_PARENT,
+      });
+    }
+  }
+
   const hasChildren = collections.some((c) => c.parent_id === collection.id);
-  const parentOptions = collections.filter(
-    (c) => c.parent_id === null && c.id !== collection.id,
-  );
+  const parentOptions = eligibleParents(collections, collection.id);
   const watchedParentId = useWatch({
     control: form.control,
     name: "parent_id",
@@ -507,7 +527,7 @@ export function EditCollectionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         {trigger ?? (
           <Button variant="ghost" size="icon" className="size-6 shrink-0">

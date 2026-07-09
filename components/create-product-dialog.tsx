@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { FilePlus2, LayoutTemplate, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -44,12 +44,13 @@ import {
 import { orderCollectionsForPicker } from "@/lib/collection-hierarchy";
 import type { TemplateSummary } from "@/lib/templates";
 import { cn } from "@/lib/utils";
-import type { Collection } from "@/types";
+import type { Brand, Collection } from "@/types";
 
 const schema = z.object({
   name: z.string().min(1, "Enter a product name."),
   style_number: z.string().optional(),
   collection_id: z.string().optional(),
+  brand_id: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -65,15 +66,16 @@ type Mode = "choose" | "blank" | "template";
  */
 export function CreateProductDialog({
   collections = [],
+  brands = [],
   templates = [],
   defaultCollectionId,
-  trigger,
 }: {
   collections?: Collection[];
+  /** For the optional brand picker shown when no collection is chosen. */
+  brands?: Brand[];
   templates?: TemplateSummary[];
   /** Pre-selects a collection (e.g. "New Product" on a collection's page). */
   defaultCollectionId?: string;
-  trigger?: React.ReactNode;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -93,6 +95,7 @@ export function CreateProductDialog({
       name: "",
       style_number: "",
       collection_id: defaultCollectionId ?? "",
+      brand_id: "",
     },
   });
 
@@ -104,6 +107,13 @@ export function CreateProductDialog({
     () => orderCollectionsForPicker(collections),
     [collections],
   );
+
+  // A product in a collection adopts the collection's brand server-side;
+  // only a collection-less product needs its own (optional) brand pick.
+  const watchedCollectionId = useWatch({
+    control: form.control,
+    name: "collection_id",
+  });
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -120,12 +130,19 @@ export function CreateProductDialog({
     startTransition(async () => {
       try {
         // The product's brand derives from the chosen collection
-        // server-side; without a collection it starts unassigned.
+        // server-side; the picked brand only applies without a collection.
         const result = await createProduct({
           name: values.name,
           style_number: values.style_number,
           collection_id: values.collection_id || undefined,
+          brand_id: values.collection_id
+            ? undefined
+            : values.brand_id || undefined,
         });
+        if (result.error || !result.id) {
+          toast.error(result.error ?? "Could not create product.");
+          return;
+        }
         toast.success("Product created.");
         setOpen(false);
         form.reset();
@@ -164,12 +181,10 @@ export function CreateProductDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        {trigger ?? (
-          <Button>
-            <Plus />
-            New product
-          </Button>
-        )}
+        <Button>
+          <Plus />
+          New product
+        </Button>
       </DialogTrigger>
       <DialogContent className={cn(effectiveMode === "template" && "sm:max-w-lg")}>
         <DialogHeader>
@@ -272,6 +287,35 @@ export function CreateProductDialog({
                               <span className={c.depth === 1 ? "pl-4" : undefined}>
                                 {c.name}
                               </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              {!watchedCollectionId && brands.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="brand_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Brand (optional)</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value ?? ""}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {brands.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.name}
                             </SelectItem>
                           ))}
                         </SelectContent>

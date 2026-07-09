@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -12,7 +11,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-import { pruneDanglingPins, setPinned } from "@/app/(app)/pins/actions";
+import { setPinned } from "@/app/(app)/pins/actions";
 import {
   addPin,
   pinKey,
@@ -29,6 +28,10 @@ import {
  * array shape + rules (max 10, product/collection only) live in `lib/pins.ts`
  * so the server layout can parse the seed value and the actions share the
  * exact same logic.
+ *
+ * The layout seeds RESOLVED pins (dangling entries already filtered out), so
+ * the client-side cap check counts exactly what the sidebar shows; the
+ * server prunes the stored array on every write.
  */
 interface PinsValue {
   pins: PinEntry[];
@@ -49,15 +52,9 @@ const pinsSignature = (pins: PinEntry[]) => pins.map(pinKey).join("|");
 
 export function PinsProvider({
   initial,
-  hasDangling = false,
   children,
 }: {
   initial: PinEntry[];
-  /**
-   * True when the server layout filtered out pins whose target no longer
-   * exists — triggers a one-shot durable cleanup of the stored array.
-   */
-  hasDangling?: boolean;
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -73,16 +70,10 @@ export function PinsProvider({
     }
   }
 
-  // Lazy cleanup: the render already filtered dangling pins out; persist
-  // that pruning once so deleted items don't hold pin slots forever.
-  const prunedRef = useRef(false);
-  useEffect(() => {
-    if (!hasDangling || prunedRef.current) return;
-    prunedRef.current = true;
-    void pruneDanglingPins().catch(() => {
-      // Purely janitorial — never bother the user if it fails.
-    });
-  }, [hasDangling]);
+  // setPinned is a read-modify-write of the stored array — two overlapping
+  // calls would lose one pin. Chaining every call through this queue keeps
+  // same-tab toggles strictly ordered.
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   const value = useMemo<PinsValue>(() => {
     const keys = new Set(local.map(pinKey));
@@ -92,7 +83,13 @@ export function PinsProvider({
       togglePin: (type, id) => {
         const entry: PinEntry = { type, id };
         const pinned = !keys.has(pinKey(entry));
-        const prev = local;
+
+        // Failure undoes THIS toggle only (inverse op, not a snapshot), so
+        // other in-flight toggles' optimistic state survives a revert.
+        const revert = () =>
+          setLocal((cur) =>
+            pinned ? removePin(cur, entry) : addPin(cur, entry).pins,
+          );
 
         if (pinned) {
           // Surface the cap immediately — no round-trip for the 11th pin.
@@ -106,11 +103,12 @@ export function PinsProvider({
           setLocal(removePin(local, entry));
         }
 
-        void setPinned({ type, id, pinned })
+        queueRef.current = queueRef.current
+          .then(() => setPinned({ type, id, pinned }))
           .then((result) => {
             if (result.error) {
               toast.error(result.error);
-              setLocal(prev);
+              revert();
               return;
             }
             // The sidebar's pinned list is server-rendered from the layout.
@@ -118,7 +116,7 @@ export function PinsProvider({
           })
           .catch(() => {
             toast.error(pinned ? "Could not pin." : "Could not unpin.");
-            setLocal(prev);
+            revert();
           });
       },
     };

@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
+import { groupSectionStatuses } from "@/lib/collection-card-data";
 import {
   collectionWithChildIds,
   orderCollectionsForPicker,
@@ -91,15 +92,10 @@ export function DashboardClient({
   );
 
   // product_id → completion statuses
-  const sectionStatusMap = useMemo(() => {
-    const map = new Map<string, SectionStatus[]>();
-    for (const s of sections) {
-      const arr = map.get(s.product_id) ?? [];
-      arr.push(s.status);
-      map.set(s.product_id, arr);
-    }
-    return map;
-  }, [sections]);
+  const sectionStatusMap = useMemo(
+    () => groupSectionStatuses(sections),
+    [sections],
+  );
 
   // product_id → resolved labels
   const labelsByProduct = useMemo(() => {
@@ -207,6 +203,7 @@ export function DashboardClient({
             />
             <CreateProductDialog
               collections={collections}
+              brands={brands}
               templates={templates}
             />
           </div>
@@ -296,6 +293,7 @@ export function DashboardClient({
             archived ? undefined : (
               <CreateProductDialog
                 collections={collections}
+                brands={brands}
                 templates={templates}
               />
             )

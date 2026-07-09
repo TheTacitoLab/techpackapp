@@ -31,12 +31,14 @@ export default async function ProductsPage() {
       .eq("workspace_id", wsId)
       .order("name"),
     // Templates never appear in the product grid — they live in
-    // Settings → Templates and the "Use A Template" picker.
+    // Settings → Templates and the "Use A Template" picker. Archived
+    // products have their own route (/archive), so they stay server-side.
     supabase
       .from("products")
       .select("*")
       .eq("workspace_id", wsId)
       .eq("is_template", false)
+      .is("archived_at", null)
       .order("created_at", { ascending: false }),
     supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
     getTemplateSummaries(supabase, wsId),

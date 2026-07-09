@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, FileDown, FileSpreadsheet } from "lucide-react";
+import { FileDown, FileSpreadsheet } from "lucide-react";
 
 import { ANNOTATION_LAYERS, type LayerKey } from "@/components/canvas/layers";
+import { ToggleRow } from "@/components/toggle-row";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,43 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 
 const ALL_KEYS: readonly LayerKey[] = ANNOTATION_LAYERS.map((l) => l.key);
-
-/** The shared checkbox-row look for both the layer and section toggles. */
-function ToggleRow({
-  checked,
-  label,
-  onToggle,
-}: {
-  checked: boolean;
-  label: string;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={onToggle}
-      className="hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-2"
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-          checked
-            ? "bg-primary border-primary text-primary-foreground"
-            : "border-input bg-background",
-        )}
-      >
-        {checked && <Check className="size-3" />}
-      </span>
-      {label}
-    </button>
-  );
-}
 
 /**
  * The product header's "Quick Export" — the one-click full tech pack PDF.

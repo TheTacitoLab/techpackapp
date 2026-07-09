@@ -74,6 +74,21 @@ export function collectionWithChildIds(
   return ids;
 }
 
+/**
+ * Collections that may legally become a parent: top-level only (the
+ * one-level rule), excluding the collection being edited itself. The
+ * pickers use this so the UI's idea of "valid parent" can never drift from
+ * `parentAssignmentError`.
+ */
+export function eligibleParents<T extends CollectionRef>(
+  collections: readonly T[],
+  excludeId?: string,
+): T[] {
+  return collections.filter(
+    (c) => c.parent_id === null && c.id !== excludeId,
+  );
+}
+
 export type PickerCollection = CollectionRef & { name: string };
 
 export type PickerOption = {

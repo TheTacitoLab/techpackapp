@@ -19,6 +19,7 @@ import { StatusPill } from "@/components/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/section-card";
+import { groupSectionStatuses } from "@/lib/collection-card-data";
 import type { TemplateSummary } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 import type {
@@ -122,15 +123,10 @@ export function LaunchpadClient({
     [products],
   );
 
-  const statusesByProduct = useMemo(() => {
-    const map = new Map<string, SectionStatus[]>();
-    for (const s of sections) {
-      const arr = map.get(s.product_id) ?? [];
-      arr.push(s.status);
-      map.set(s.product_id, arr);
-    }
-    return map;
-  }, [sections]);
+  const statusesByProduct = useMemo(
+    () => groupSectionStatuses(sections),
+    [sections],
+  );
 
   const stats = useMemo(() => {
     let inProduction = 0;
@@ -381,6 +377,7 @@ export function LaunchpadClient({
             <div className="flex flex-col gap-2">
               <CreateProductDialog
                 collections={collections}
+                brands={brands}
                 templates={templates}
               />
               <CreateCollectionDialog

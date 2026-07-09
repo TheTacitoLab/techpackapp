@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { FolderOpen } from "lucide-react";
 
+import { LabelChip } from "@/components/label-chip";
 import { PinToggle } from "@/components/pin-toggle";
+import { CompactProgress } from "@/components/progress-tracker";
 import type { SectionStatus } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -93,11 +95,6 @@ export function CollectionCard({
   size?: "default" | "sm";
 }) {
   const compact = size === "sm";
-  const total = collection.sectionStatuses.length;
-  const done = collection.sectionStatuses.filter(
-    (s) => s === "complete",
-  ).length;
-  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
 
   return (
     <div className="bg-card shadow-card hover:shadow-card-hover group relative flex flex-col overflow-hidden rounded-xl transition-shadow">
@@ -146,16 +143,7 @@ export function CollectionCard({
             </span>
           )}
           {collection.labels.slice(0, compact ? 2 : 3).map((label) => (
-            <span
-              key={label.id}
-              className="bg-muted text-foreground inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs"
-            >
-              <span
-                className="size-2 shrink-0 rounded-full"
-                style={{ backgroundColor: label.color }}
-              />
-              <span className="max-w-[8rem] truncate">{label.name}</span>
-            </span>
+            <LabelChip key={label.id} name={label.name} color={label.color} />
           ))}
           {collection.labels.length > (compact ? 2 : 3) && (
             <span className="text-muted-foreground text-xs">
@@ -165,17 +153,10 @@ export function CollectionCard({
         </div>
 
         {/* Roll-up progress: sections complete across every counted product. */}
-        <div className="mt-auto flex items-center gap-2">
-          <div className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
-            <div
-              className="bg-brand h-full rounded-full transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="text-muted-foreground text-xs whitespace-nowrap">
-            {done}/{total}
-          </span>
-        </div>
+        <CompactProgress
+          statuses={collection.sectionStatuses}
+          className="mt-auto"
+        />
       </div>
     </div>
   );

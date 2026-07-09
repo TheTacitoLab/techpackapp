@@ -14,6 +14,36 @@ import type { SectionStatus } from "@/types";
 
 export type CardLabel = { id: string; name: string; color: string };
 
+/** product_id → its section statuses, the shape every progress bar consumes. */
+export function groupSectionStatuses(
+  rows: readonly { product_id: string; status: SectionStatus }[],
+): Map<string, SectionStatus[]> {
+  const map = new Map<string, SectionStatus[]>();
+  for (const row of rows) {
+    const arr = map.get(row.product_id);
+    if (arr) arr.push(row.status);
+    else map.set(row.product_id, [row.status]);
+  }
+  return map;
+}
+
+/** collection_id → resolved card labels (unknown label ids are skipped). */
+export function groupLabelsByCollection(
+  rows: readonly { collection_id: string; label_id: string }[],
+  labelById: ReadonlyMap<string, { id: string; name: string; color: string }>,
+): Map<string, CardLabel[]> {
+  const map = new Map<string, CardLabel[]>();
+  for (const row of rows) {
+    const label = labelById.get(row.label_id);
+    if (!label) continue;
+    const entry = { id: label.id, name: label.name, color: label.color };
+    const arr = map.get(row.collection_id);
+    if (arr) arr.push(entry);
+    else map.set(row.collection_id, [entry]);
+  }
+  return map;
+}
+
 export type CollectionForCards = CollectionRef & {
   name: string;
   brand_id: string;

@@ -50,14 +50,19 @@ begin
     from public.collections c
    where c.id = new.parent_id;
 
-  -- A missing parent falls through to the FK violation.
-  if found then
-    if parent_row.workspace_id <> new.workspace_id then
-      raise exception 'Parent collection belongs to a different workspace';
-    end if;
-    if parent_row.parent_id is not null then
-      raise exception 'Collections can only nest one level deep';
-    end if;
+  -- This lookup runs as the invoker, so RLS hides other workspaces' rows.
+  -- A parent this workspace cannot see MUST be rejected here: the FK alone
+  -- would accept it (FK checks bypass RLS), silently creating a
+  -- cross-workspace link and bricking the other workspace's delete.
+  if not found then
+    raise exception 'Parent collection not found';
+  end if;
+
+  if parent_row.workspace_id <> new.workspace_id then
+    raise exception 'Parent collection belongs to a different workspace';
+  end if;
+  if parent_row.parent_id is not null then
+    raise exception 'Collections can only nest one level deep';
   end if;
 
   -- A collection that has children cannot itself be given a parent.

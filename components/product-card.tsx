@@ -11,6 +11,8 @@ import {
   duplicateProduct,
   unarchiveProduct,
 } from "@/app/(app)/dashboard/actions";
+import { LabelChip } from "@/components/label-chip";
+import { CompactProgress } from "@/components/progress-tracker";
 import { StatusPill } from "@/components/status-pill";
 import { PinToggle } from "@/components/pin-toggle";
 import { Button } from "@/components/ui/button";
@@ -24,29 +26,6 @@ import {
 import type { Product, SectionStatus } from "@/types";
 
 type CardLabel = { id: string; name: string; color: string };
-
-function CompactProgress({
-  statuses,
-}: {
-  statuses: SectionStatus[];
-}) {
-  const total = statuses.length;
-  const done = statuses.filter((s) => s === "complete").length;
-  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
-  return (
-    <div className="flex items-center gap-2">
-      <div className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
-        <div
-          className="bg-brand h-full rounded-full transition-all"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-muted-foreground text-xs whitespace-nowrap">
-        {done}/{total}
-      </span>
-    </div>
-  );
-}
 
 export function ProductCard({
   product,
@@ -162,16 +141,7 @@ export function ProductCard({
         {labels.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {labels.slice(0, 3).map((label) => (
-              <span
-                key={label.id}
-                className="bg-muted text-foreground inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs"
-              >
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: label.color }}
-                />
-                <span className="max-w-[8rem] truncate">{label.name}</span>
-              </span>
+              <LabelChip key={label.id} name={label.name} color={label.color} />
             ))}
             {labels.length > 3 && (
               <span className="text-muted-foreground text-xs">
