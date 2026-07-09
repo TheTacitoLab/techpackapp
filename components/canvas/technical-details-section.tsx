@@ -22,6 +22,7 @@ import type {
   ProductAsset,
   ResolvedCanvasPage,
   ResolvedLibraryItem,
+  WorkspaceColour,
 } from "@/types";
 
 type Mode = { view: "overview" } | { view: "edit"; pageId: string };
@@ -33,6 +34,7 @@ export function TechnicalDetailsSection({
   pages,
   colourways,
   libraryItems,
+  workspaceColours,
 }: {
   productId: string;
   workspaceId: string;
@@ -40,6 +42,7 @@ export function TechnicalDetailsSection({
   pages: ResolvedCanvasPage[];
   colourways: CanvasColourway[];
   libraryItems: ResolvedLibraryItem[];
+  workspaceColours: WorkspaceColour[];
 }) {
   const [mode, setMode] = useState<Mode>({ view: "overview" });
   // Default to Fabrics & Trim — the most-used layer, and the one that builds the BOM.
@@ -63,11 +66,29 @@ export function TechnicalDetailsSection({
     null,
   );
 
+  // Optimistic workspace colour library, same lifecycle as the colourways
+  // above: a colour saved from a pin ("Save to library") merges here so every
+  // other pin form sees it immediately; the server prop resyncs on refresh.
+  const [localWorkspaceColours, setLocalWorkspaceColours] =
+    useState(workspaceColours);
+  const [syncedWorkspaceColours, setSyncedWorkspaceColours] =
+    useState(workspaceColours);
+  if (workspaceColours !== syncedWorkspaceColours) {
+    setSyncedWorkspaceColours(workspaceColours);
+    setLocalWorkspaceColours(workspaceColours);
+  }
+
   function handleColourwayCreated(colourway: CanvasColourway) {
     setLocalColourways((prev) =>
       prev.some((c) => c.id === colourway.id) ? prev : [...prev, colourway],
     );
     setLastUsedColourwayId(colourway.id);
+  }
+
+  function handleWorkspaceColourSaved(colour: WorkspaceColour) {
+    setLocalWorkspaceColours((prev) =>
+      prev.some((c) => c.id === colour.id) ? prev : [...prev, colour],
+    );
   }
 
   function handleColourwayRenamed(id: string, name: string) {
@@ -106,6 +127,10 @@ export function TechnicalDetailsSection({
       activeLayer={activeLayer}
       viewAllLayers={viewAllLayers}
       libraryItems={libraryItems}
+      colourLibrary={{
+        colours: localWorkspaceColours,
+        onSaved: handleWorkspaceColourSaved,
+      }}
       colourways={localColourways}
       lastUsedColourwayId={lastUsedColourwayId}
       onColourwayCreated={handleColourwayCreated}

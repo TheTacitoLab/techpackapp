@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { SwatchBook, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   LibraryQuickAddForm,
   useInlineAddedLibraryItems,
 } from "@/components/library-quick-add-form";
+import { ColourLibraryPickPanel } from "@/components/canvas/colour-library-picker";
 import {
   FABRIC_FAMILY_LABEL,
   FABRIC_FAMILY_LIBRARY_CATEGORIES,
@@ -44,6 +45,7 @@ import type {
   FabricTrimAnnotationData,
   ResolvedLibraryItem,
   TrimKind,
+  WorkspaceColour,
 } from "@/types";
 
 const FABRIC_FAMILY_KEYS: readonly FabricFamilyKey[] = ["fabric", "trim"];
@@ -72,7 +74,11 @@ type CreatedResult = {
  * it stays editable in both modes.
  */
 export function FabricTrimPinEditor(
-  props: { libraryItems: ResolvedLibraryItem[] } & (
+  props: {
+    libraryItems: ResolvedLibraryItem[];
+    /** Workspace colour library for the colour field's "From library" picker. */
+    workspaceColours: WorkspaceColour[];
+  } & (
     | {
         mode: "edit";
         annotation: CanvasAnnotation;
@@ -159,6 +165,8 @@ export function FabricTrimPinEditor(
   // this component's RENDER only — the component (and every in-progress pin
   // field above) stays mounted, so the detour loses nothing.
   const [inlineAddName, setInlineAddName] = useState<string | null>(null);
+  // Inline "pick from workspace colour library" sub-view — same detour pattern.
+  const [pickingColour, setPickingColour] = useState(false);
 
   // The Trim family's picker spans every trim-ish library category (trim +
   // fastener + elastic) in one searchable list — the Master Library keeps its
@@ -169,6 +177,19 @@ export function FabricTrimPinEditor(
   );
   const selectedItem = libraryItems.find((i) => i.id === libraryItemId) ?? null;
   const colourOptions = selectedItem ? libraryColourOptions(selectedItem) : [];
+  // A colour picked from the WORKSPACE library isn't among the item's own
+  // variants — append it as an extra option so the Select can display it
+  // (swatch resolved live from the library list when the name still matches).
+  const extendedColourOptions =
+    colour && !colourOptions.some((o) => o.name === colour)
+      ? [
+          ...colourOptions,
+          {
+            name: colour,
+            hex: props.workspaceColours.find((w) => w.name === colour)?.hex,
+          },
+        ]
+      : colourOptions;
 
   function handlePickLibraryItem(id: string, item: ResolvedLibraryItem) {
     setLibraryItemId(id);
@@ -271,6 +292,19 @@ export function FabricTrimPinEditor(
     );
   }
 
+  if (pickingColour) {
+    return (
+      <ColourLibraryPickPanel
+        colours={props.workspaceColours}
+        onPick={(picked) => {
+          setColour(picked.name);
+          setPickingColour(false);
+        }}
+        onCancel={() => setPickingColour(false)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       {props.mode === "create" && (
@@ -364,31 +398,50 @@ export function FabricTrimPinEditor(
         </div>
       )}
 
-      {selectedItem && colourOptions.length > 0 && (
-        <div className="space-y-1.5">
-          <Label className="text-xs">Colour</Label>
-          <Select value={colour ?? undefined} onValueChange={setColour}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select a colour…" />
-            </SelectTrigger>
-            <SelectContent>
-              {colourOptions.map((c) => (
-                <SelectItem key={c.name} value={c.name}>
-                  <span className="flex items-center gap-2">
-                    {c.hex && (
-                      <span
-                        className="size-3 shrink-0 rounded-full border"
-                        style={{ backgroundColor: c.hex }}
-                      />
-                    )}
-                    {c.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      {selectedItem &&
+        (extendedColourOptions.length > 0 ||
+          props.workspaceColours.length > 0) && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Colour</Label>
+            <div className="flex items-center gap-2">
+              {extendedColourOptions.length > 0 && (
+                <Select value={colour ?? undefined} onValueChange={setColour}>
+                  <SelectTrigger className="min-w-0 flex-1">
+                    <SelectValue placeholder="Select a colour…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {extendedColourOptions.map((c) => (
+                      <SelectItem key={c.name} value={c.name}>
+                        <span className="flex items-center gap-2">
+                          {c.hex && (
+                            <span
+                              className="size-3 shrink-0 rounded-full border"
+                              style={{ backgroundColor: c.hex }}
+                            />
+                          )}
+                          {c.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {props.workspaceColours.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setPickingColour(true)}
+                  title="Pick a colour from your workspace library"
+                >
+                  <SwatchBook className="size-4" />
+                  From library
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
       <div className="space-y-1.5">
         <Label htmlFor="ftpe-placement" className="text-xs">

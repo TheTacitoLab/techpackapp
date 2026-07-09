@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Pipette, Trash2 } from "lucide-react";
+import { BookmarkPlus, Pipette, SwatchBook, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  ColourLibraryPickPanel,
+  SaveColourToLibraryPanel,
+  type WorkspaceColourLibrary,
+} from "@/components/canvas/colour-library-picker";
 import {
   colourwayLabel,
   isValidHex,
@@ -166,6 +171,12 @@ export function ColourwayPinEditor(
     colourways: CanvasColourway[];
     draft: ColourwayDraftFields;
     /**
+     * The workspace colour library: "From library" fills the draft from a
+     * picked colour; "Save to library" is the sample-then-save flow (the
+     * created row is merged back via `colourLibrary.onSaved`).
+     */
+    colourLibrary: WorkspaceColourLibrary;
+    /**
      * Request image pick-mode for the "Re-sample" action. The caller (which owns
      * the Popover's `open` state) closes the popover, samples, then reopens it
      * with `draft` already carrying the result — this component doesn't manage
@@ -193,7 +204,7 @@ export function ColourwayPinEditor(
       }
   ),
 ) {
-  const { colourways, draft, onRequestResample } = props;
+  const { colourways, draft, colourLibrary, onRequestResample } = props;
   const {
     colourName,
     setColourName,
@@ -210,6 +221,11 @@ export function ColourwayPinEditor(
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isCreatingColourway, setIsCreatingColourway] = useState(false);
+  // Inline library sub-views (pick a colour / save this colour) — swap this
+  // component's RENDER only, like the Fabrics & Trim quick-add detour; the
+  // draft fields live in the caller (see useColourwayDraftFields) so nothing
+  // is lost either way.
+  const [libraryView, setLibraryView] = useState<"pick" | "save" | null>(null);
 
   async function handleCreateColourway() {
     if (props.mode !== "create") return;
@@ -292,6 +308,36 @@ export function ColourwayPinEditor(
     props.mode === "edit"
       ? colourways.find((c) => c.id === props.annotation.colourway_id)
       : null;
+
+  if (libraryView === "pick") {
+    return (
+      <ColourLibraryPickPanel
+        colours={colourLibrary.colours}
+        onPick={(colour) => {
+          setColourName(colour.name);
+          setHex(colour.hex);
+          setPantone(colour.pantone ?? "");
+          setLibraryView(null);
+        }}
+        onCancel={() => setLibraryView(null)}
+      />
+    );
+  }
+
+  if (libraryView === "save") {
+    return (
+      <SaveColourToLibraryPanel
+        initialName={colourName.trim()}
+        hex={hex.trim().toUpperCase()}
+        initialPantone={pantone.trim()}
+        onSaved={(colour) => {
+          colourLibrary.onSaved(colour);
+          setLibraryView(null);
+        }}
+        onCancel={() => setLibraryView(null)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -402,6 +448,33 @@ export function ColourwayPinEditor(
           <p className="text-muted-foreground text-xs">
             Couldn&apos;t read colour from this image, enter it manually.
           </p>
+        )}
+      </div>
+
+      {/* Library row — the third colour source alongside manual entry and
+          sampling, plus the sample-then-save exit. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setLibraryView("pick")}
+          title="Fill from a colour in your workspace library"
+        >
+          <SwatchBook className="size-4" />
+          From library
+        </Button>
+        {isValidHex(hex.trim()) && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setLibraryView("save")}
+            title="Save this colour to your workspace library"
+          >
+            <BookmarkPlus className="size-4" />
+            Save to library
+          </Button>
         )}
       </div>
 
