@@ -22,6 +22,7 @@ import {
   useColourwayDraftFields,
   useColourwaySelectionDraft,
 } from "@/components/canvas/colourway-pin-editor";
+import type { WorkspaceColourLibrary } from "@/components/canvas/colour-library-picker";
 import { ConstructionPinEditor } from "@/components/canvas/construction-pin-editor";
 import { clientToFraction } from "@/components/canvas/coords";
 import {
@@ -200,6 +201,7 @@ export function PageCanvas({
   heightClassName,
   libraryItems,
   colourwayContext,
+  colourLibrary,
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
@@ -223,6 +225,7 @@ export function PageCanvas({
   heightClassName: string;
   libraryItems: ResolvedLibraryItem[];
   colourwayContext: ColourwayContext;
+  colourLibrary: WorkspaceColourLibrary;
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
   // Measure the available drawing area so the page replica can be fit to it at
@@ -310,6 +313,7 @@ export function PageCanvas({
                   onAnnotationCapBlocked={onAnnotationCapBlocked}
                   libraryItems={libraryItems}
                   colourwayContext={colourwayContext}
+                  colourLibrary={colourLibrary}
                   selectedAnnotationId={selectedAnnotationId}
                   onAnnotationCreated={onAnnotationCreated}
                   onAnnotationUpdated={onAnnotationUpdated}
@@ -340,6 +344,7 @@ function SlotView({
   onAnnotationCapBlocked,
   libraryItems,
   colourwayContext,
+  colourLibrary,
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
@@ -358,6 +363,7 @@ function SlotView({
   onAnnotationCapBlocked: () => void;
   libraryItems: ResolvedLibraryItem[];
   colourwayContext: ColourwayContext;
+  colourLibrary: WorkspaceColourLibrary;
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
   if (!slot.asset) {
@@ -382,6 +388,7 @@ function SlotView({
         workspaceId={workspaceId}
         libraryItems={libraryItems}
         colourwayContext={colourwayContext}
+        colourLibrary={colourLibrary}
         selectedAnnotationId={selectedAnnotationId}
         onAnnotationCreated={onAnnotationCreated}
         onAnnotationUpdated={onAnnotationUpdated}
@@ -935,6 +942,7 @@ function DraftFabricPin({
   slotHeight,
   slotId,
   libraryItems,
+  workspaceColours,
   onCreated,
   onCancel,
 }: {
@@ -944,6 +952,7 @@ function DraftFabricPin({
   slotHeight: number;
   slotId: string;
   libraryItems: ResolvedLibraryItem[];
+  workspaceColours: WorkspaceColourLibrary["colours"];
   onCreated: (result: {
     id: string;
     referenceCode: string;
@@ -984,6 +993,7 @@ function DraftFabricPin({
           x={x}
           y={y}
           libraryItems={libraryItems}
+          workspaceColours={workspaceColours}
           onCreated={onCreated}
           onCancel={onCancel}
         />
@@ -1009,6 +1019,7 @@ function DraftColourwayPin({
   productId,
   initialHex,
   colourwayContext,
+  colourLibrary,
   requestResample,
   onCreated,
   onCancel,
@@ -1022,6 +1033,7 @@ function DraftColourwayPin({
   /** Colour auto-sampled at the click point before the editor opened, or null. */
   initialHex: string | null;
   colourwayContext: ColourwayContext;
+  colourLibrary: WorkspaceColourLibrary;
   /**
    * Enter image pick-mode to re-sample this draft pin's hex. `resolve` is
    * called exactly once when pick-mode ends: a hex string on a successful
@@ -1101,6 +1113,7 @@ function DraftColourwayPin({
           draft={draft}
           selection={selection}
           colourways={colourwayContext.colourways}
+          colourLibrary={colourLibrary}
           onColourwayCreated={colourwayContext.onColourwayCreated}
           onRequestResample={requestResample ? handleRequestResample : undefined}
           onCreated={onCreated}
@@ -1265,6 +1278,7 @@ function AnnotationSlot({
   workspaceId,
   libraryItems,
   colourwayContext,
+  colourLibrary,
   selectedAnnotationId,
   onAnnotationCreated,
   onAnnotationUpdated,
@@ -1282,6 +1296,7 @@ function AnnotationSlot({
   workspaceId: string;
   libraryItems: ResolvedLibraryItem[];
   colourwayContext: ColourwayContext;
+  colourLibrary: WorkspaceColourLibrary;
   selectedAnnotationId: string | null;
 } & AnnotationMutationHandlers) {
   const router = useRouter();
@@ -1790,6 +1805,7 @@ function AnnotationSlot({
             isSelected={annotation.id === selectedAnnotationId}
             libraryItems={libraryItems}
             colourways={colourwayContext.colourways}
+            colourLibrary={colourLibrary}
             getSlotRect={() =>
               overlayRef.current?.getBoundingClientRect() ?? null
             }
@@ -1813,6 +1829,7 @@ function AnnotationSlot({
           slotHeight={designH}
           slotId={slot.id}
           libraryItems={libraryItems}
+          workspaceColours={colourLibrary.colours}
           onCreated={handleDraftCreated}
           onCancel={() => setDraftPoint(null)}
         />
@@ -1854,6 +1871,7 @@ function AnnotationSlot({
           productId={productId}
           initialHex={draftPoint.hex}
           colourwayContext={colourwayContext}
+          colourLibrary={colourLibrary}
           requestResample={requestResample}
           onCreated={handleColourwayDraftCreated}
           onCancel={() => setDraftPoint(null)}
