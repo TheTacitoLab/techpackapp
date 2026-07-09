@@ -1,185 +1,183 @@
 "use client";
 
-import { useEffect } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Archive,
   FolderOpen,
   LayoutDashboard,
-  Plus,
+  Package,
   Settings,
 } from "lucide-react";
 
-import { CreateCollectionDialogSimple } from "@/components/hierarchy-dialogs";
-import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/user-menu";
+import { Separator } from "@/components/ui/separator";
+import type { PinType } from "@/lib/pins";
 import { cn } from "@/lib/utils";
-import { useUiStore } from "@/stores/ui-store";
-import type { Collection } from "@/types";
 
-// The lime indicator bar shown at the left edge of the active nav item.
-// Module-level: shared by the scrollable nav and the pinned footer.
+/**
+ * A pin resolved against the DB by the app layout: display name +
+ * destination. Dangling pins (deleted targets) never reach this shape — the
+ * layout filters them out and PinsProvider triggers the durable cleanup.
+ */
+export type PinnedNavItem = {
+  type: PinType;
+  id: string;
+  name: string;
+  href: string;
+  /** For pinned sub-collections: the parent's name, shown as a muted prefix. */
+  parentName: string | null;
+};
+
+// The active item gets a lime edge bar in addition to the tinted background.
 const indicator = (
   <span className="bg-sidebar-accent absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r-full" />
 );
 
-// Item base classes — full-width row when expanded, centered icon when
-// collapsed. Shared by both nav regions so items look identical.
+// Collapsed = icon-only rows, centred; expanded = icon + label.
 function navItemBase(collapsed: boolean): string {
   return collapsed
     ? "relative flex w-full cursor-pointer items-center justify-center rounded-lg p-2 transition-colors"
     : "relative flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors";
 }
 
+function navItemState(active: boolean): string {
+  return active
+    ? "bg-sidebar-accent-bg text-sidebar-accent"
+    : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground";
+}
+
+function NavLink({
+  href,
+  icon: Icon,
+  label,
+  active,
+  collapsed,
+}: {
+  href: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  active: boolean;
+  collapsed: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(navItemBase(collapsed), navItemState(active))}
+      title={collapsed ? label : undefined}
+    >
+      {active && indicator}
+      <Icon className="size-4 shrink-0" />
+      {!collapsed && label}
+    </Link>
+  );
+}
+
+/**
+ * Sidebar nav: Dashboard, All Products, Collections, then the user's PINNED
+ * items (products and collections mixed, in pin order, max 10). Everything
+ * is a plain route link — the old brand-filtered collections list and its
+ * Zustand selection state (active brand / active collection) are gone.
+ */
 export function AppNav({
-  collections = [],
+  pinnedItems = [],
   collapsed = false,
 }: {
-  collections?: Collection[];
+  pinnedItems?: PinnedNavItem[];
   collapsed?: boolean;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
-
-  const {
-    activeBrandId,
-    activeCollectionId,
-    showArchived,
-    setActiveCollectionId,
-    setShowArchived,
-  } = useUiStore();
-
-  const activeCollections = activeBrandId
-    ? collections.filter((c) => c.brand_id === activeBrandId)
-    : collections;
-
-  const onProducts = pathname === "/products";
-  const isAllProductsActive = onProducts && !showArchived && !activeCollectionId;
-  const isArchivedActive = onProducts && showArchived;
-
-  // Warm the route once on mount so the first click navigates against a cached
-  // payload instead of a cold server round-trip.
-  useEffect(() => {
-    router.prefetch("/products");
-  }, [router]);
-
-  // When already on /products these are pure client-state changes.
-  function goToAllProducts() {
-    setActiveCollectionId(null);
-    setShowArchived(false);
-    if (!onProducts) router.push("/products");
-  }
-
-  function goToArchived() {
-    setShowArchived(true);
-    setActiveCollectionId(null);
-    if (!onProducts) router.push("/products");
-  }
-
-  function goToCollection(id: string) {
-    setActiveCollectionId(id);
-    setShowArchived(false);
-    if (!onProducts) router.push("/products");
-  }
-
-  const itemBase = navItemBase(collapsed);
 
   return (
     <div className="flex flex-col gap-1">
       <ul className="flex flex-col gap-1">
         <li>
-          <button
-            onClick={goToAllProducts}
-            className={cn(
-              itemBase,
-              isAllProductsActive
-                ? "bg-sidebar-accent-bg text-sidebar-accent"
-                : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
-            )}
-          >
-            {isAllProductsActive && indicator}
-            <LayoutDashboard className="size-4 shrink-0" />
-            {!collapsed && "All Products"}
-          </button>
+          <NavLink
+            href="/dashboard"
+            icon={LayoutDashboard}
+            label="Dashboard"
+            active={pathname === "/dashboard"}
+            collapsed={collapsed}
+          />
         </li>
         <li>
-          <button
-            onClick={goToArchived}
-            className={cn(
-              itemBase,
-              isArchivedActive
-                ? "bg-sidebar-accent-bg text-sidebar-accent"
-                : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
-            )}
-          >
-            {isArchivedActive && indicator}
-            <Archive className="size-4 shrink-0" />
-            {!collapsed && "Archived"}
-          </button>
+          <NavLink
+            href="/products"
+            icon={Package}
+            label="All Products"
+            active={pathname === "/products"}
+            collapsed={collapsed}
+          />
+        </li>
+        <li>
+          <NavLink
+            href="/collections"
+            icon={FolderOpen}
+            label="Collections"
+            active={pathname === "/collections"}
+            collapsed={collapsed}
+          />
         </li>
       </ul>
 
-      <Separator className="bg-sidebar-border my-2" />
-
-      {/* Collections — hidden when collapsed */}
-      {!collapsed && activeBrandId !== null ? (
+      {/* Pinned items — hidden when collapsed (icon-only pins would all look
+          alike), same treatment as the old collections list. */}
+      {!collapsed && (
         <>
-          <div className="mb-1 px-3">
-            <p className="text-sidebar-muted text-xs font-semibold uppercase tracking-wider">
-              Collections
+          <Separator className="bg-sidebar-border my-2" />
+          {pinnedItems.length > 0 ? (
+            <>
+              <div className="mb-1 px-3">
+                <p className="text-sidebar-muted text-xs font-semibold uppercase tracking-wider">
+                  Pinned
+                </p>
+              </div>
+              <ul className="flex flex-col gap-0.5">
+                {pinnedItems.map((item) => {
+                  const isActive = pathname === item.href;
+                  const Icon =
+                    item.type === "collection" ? FolderOpen : Package;
+                  return (
+                    <li key={`${item.type}:${item.id}`}>
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          "relative flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
+                          navItemState(isActive),
+                        )}
+                      >
+                        {isActive && indicator}
+                        <Icon className="size-3.5 shrink-0" />
+                        <span className="truncate">
+                          {item.parentName && (
+                            <span className="text-sidebar-muted">
+                              {item.parentName}
+                              {" / "}
+                            </span>
+                          )}
+                          {item.name}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sidebar-muted px-3 text-xs">
+              Pin products or collections for quick access.
             </p>
-          </div>
-
-          {activeCollections.length > 0 && (
-            <ul className="flex flex-col gap-0.5">
-              {activeCollections.map((col) => {
-                const isActive = onProducts && activeCollectionId === col.id;
-                return (
-                  <li key={col.id}>
-                    <button
-                      onClick={() => goToCollection(col.id)}
-                      className={cn(
-                        "relative flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
-                        isActive
-                          ? "bg-sidebar-accent-bg text-sidebar-accent"
-                          : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
-                      )}
-                    >
-                      {isActive && indicator}
-                      <FolderOpen className="size-3.5 shrink-0" />
-                      <span className="truncate">{col.name}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
           )}
-
-          <div className="mt-1 px-1">
-            <CreateCollectionDialogSimple
-              trigger={
-                <button className="text-sidebar-muted hover:text-sidebar-foreground flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors">
-                  <Plus className="size-3.5" />
-                  New collection
-                </button>
-              }
-            />
-          </div>
         </>
-      ) : !collapsed ? (
-        <p className="text-sidebar-muted px-3 text-xs">
-          No active brand. Visit Settings to set one.
-        </p>
-      ) : null}
+      )}
     </div>
   );
 }
 
 /**
- * The sidebar's pinned bottom cluster — profile menu + Settings. Rendered by
- * the shell OUTSIDE the scrollable nav region so it stays visible even when
- * the nav's own items overflow and scroll internally.
+ * The sidebar's pinned bottom cluster — Settings, Archive, then the user
+ * menu. Rendered by the shell OUTSIDE the scrollable nav region so it stays
+ * visible even when the nav's own items overflow and scroll internally.
  */
 export function AppNavFooter({
   collapsed = false,
@@ -191,27 +189,27 @@ export function AppNavFooter({
   userEmail: string;
 }) {
   const pathname = usePathname();
-  const isSettingsActive = pathname === "/settings";
-  const itemBase = navItemBase(collapsed);
 
   return (
-    // Plain block, no gap — spacing matches the cluster's old in-nav render.
     <div>
       <Separator className="bg-sidebar-border mb-2" />
-      <UserMenu name={userName} email={userEmail} collapsed={collapsed} />
-      <Link
-        href="/settings"
-        className={cn(
-          itemBase,
-          isSettingsActive
-            ? "bg-sidebar-accent-bg text-sidebar-accent"
-            : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
-        )}
-      >
-        {isSettingsActive && indicator}
-        <Settings className="size-4 shrink-0" />
-        {!collapsed && "Settings"}
-      </Link>
+      <div className="flex flex-col gap-1">
+        <NavLink
+          href="/settings"
+          icon={Settings}
+          label="Settings"
+          active={pathname === "/settings"}
+          collapsed={collapsed}
+        />
+        <NavLink
+          href="/archive"
+          icon={Archive}
+          label="Archive"
+          active={pathname === "/archive"}
+          collapsed={collapsed}
+        />
+        <UserMenu name={userName} email={userEmail} collapsed={collapsed} />
+      </div>
     </div>
   );
 }

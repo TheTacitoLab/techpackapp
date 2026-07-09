@@ -12,6 +12,7 @@ import {
   unarchiveProduct,
 } from "@/app/(app)/dashboard/actions";
 import { StatusPill } from "@/components/status-pill";
+import { PinToggle } from "@/components/pin-toggle";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -120,6 +121,7 @@ export function ProductCard({
               )}
             </p>
           </div>
+          <PinToggle type="product" id={product.id} appearance="card" />
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button

@@ -1,18 +1,17 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+// UI-only state. The old active-brand / active-collection / show-archived
+// selection model was retired with the Collections dashboard session —
+// collections and the archive are real routes now (`/collections`,
+// `/archive`), so navigation state lives in the URL. Stale keys persisted in
+// existing browsers' localStorage are simply ignored by zustand's merge.
 interface UiState {
   sidebarCollapsed: boolean;
   openSections: Record<string, boolean>;
-  activeBrandId: string | null;
-  activeCollectionId: string | null;
-  showArchived: boolean;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setSectionOpen: (key: string, open: boolean) => void;
-  setActiveBrandId: (id: string | null) => void;
-  setActiveCollectionId: (id: string | null) => void;
-  setShowArchived: (v: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -20,9 +19,6 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       sidebarCollapsed: false,
       openSections: {},
-      activeBrandId: null,
-      activeCollectionId: null,
-      showArchived: false,
       toggleSidebar: () =>
         set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
@@ -30,14 +26,7 @@ export const useUiStore = create<UiState>()(
         set((state) => ({
           openSections: { ...state.openSections, [key]: open },
         })),
-      setActiveBrandId: (id) => set({ activeBrandId: id }),
-      setActiveCollectionId: (id) => set({ activeCollectionId: id }),
-      setShowArchived: (v) => set({ showArchived: v }),
     }),
     { name: "garspec-ui" },
   ),
 );
-
-// Convenience selectors for the active-brand context.
-export const useActiveBrand = () => useUiStore((s) => s.activeBrandId);
-export const useSetActiveBrand = () => useUiStore((s) => s.setActiveBrandId);

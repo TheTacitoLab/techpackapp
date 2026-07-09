@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Archive, PackagePlus, Search } from "lucide-react";
+import { PackagePlus, Search } from "lucide-react";
 
-import { CreateCollectionDialogSimple } from "@/components/hierarchy-dialogs";
+import { CreateCollectionDialog } from "@/components/hierarchy-dialogs";
 import { CreateProductDialog } from "@/components/create-product-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { ProductCard } from "@/components/product-card";
@@ -16,8 +16,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
+import {
+  collectionWithChildIds,
+  orderCollectionsForPicker,
+} from "@/lib/collection-hierarchy";
 import type { TemplateSummary } from "@/lib/templates";
-import { useUiStore } from "@/stores/ui-store";
 import type {
   Brand,
   Collection,
@@ -40,6 +43,12 @@ const PRODUCT_STATUSES = [
   { value: "in_production", label: "In Production" },
 ] as const;
 
+/**
+ * The product grid, shared by /products (live) and /archive (archived) —
+ * the archive stopped being a Zustand toggle when it became a route. All
+ * filters are local state; the old active-brand/active-collection selection
+ * model is gone.
+ */
 export function DashboardClient({
   workspaceName,
   brands,
@@ -50,6 +59,7 @@ export function DashboardClient({
   labels,
   productLabels,
   templates = [],
+  view = "live",
 }: {
   workspaceName: string | null;
   brands: Brand[];
@@ -60,15 +70,15 @@ export function DashboardClient({
   labels: Label[];
   productLabels: ProductLabelLink[];
   templates?: TemplateSummary[];
+  view?: "live" | "archived";
 }) {
-  const { activeBrandId, activeCollectionId, setActiveCollectionId, showArchived, setShowArchived } =
-    useUiStore();
-
   const [searchInput, setSearchInput] = useState("");
+  const [collectionFilter, setCollectionFilter] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [labelFilter, setLabelFilter] = useState<string>("all");
 
   const search = useDebounce(searchInput);
+  const archived = view === "archived";
 
   const brandById = useMemo(
     () => new Map(brands.map((b) => [b.id, b.name])),
@@ -115,22 +125,23 @@ export function DashboardClient({
     return map;
   }, [productLabels]);
 
-  const brandCollections = activeBrandId
-    ? collections.filter((c) => c.brand_id === activeBrandId)
-    : collections;
+  // Sub-collections indented under their parents, in one flat picker list.
+  const collectionOptions = useMemo(
+    () => orderCollectionsForPicker(collections),
+    [collections],
+  );
 
   const filtered = useMemo(() => {
     let result = products.filter((p) =>
-      showArchived ? p.archived_at !== null : p.archived_at === null,
+      archived ? p.archived_at !== null : p.archived_at === null,
     );
 
-    // Brand context comes from the Zustand store (set in Settings only).
-    if (activeBrandId) {
-      result = result.filter((p) => p.brand_id === activeBrandId);
-    }
-
-    if (activeCollectionId) {
-      result = result.filter((p) => p.collection_id === activeCollectionId);
+    if (collectionFilter !== "all") {
+      // Filtering by a parent includes its sub-collections' products.
+      const ids = new Set(collectionWithChildIds(collections, collectionFilter));
+      result = result.filter(
+        (p) => p.collection_id !== null && ids.has(p.collection_id),
+      );
     }
 
     if (selectedStatus !== "all") {
@@ -155,39 +166,55 @@ export function DashboardClient({
     return result;
   }, [
     products,
-    showArchived,
-    activeBrandId,
-    activeCollectionId,
+    archived,
+    collections,
+    collectionFilter,
     selectedStatus,
     labelFilter,
     labelIdsByProduct,
     search,
   ]);
 
-  const hasAnyProducts = products.length > 0;
-  const hasArchived = products.some((p) => p.archived_at !== null);
+  const inView = useMemo(
+    () =>
+      products.filter((p) =>
+        archived ? p.archived_at !== null : p.archived_at === null,
+      ),
+    [products, archived],
+  );
+  const hasAnyInView = inView.length > 0;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Products</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {archived ? "Archive" : "Products"}
+          </h1>
           <p className="text-muted-foreground text-sm">
-            {workspaceName ?? "Your workspace"}
+            {archived
+              ? "Archived products stay out of every live view."
+              : (workspaceName ?? "Your workspace")}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <CreateCollectionDialogSimple seasons={seasons} />
-          <CreateProductDialog
-            collections={brandCollections}
-            templates={templates}
-          />
-        </div>
+        {!archived && (
+          <div className="flex items-center gap-2">
+            <CreateCollectionDialog
+              brands={brands}
+              seasons={seasons}
+              collections={collections}
+            />
+            <CreateProductDialog
+              collections={collections}
+              templates={templates}
+            />
+          </div>
+        )}
       </div>
 
       {/* Filters */}
-      {hasAnyProducts && (
+      {hasAnyInView && (
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[200px] flex-1">
             <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
@@ -199,21 +226,18 @@ export function DashboardClient({
             />
           </div>
 
-          {brandCollections.length > 0 && (
-            <Select
-              value={activeCollectionId ?? "all"}
-              onValueChange={(v) =>
-                setActiveCollectionId(v === "all" ? null : v)
-              }
-            >
-              <SelectTrigger className="w-[180px]">
+          {collectionOptions.length > 0 && (
+            <Select value={collectionFilter} onValueChange={setCollectionFilter}>
+              <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="All collections" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All collections</SelectItem>
-                {brandCollections.map((c) => (
+                {collectionOptions.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {c.name}
+                    <span className={c.depth === 1 ? "pl-4" : undefined}>
+                      {c.name}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -258,47 +282,32 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Archived toggle */}
-      {hasArchived && (
-        <div className="flex">
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-1.5 text-sm transition-colors"
-          >
-            <Archive className="size-3.5" />
-            {showArchived ? "Hide archived" : "Show archived"}
-          </button>
-        </div>
-      )}
-
       {/* Empty states */}
-      {!hasAnyProducts && (
+      {!hasAnyInView && (
         <EmptyState
           icon={PackagePlus}
-          title="No products yet"
-          description="Create your first tech pack to start building modular, factory-ready sections."
+          title={archived ? "No archived products" : "No products yet"}
+          description={
+            archived
+              ? "Archive products to hide them from the main view."
+              : "Create your first tech pack to start building modular, factory-ready sections."
+          }
           action={
-            <CreateProductDialog
-              collections={brandCollections}
-              templates={templates}
-            />
+            archived ? undefined : (
+              <CreateProductDialog
+                collections={collections}
+                templates={templates}
+              />
+            )
           }
         />
       )}
 
-      {hasAnyProducts && filtered.length === 0 && (
+      {hasAnyInView && filtered.length === 0 && (
         <EmptyState
           icon={PackagePlus}
-          title={
-            showArchived
-              ? "No archived products"
-              : "No products match your filters"
-          }
-          description={
-            showArchived
-              ? "Archive products to hide them from the main view."
-              : "Try adjusting your search or filter."
-          }
+          title="No products match your filters"
+          description="Try adjusting your search or filter."
         />
       )}
 

@@ -1,14 +1,14 @@
-import { Palette, RefreshCw } from "lucide-react";
+import { Palette } from "lucide-react";
 
 import { SectionCard } from "@/components/section-card";
 import { SettingsBrandsClient } from "@/components/settings-brands-client";
-import { SettingsBrandSwitcher } from "@/components/settings-brand-switcher";
 import type { Brand, Season } from "@/types";
 
 /**
- * The Brands tab: brand management (incl. each brand's logo) and the active-
- * brand switcher — the two brand-related cards from the old single-scroll
- * Settings page, functionality unchanged.
+ * The Brands tab: brand management, incl. each brand's logo. The old
+ * "Switch Active Brand" card is gone — brands stopped being a navigation
+ * filter when Collections became the grouping surface; they remain the
+ * entity that puts logos on PDFs.
  */
 export function BrandsTab({
   brands,
@@ -20,18 +20,12 @@ export function BrandsTab({
   workspaceId: string;
 }) {
   return (
-    <>
-      <SectionCard title="Your Brands" icon={<Palette />}>
-        <SettingsBrandsClient
-          brands={brands}
-          seasons={seasons}
-          workspaceId={workspaceId}
-        />
-      </SectionCard>
-
-      <SectionCard title="Switch Active Brand" icon={<RefreshCw />}>
-        <SettingsBrandSwitcher brands={brands} />
-      </SectionCard>
-    </>
+    <SectionCard title="Your Brands" icon={<Palette />}>
+      <SettingsBrandsClient
+        brands={brands}
+        seasons={seasons}
+        workspaceId={workspaceId}
+      />
+    </SectionCard>
   );
 }

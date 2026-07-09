@@ -5,12 +5,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, Shirt } from "lucide-react";
 
-import { AppNav, AppNavFooter } from "@/components/app-nav";
+import { AppNav, AppNavFooter, type PinnedNavItem } from "@/components/app-nav";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { SessionUser } from "@/lib/supabase/session-user";
 import { useUiStore } from "@/stores/ui-store";
-import type { Collection, Profile, Workspace } from "@/types";
+import type { Profile, Workspace } from "@/types";
 
 /**
  * The authenticated chrome: a viewport-height flex row where the SIDEBAR is
@@ -25,13 +25,13 @@ export function AppShell({
   user,
   profile,
   workspace,
-  collections,
+  pinnedItems,
   children,
 }: {
   user: SessionUser;
   profile: Profile;
   workspace: Workspace | null;
-  collections?: Collection[];
+  pinnedItems?: PinnedNavItem[];
   children: ReactNode;
 }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
@@ -106,14 +106,14 @@ export function AppShell({
         <Separator className="bg-sidebar-border" />
 
         {/* Scrollable nav region — the ONLY part of the sidebar that scrolls
-            when its items (many collections) overflow the viewport. */}
+            when its items (many pins) overflow the viewport. */}
         <nav
           className={cn(
             "min-h-0 flex-1 overflow-y-auto py-4",
             collapsed ? "px-2" : "px-3",
           )}
         >
-          <AppNav collections={collections} collapsed={collapsed} />
+          <AppNav pinnedItems={pinnedItems} collapsed={collapsed} />
         </nav>
 
         {/* Pinned bottom cluster — profile + Settings stay reachable no

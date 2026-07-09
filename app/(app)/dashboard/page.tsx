@@ -54,6 +54,7 @@ export default async function DashboardPage() {
 
   return (
     <LaunchpadClient
+      workspaceName={ctx.workspace?.name ?? null}
       brands={brands ?? []}
       seasons={seasons ?? []}
       collections={collections ?? []}

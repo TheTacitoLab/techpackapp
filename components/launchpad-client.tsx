@@ -11,7 +11,7 @@ import {
   Plus,
 } from "lucide-react";
 
-import { CreateCollectionDialogSimple } from "@/components/hierarchy-dialogs";
+import { CreateCollectionDialog } from "@/components/hierarchy-dialogs";
 import { CreateProductDialog } from "@/components/create-product-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { ProgressTracker } from "@/components/progress-tracker";
@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/section-card";
 import type { TemplateSummary } from "@/lib/templates";
 import { cn } from "@/lib/utils";
-import { useUiStore } from "@/stores/ui-store";
 import type {
   Brand,
   Collection,
@@ -92,7 +91,13 @@ function StatCard({
   );
 }
 
+/**
+ * The launchpad. Workspace-wide since the active-brand model was retired:
+ * stats, attention list and recents cover every live product; Collections
+ * (the grouping surface) has its own dashboard at /collections.
+ */
 export function LaunchpadClient({
+  workspaceName,
   brands,
   seasons,
   collections,
@@ -101,6 +106,7 @@ export function LaunchpadClient({
   templates = [],
   now,
 }: {
+  workspaceName: string | null;
   brands: Brand[];
   seasons: Season[];
   collections: Collection[];
@@ -110,26 +116,10 @@ export function LaunchpadClient({
   now: number;
 }) {
   const router = useRouter();
-  const { activeBrandId, setActiveCollectionId, setShowArchived } =
-    useUiStore();
-
-  const activeBrand = brands.find((b) => b.id === activeBrandId) ?? null;
-
-  // Everything below is scoped to the active brand.
-  const brandCollections = useMemo(
-    () =>
-      activeBrandId
-        ? collections.filter((c) => c.brand_id === activeBrandId)
-        : [],
-    [collections, activeBrandId],
-  );
 
   const liveProducts = useMemo(
-    () =>
-      products.filter(
-        (p) => p.archived_at === null && p.brand_id === activeBrandId,
-      ),
-    [products, activeBrandId],
+    () => products.filter((p) => p.archived_at === null),
+    [products],
   );
 
   const statusesByProduct = useMemo(() => {
@@ -153,6 +143,28 @@ export function LaunchpadClient({
     }
     return { total: liveProducts.length, inProduction, inReview, drafts };
   }, [liveProducts]);
+
+  // Flat list, one row per collection that DIRECTLY contains products — a
+  // product counts only under its own collection, never under the parent
+  // too, so parent/sub pairs can't double-count. Sub-collections carry a
+  // muted "Parent /" prefix so same-named subs stay tellable apart.
+  const collectionProgress = useMemo(() => {
+    const nameById = new Map(collections.map((c) => [c.id, c.name]));
+    return collections
+      .map((col) => {
+        const colProducts = liveProducts.filter(
+          (p) => p.collection_id === col.id,
+        );
+        return {
+          col,
+          parentName: col.parent_id
+            ? (nameById.get(col.parent_id) ?? null)
+            : null,
+          colProducts,
+        };
+      })
+      .filter((entry) => entry.colProducts.length > 0);
+  }, [collections, liveProducts]);
 
   const needsAttention = useMemo(() => {
     const items: { product: Product; reason: string }[] = [];
@@ -197,19 +209,13 @@ export function LaunchpadClient({
     [liveProducts],
   );
 
-  function openCollection(id: string) {
-    setActiveCollectionId(id);
-    setShowArchived(false);
-    router.push("/products");
-  }
-
-  // ---- No brand: a single clear call to action --------------------------------
-  if (!activeBrand) {
+  // ---- Fresh workspace: a single clear call to action --------------------------
+  if (brands.length === 0 && liveProducts.length === 0) {
     return (
       <div className="space-y-6">
         <EmptyState
           icon={PackagePlus}
-          title="No brand yet"
+          title="Welcome to GarSpec"
           description="Create your first brand in Settings to start building tech packs."
           action={
             <Button asChild>
@@ -223,25 +229,16 @@ export function LaunchpadClient({
 
   return (
     <div className="space-y-8">
-      {/* Brand header */}
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {activeBrand.name}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {seasons.length > 0
-              ? `${seasons.length} ${seasons.length === 1 ? "season" : "seasons"} · ${brandCollections.length} ${brandCollections.length === 1 ? "collection" : "collections"}`
-              : `${brandCollections.length} ${brandCollections.length === 1 ? "collection" : "collections"}`}
-          </p>
-        </div>
-        <Link
-          href="/settings"
-          className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-1 text-sm transition-colors"
-        >
-          Switch Brand
-          <ArrowRight className="size-3.5" />
-        </Link>
+      {/* Workspace header */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {workspaceName ?? "Dashboard"}
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          {seasons.length > 0
+            ? `${seasons.length} ${seasons.length === 1 ? "season" : "seasons"} · ${collections.length} ${collections.length === 1 ? "collection" : "collections"}`
+            : `${collections.length} ${collections.length === 1 ? "collection" : "collections"}`}
+        </p>
       </div>
 
       {/* Stat cards */}
@@ -265,19 +262,22 @@ export function LaunchpadClient({
             <h2 className="text-lg font-semibold tracking-tight">
               Collection Progress
             </h2>
-            {brandCollections.length === 0 ? (
+            {collectionProgress.length === 0 ? (
               <EmptyState
                 icon={PackagePlus}
-                title="No collections yet"
+                title="No collections with products yet"
                 description="Group products into collections to track their progress here."
-                action={<CreateCollectionDialogSimple seasons={seasons} />}
+                action={
+                  <CreateCollectionDialog
+                    brands={brands}
+                    seasons={seasons}
+                    collections={collections}
+                  />
+                }
               />
             ) : (
               <div className="space-y-3">
-                {brandCollections.map((col) => {
-                  const colProducts = liveProducts.filter(
-                    (p) => p.collection_id === col.id,
-                  );
+                {collectionProgress.map(({ col, parentName, colProducts }) => {
                   const colStatuses = colProducts.flatMap(
                     (p) => statusesByProduct.get(p.id) ?? [],
                   );
@@ -291,12 +291,20 @@ export function LaunchpadClient({
                   return (
                     <button
                       key={col.id}
-                      onClick={() => openCollection(col.id)}
+                      onClick={() => router.push(`/collections/${col.id}`)}
                       className="bg-card shadow-card hover:shadow-card-hover w-full cursor-pointer space-y-3 rounded-xl p-4 text-left transition-shadow"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">{col.name}</span>
-                        <span className="text-muted-foreground text-xs">
+                        <span className="min-w-0 truncate font-medium">
+                          {parentName && (
+                            <span className="text-muted-foreground">
+                              {parentName}
+                              {" / "}
+                            </span>
+                          )}
+                          {col.name}
+                        </span>
+                        <span className="text-muted-foreground shrink-0 text-xs">
                           {colProducts.length}{" "}
                           {colProducts.length === 1 ? "product" : "products"}
                         </span>
@@ -372,11 +380,13 @@ export function LaunchpadClient({
           <SectionCard title="Quick Actions" icon={<Plus />}>
             <div className="flex flex-col gap-2">
               <CreateProductDialog
-                collections={brandCollections}
+                collections={collections}
                 templates={templates}
               />
-              <CreateCollectionDialogSimple
+              <CreateCollectionDialog
+                brands={brands}
                 seasons={seasons}
+                collections={collections}
                 trigger={
                   <Button variant="secondary" className="w-full justify-start">
                     <Plus className="size-4" />
@@ -385,9 +395,9 @@ export function LaunchpadClient({
                 }
               />
               <Button variant="ghost" asChild className="w-full justify-start">
-                <Link href="/products">
+                <Link href="/collections">
                   <ArrowRight className="size-4" />
-                  View All Products
+                  View Collections
                 </Link>
               </Button>
             </div>

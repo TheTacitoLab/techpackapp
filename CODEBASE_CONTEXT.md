@@ -26,11 +26,16 @@ keep the old word — it describes the artifact, not the brand.
   React-`cache()`-wrapped), `action-context` (`requireActionContext()`, the
   lean 2-round-trip variant every server action uses).
 - **State:** one Zustand store (`stores/ui-store.ts`, persisted as
-  localStorage `"garspec-ui"`) for UI state only. Everything else is
-  server-fetched props + Server Actions; hot paths patch local state
-  optimistically instead of `router.refresh()`. TanStack Query is wired in
-  `app/providers.tsx` but essentially vestigial (`hooks/use-products.ts` is a
-  self-described pattern stub).
+  localStorage `"garspec-ui"`) for UI state only — sidebar collapse + open
+  sections. (The old active-brand/active-collection/show-archived selection
+  model is retired: `/collections` and `/archive` are routes.) Per-user
+  cross-page state lives in `profiles.preferences` jsonb, seeded by the
+  `(app)` layout into optimistic client providers: `UserPreferencesProvider`
+  and `PinsProvider` (pins = ordered `{type,id}` array, max 10, logic in
+  `lib/pins.ts`). Everything else is server-fetched props + Server Actions;
+  hot paths patch local state optimistically instead of `router.refresh()`.
+  TanStack Query is wired in `app/providers.tsx` but essentially vestigial
+  (`hooks/use-products.ts` is a self-described pattern stub).
 - **Exports:** `@react-pdf/renderer` (`lib/pdf/`) and ExcelJS
   (`lib/excel-techpack.ts`), both consuming the same shared derivations
   (`lib/bom-rows.ts`, `lib/spec-sheet-resolve.ts`) so PDF == Excel == UI.

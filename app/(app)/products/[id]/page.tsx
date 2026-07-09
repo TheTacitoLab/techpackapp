@@ -9,6 +9,7 @@ import { TechnicalDetailsSection } from "@/components/canvas/technical-details-s
 import { ChangeLogSection } from "@/components/change-log-section";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { IdentitySection } from "@/components/identity-section";
+import { PinToggle } from "@/components/pin-toggle";
 import { ProductHeaderMenu } from "@/components/product-header-menu";
 import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
@@ -435,8 +436,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
           <span aria-hidden className="bg-border h-5 w-px shrink-0" />
 
-          {/* Right zone: version + export + labels + status */}
+          {/* Right zone: pin + version + export + labels + status */}
           <div className="flex shrink-0 items-center gap-3">
+            <PinToggle type="product" id={product.id} />
             <ProductVersionControl
               productId={product.id}
               versionMajor={product.version_major}

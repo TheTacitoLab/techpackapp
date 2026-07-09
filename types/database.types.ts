@@ -123,6 +123,7 @@ export type Database = {
           workspace_id: string;
           brand_id: string;
           season_id: string | null;
+          parent_id: string | null;
           name: string;
           created_at: string;
         };
@@ -131,6 +132,7 @@ export type Database = {
           workspace_id: string;
           brand_id: string;
           season_id?: string | null;
+          parent_id?: string | null;
           name: string;
           created_at?: string;
         };
@@ -139,6 +141,7 @@ export type Database = {
           workspace_id?: string;
           brand_id?: string;
           season_id?: string | null;
+          parent_id?: string | null;
           name?: string;
           created_at?: string;
         };
@@ -337,6 +340,27 @@ export type Database = {
         Update: {
           id?: string;
           product_id?: string;
+          label_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      collection_labels: {
+        Row: {
+          id: string;
+          collection_id: string;
+          label_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          collection_id: string;
+          label_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          collection_id?: string;
           label_id?: string;
           created_at?: string;
         };

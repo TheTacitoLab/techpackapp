@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -41,9 +41,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { orderCollectionsForPicker } from "@/lib/collection-hierarchy";
 import type { TemplateSummary } from "@/lib/templates";
 import { cn } from "@/lib/utils";
-import { useUiStore } from "@/stores/ui-store";
 import type { Collection } from "@/types";
 
 const schema = z.object({
@@ -66,36 +66,44 @@ type Mode = "choose" | "blank" | "template";
 export function CreateProductDialog({
   collections = [],
   templates = [],
+  defaultCollectionId,
+  trigger,
 }: {
   collections?: Collection[];
   templates?: TemplateSummary[];
+  /** Pre-selects a collection (e.g. "New Product" on a collection's page). */
+  defaultCollectionId?: string;
+  trigger?: React.ReactNode;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("choose");
   const [isPending, startTransition] = useTransition();
-  const activeBrandId = useUiStore((s) => s.activeBrandId);
 
   // ---- template path state ----
   const [templateId, setTemplateId] = useState("");
   const [templateProductName, setTemplateProductName] = useState("");
-  const [templateCollectionId, setTemplateCollectionId] = useState("");
+  const [templateCollectionId, setTemplateCollectionId] = useState(
+    defaultCollectionId ?? "",
+  );
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       name: "",
       style_number: "",
-      collection_id: "",
+      collection_id: defaultCollectionId ?? "",
     },
   });
 
   const hasTemplates = templates.length > 0;
   const effectiveMode: Mode = hasTemplates ? mode : "blank";
 
-  const activeCollections = activeBrandId
-    ? collections.filter((c) => c.brand_id === activeBrandId)
-    : collections;
+  // Sub-collections indented under their parents, in one flat picker list.
+  const collectionOptions = useMemo(
+    () => orderCollectionsForPicker(collections),
+    [collections],
+  );
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -103,7 +111,7 @@ export function CreateProductDialog({
       setMode("choose");
       setTemplateId("");
       setTemplateProductName("");
-      setTemplateCollectionId("");
+      setTemplateCollectionId(defaultCollectionId ?? "");
       form.reset();
     }
   }
@@ -111,10 +119,11 @@ export function CreateProductDialog({
   function onSubmit(values: FormValues) {
     startTransition(async () => {
       try {
+        // The product's brand derives from the chosen collection
+        // server-side; without a collection it starts unassigned.
         const result = await createProduct({
           name: values.name,
           style_number: values.style_number,
-          brand_id: activeBrandId ?? undefined,
           collection_id: values.collection_id || undefined,
         });
         toast.success("Product created.");
@@ -155,10 +164,12 @@ export function CreateProductDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus />
-          New product
-        </Button>
+        {trigger ?? (
+          <Button>
+            <Plus />
+            New product
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className={cn(effectiveMode === "template" && "sm:max-w-lg")}>
         <DialogHeader>
@@ -239,7 +250,7 @@ export function CreateProductDialog({
                   </FormItem>
                 )}
               />
-              {activeCollections.length > 0 && (
+              {collectionOptions.length > 0 && (
                 <FormField
                   control={form.control}
                   name="collection_id"
@@ -256,9 +267,11 @@ export function CreateProductDialog({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {activeCollections.map((c) => (
+                          {collectionOptions.map((c) => (
                             <SelectItem key={c.id} value={c.id}>
-                              {c.name}
+                              <span className={c.depth === 1 ? "pl-4" : undefined}>
+                                {c.name}
+                              </span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -329,11 +342,9 @@ export function CreateProductDialog({
                     maxLength={120}
                   />
                 </div>
-                {collections.length > 0 && (
+                {collectionOptions.length > 0 && (
                   <div className="space-y-1.5">
                     <Label>Collection (optional)</Label>
-                    {/* Deliberately ALL collections, not just the active
-                        brand's — templates are workspace-wide for use. */}
                     <Select
                       value={templateCollectionId}
                       onValueChange={setTemplateCollectionId}
@@ -342,9 +353,11 @@ export function CreateProductDialog({
                         <SelectValue placeholder="None" />
                       </SelectTrigger>
                       <SelectContent>
-                        {collections.map((c) => (
+                        {collectionOptions.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.name}
+                            <span className={c.depth === 1 ? "pl-4" : undefined}>
+                              {c.name}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>

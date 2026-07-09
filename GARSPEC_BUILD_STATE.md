@@ -12,6 +12,29 @@ Read-only audit of the codebase as it exists on branch `claude/new-session-b2eec
 > corrected against reality. Statements below about those items describe the
 > pre-session state.
 
+> **Addendum — collections & navigation session (migrations 0040–0042):**
+> product templates (0040) and the workspace colour library (0041) landed in
+> earlier sessions; this session added **0042** — `collections.parent_id`
+> (ONE level of nesting, DB trigger + server actions enforce depth) and
+> `collection_labels` (workspace labels on collections, mirroring
+> `product_labels`). New surfaces: **/collections** (visual dashboard of
+> top-level collection cards — derived 4-image cover mosaics, brand/label
+> chips, roll-up counts+progress incl. subs, pin toggles, search/brand/label
+> filters), **/collections/[id]** (detail: editable labels, roll-up progress,
+> sub-collection card row, direct-products grid with include-subs toggle,
+> breadcrumb, "New Product" pre-selecting the collection) and **/archive**
+> (archived products as a route). Per-user **pins** (max 10 products and/or
+> collections, ordered `{type,id}` array in `profiles.preferences.pins`)
+> render in the restructured sidebar: Dashboard / All Products / Collections
+> / PINNED / (bottom) Settings, Archive, user menu. **Retired:** the
+> active-brand/active-collection/show-archived Zustand model and its
+> components (`brand-bootstrap`, `settings-brand-switcher`,
+> `CreateCollectionDialogSimple`, sidebar collections list, launchpad
+> "Switch Brand" link) — the launchpad is workspace-wide now; products
+> placed in a collection adopt its brand server-side; sub-collections
+> inherit the parent's brand. Statements below about the sidebar, launchpad
+> brand scoping, or the archived toggle describe the pre-session state.
+
 ---
 
 ## 1. Stack & Infrastructure

@@ -39,6 +39,7 @@ export async function createLabel(name: string, color: string) {
 
   revalidatePath("/settings");
   revalidatePath("/products");
+  revalidatePath("/collections");
   return { id: data.id };
 }
 
@@ -57,11 +58,12 @@ export async function updateLabel(id: string, name: string, color: string) {
 
   revalidatePath("/settings");
   revalidatePath("/products");
+  revalidatePath("/collections");
 }
 
 export async function deleteLabel(id: string) {
   const { supabase, workspaceId } = await requireActionContext();
-  // product_labels rows cascade-delete via the FK on labels.
+  // product_labels and collection_labels rows cascade-delete via the FKs on labels.
   const { error } = await supabase
     .from("labels")
     .delete()
@@ -71,6 +73,7 @@ export async function deleteLabel(id: string) {
 
   revalidatePath("/settings");
   revalidatePath("/products");
+  revalidatePath("/collections");
 }
 
 // ---- Per-user preferences ------------------------------------------------------
@@ -196,6 +199,80 @@ export async function removeLabelFromProduct(
 
   revalidatePath("/products");
   revalidatePath(`/products/${productId}`);
+}
+
+// ---- Collection ↔ label assignment ---------------------------------------------
+// Same vocabulary, same pattern: collections are tagged with the workspace
+// `labels` managed in Settings, via `collection_labels` (0042) mirroring
+// `product_labels`.
+
+/** Confirms both the collection and the label live in the caller's workspace. */
+async function assertCollectionLabelOwnership(
+  supabase: Awaited<ReturnType<typeof requireActionContext>>["supabase"],
+  workspaceId: string,
+  collectionId: string,
+  labelId: string,
+) {
+  const [{ data: collection }, { data: label }] = await Promise.all([
+    supabase
+      .from("collections")
+      .select("id")
+      .eq("id", collectionId)
+      .eq("workspace_id", workspaceId)
+      .single(),
+    supabase
+      .from("labels")
+      .select("id")
+      .eq("id", labelId)
+      .eq("workspace_id", workspaceId)
+      .single(),
+  ]);
+  if (!collection || !label) throw new Error("Not found in your workspace.");
+}
+
+export async function addLabelToCollection(
+  collectionId: string,
+  labelId: string,
+) {
+  const { supabase, workspaceId } = await requireActionContext();
+  await assertCollectionLabelOwnership(
+    supabase,
+    workspaceId,
+    collectionId,
+    labelId,
+  );
+
+  const { error } = await supabase
+    .from("collection_labels")
+    .insert({ collection_id: collectionId, label_id: labelId });
+  // Ignore unique-violation: assigning a label twice is a harmless no-op.
+  if (error && error.code !== "23505") throw new Error(error.message);
+
+  revalidatePath("/collections");
+  revalidatePath(`/collections/${collectionId}`);
+}
+
+export async function removeLabelFromCollection(
+  collectionId: string,
+  labelId: string,
+) {
+  const { supabase, workspaceId } = await requireActionContext();
+  await assertCollectionLabelOwnership(
+    supabase,
+    workspaceId,
+    collectionId,
+    labelId,
+  );
+
+  const { error } = await supabase
+    .from("collection_labels")
+    .delete()
+    .eq("collection_id", collectionId)
+    .eq("label_id", labelId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/collections");
+  revalidatePath(`/collections/${collectionId}`);
 }
 
 // ---- Master Library ----------------------------------------------------------

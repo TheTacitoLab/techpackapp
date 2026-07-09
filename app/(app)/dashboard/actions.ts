@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { STATUS_LABELS } from "@/components/status-pill";
 import { logChange } from "@/lib/change-log";
+import { parentAssignmentError } from "@/lib/collection-hierarchy";
 import { FULL_SECTION_MASK, copyProductDeep } from "@/lib/product-copy";
 import {
   COMPLETABLE_SECTION_KEYS,
@@ -28,6 +29,21 @@ export async function createProduct(input: CreateProductInput) {
 
   const { supabase, workspaceId } = await requireActionContext();
 
+  // A product placed in a collection adopts that collection's brand — the
+  // collection is the grouping surface, so the two can never disagree. This
+  // also ownership-checks the collection before attaching to it.
+  let resolvedBrandId = brand_id ?? null;
+  if (collection_id) {
+    const { data: collection } = await supabase
+      .from("collections")
+      .select("id, brand_id")
+      .eq("id", collection_id)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (!collection) throw new Error("Collection not found in your workspace.");
+    resolvedBrandId = collection.brand_id;
+  }
+
   const trimmedStyle = style_number?.trim();
   const { data: product, error } = await supabase
     .from("products")
@@ -35,7 +51,7 @@ export async function createProduct(input: CreateProductInput) {
       workspace_id: workspaceId,
       name,
       style_number: trimmedStyle ? trimmedStyle : null,
-      brand_id: brand_id ?? null,
+      brand_id: resolvedBrandId,
       collection_id: collection_id ?? null,
     })
     .select("id")
@@ -74,6 +90,7 @@ export async function createProduct(input: CreateProductInput) {
 
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
   return { id: product.id };
 }
 
@@ -86,8 +103,11 @@ const seasonSchema = z.object({
 });
 const collectionSchema = z.object({
   name: z.string().min(1),
-  brand_id: z.string().uuid(),
+  // Optional because a sub-collection inherits its parent's brand; top-level
+  // collections still require one (enforced in the action, not the schema).
+  brand_id: z.string().uuid().optional(),
   season_id: z.string().uuid().optional(),
+  parent_id: z.string().uuid().optional(),
 });
 
 export async function createBrand(input: z.input<typeof brandSchema>) {
@@ -102,6 +122,7 @@ export async function createBrand(input: z.input<typeof brandSchema>) {
     throw new Error(error?.message ?? "Could not create brand.");
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
   return { id: data.id };
 }
 
@@ -115,6 +136,7 @@ export async function renameBrand(id: string, name: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
 }
 
 export async function deleteBrand(id: string) {
@@ -127,6 +149,7 @@ export async function deleteBrand(id: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
 }
 
 /**
@@ -246,6 +269,7 @@ export async function createSeason(input: z.input<typeof seasonSchema>) {
     throw new Error(error?.message ?? "Could not create season.");
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
   return { id: data.id };
 }
 
@@ -273,18 +297,82 @@ export async function deleteSeason(id: string) {
   revalidatePath("/products");
 }
 
+/**
+ * Fetch the requested parent collection (workspace-scoped) and validate the
+ * assignment with the shared pure rule. Returns the parent row on success so
+ * callers can inherit its brand; validation failures come back as friendly
+ * error strings (NOT throws — thrown action errors are redacted in
+ * production, and these must reach the user verbatim).
+ */
+async function resolveParentAssignment(
+  supabase: Awaited<ReturnType<typeof requireActionContext>>["supabase"],
+  workspaceId: string,
+  collectionId: string | null,
+  parentId: string | null,
+): Promise<
+  | { parent: { id: string; parent_id: string | null; brand_id: string } | null }
+  | { error: string }
+> {
+  let parent: { id: string; parent_id: string | null; brand_id: string } | null =
+    null;
+  if (parentId) {
+    const { data } = await supabase
+      .from("collections")
+      .select("id, parent_id, brand_id")
+      .eq("id", parentId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    parent = data ?? null;
+  }
+
+  let childCount = 0;
+  if (parentId && collectionId) {
+    const { count } = await supabase
+      .from("collections")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_id", collectionId)
+      .eq("workspace_id", workspaceId);
+    childCount = count ?? 0;
+  }
+
+  const error = parentAssignmentError({
+    collectionId,
+    parentId,
+    parent,
+    childCount,
+  });
+  return error ? { error } : { parent };
+}
+
 export async function createCollection(
   input: z.input<typeof collectionSchema>,
-) {
-  const { name, brand_id, season_id } = collectionSchema.parse(input);
+): Promise<{ id: string | null; error: string | null }> {
+  const { name, brand_id, season_id, parent_id } =
+    collectionSchema.parse(input);
   const { supabase, workspaceId } = await requireActionContext();
+
+  const resolved = await resolveParentAssignment(
+    supabase,
+    workspaceId,
+    null,
+    parent_id ?? null,
+  );
+  if ("error" in resolved) return { id: null, error: resolved.error };
+
+  // Sub-collections inherit their parent's brand; top-level ones pick their own.
+  const resolvedBrandId = resolved.parent?.brand_id ?? brand_id;
+  if (!resolvedBrandId) {
+    return { id: null, error: "Choose a brand for a top-level collection." };
+  }
+
   const { data, error } = await supabase
     .from("collections")
     .insert({
       workspace_id: workspaceId,
       name,
-      brand_id,
+      brand_id: resolvedBrandId,
       season_id: season_id ?? null,
+      parent_id: parent_id ?? null,
     })
     .select("id")
     .single();
@@ -292,23 +380,83 @@ export async function createCollection(
     throw new Error(error?.message ?? "Could not create collection.");
   revalidatePath("/dashboard");
   revalidatePath("/products");
-  return { id: data.id };
+  revalidatePath("/collections");
+  return { id: data.id, error: null };
 }
 
-export async function renameCollection(id: string, name: string) {
+const updateCollectionSchema = z.object({
+  name: z.string().min(1),
+  // null = top-level (promoting a sub back up).
+  parent_id: z.string().uuid().nullable(),
+});
+
+/**
+ * Rename and/or re-parent a collection. Moving under a parent adopts the
+ * parent's brand (sub-collections always share their parent's brand);
+ * promoting to top-level keeps the current brand.
+ */
+export async function updateCollection(
+  id: string,
+  input: z.input<typeof updateCollectionSchema>,
+): Promise<{ error: string | null }> {
+  const { name, parent_id } = updateCollectionSchema.parse(input);
   const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: current } = await supabase
+    .from("collections")
+    .select("id, brand_id")
+    .eq("id", id)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (!current) throw new Error("Collection not found in your workspace.");
+
+  const resolved = await resolveParentAssignment(
+    supabase,
+    workspaceId,
+    id,
+    parent_id,
+  );
+  if ("error" in resolved) return { error: resolved.error };
+
   const { error } = await supabase
     .from("collections")
-    .update({ name })
+    .update({
+      name,
+      parent_id,
+      brand_id: resolved.parent?.brand_id ?? current.brand_id,
+    })
     .eq("id", id)
     .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
+
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
+  revalidatePath(`/collections/${id}`);
+  return { error: null };
 }
 
-export async function deleteCollection(id: string) {
+export async function deleteCollection(
+  id: string,
+): Promise<{ error: string | null }> {
   const { supabase, workspaceId } = await requireActionContext();
+
+  // Deleting a parent while sub-collections exist is blocked (the DB FK
+  // backstops this) — the user has to move or delete the subs first.
+  // Products in the collection keep the existing behaviour: they become
+  // unassigned via the FK's ON DELETE SET NULL.
+  const { count } = await supabase
+    .from("collections")
+    .select("id", { count: "exact", head: true })
+    .eq("parent_id", id)
+    .eq("workspace_id", workspaceId);
+  if ((count ?? 0) > 0) {
+    return {
+      error:
+        "This collection still has sub-collections. Move or delete them first.",
+    };
+  }
+
   const { error } = await supabase
     .from("collections")
     .delete()
@@ -317,6 +465,8 @@ export async function deleteCollection(id: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
+  return { error: null };
 }
 
 // ---- Product quick-actions ---------------------------------------------------
@@ -369,6 +519,7 @@ export async function duplicateProduct(id: string) {
 
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
   return { id: copyId, warnings };
 }
 
@@ -382,6 +533,8 @@ export async function archiveProduct(id: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/archive");
+  revalidatePath("/collections");
 }
 
 export async function unarchiveProduct(id: string) {
@@ -394,6 +547,8 @@ export async function unarchiveProduct(id: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/archive");
+  revalidatePath("/collections");
 }
 
 export async function updateProductStatus(id: string, status: ProductStatus) {
@@ -415,5 +570,6 @@ export async function updateProductStatus(id: string, status: ProductStatus) {
 
   revalidatePath("/dashboard");
   revalidatePath("/products");
+  revalidatePath("/collections");
   revalidatePath(`/products/${id}`);
 }

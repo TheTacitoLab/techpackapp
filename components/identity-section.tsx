@@ -249,10 +249,15 @@ export function IdentitySection({
     defaultValues: toDefaults(product, sectionData),
   });
 
-  const collectionName = useMemo(
-    () => collections.find((c) => c.id === product.collection_id)?.name ?? "—",
-    [collections, product.collection_id],
-  );
+  const collectionName = useMemo(() => {
+    const collection = collections.find((c) => c.id === product.collection_id);
+    if (!collection) return "—";
+    // Sub-collections read as "Parent / Sub" so same-named subs stay clear.
+    const parent = collection.parent_id
+      ? collections.find((c) => c.id === collection.parent_id)
+      : null;
+    return parent ? `${parent.name} / ${collection.name}` : collection.name;
+  }, [collections, product.collection_id]);
 
   const lastSaved = formatRelative(sectionData?.last_saved ?? null);
 
