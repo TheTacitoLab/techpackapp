@@ -36,6 +36,10 @@ import { demographicLabel } from "@/components/spec/spec-demographics";
 import { logChange } from "@/lib/change-log";
 import { recomputeSectionStatus } from "@/lib/section-status";
 import { normalizeSizeLabel, roundTo1dp } from "@/lib/spec-grading";
+import {
+  duplicateTemplateCodes,
+  specRowsToTemplatePoms,
+} from "@/lib/spec-template-map";
 import { requireActionContext } from "@/lib/supabase/action-context";
 import type { Json } from "@/types/database.types";
 import type {
@@ -47,6 +51,7 @@ import type {
   SpecPomSubKind,
   SpecSheetMode,
   SpecSizingSystem,
+  SpecTemplateCategory,
 } from "@/types";
 
 // ---- Shared schema fragments ---------------------------------------------------
@@ -372,6 +377,108 @@ export async function createSpecSheet(
   });
   revalidatePath(`/products/${input.productId}`);
   return { id: sheet.id };
+}
+
+const TEMPLATE_CATEGORIES = [
+  "tops",
+  "bottoms",
+  "outerwear",
+  "performance",
+  "womenswear",
+  "accessories",
+] as const satisfies readonly SpecTemplateCategory[];
+
+const saveAsTemplateSchema = z.object({
+  productId: z.uuid(),
+  sheetId: z.uuid(),
+  name: z.string().trim().min(1, "Enter a template name.").max(80),
+  category: z.enum(TEMPLATE_CATEGORIES),
+});
+
+/**
+ * The reverse of `createSpecSheet`'s template copy: capture a built sheet's
+ * ROW STRUCTURE (code, name, how-to-measure, grade category, sub-kind, order)
+ * as a new WORKSPACE spec template — the first workspace writer to
+ * `spec_templates` (RLS from 0033 already permits exactly this shape).
+ * Entered measurement values and tolerance overrides deliberately don't copy;
+ * a spec template is structure. The new template appears in the step-1 picker
+ * immediately (getSpecTemplates merges workspace rows on the next fetch).
+ *
+ * Not change-logged: like the Grading Profile CRUD, a template is a
+ * workspace-library entity, not part of one product's spec history.
+ */
+export async function saveSheetAsTemplate(
+  productId: string,
+  sheetId: string,
+  name: string,
+  category: SpecTemplateCategory,
+): Promise<{ id: string }> {
+  const input = saveAsTemplateSchema.parse({
+    productId,
+    sheetId,
+    name,
+    category,
+  });
+  const { supabase, workspaceId, userId } = await requireActionContext();
+  await assertProductInWorkspace(supabase, input.productId, workspaceId);
+  const sheet = await getSheetContext(supabase, input.sheetId, workspaceId);
+  if (sheet.product_id !== input.productId) {
+    throw new Error("Not found in your workspace.");
+  }
+
+  const { data: rows, error: rowsError } = await supabase
+    .from("product_spec_rows")
+    .select("code, name, how_to_measure, grade_category, sub_kind, sort_order")
+    .eq("sheet_id", input.sheetId)
+    .order("sort_order");
+  if (rowsError) throw new Error(rowsError.message);
+  if (!rows || rows.length === 0) {
+    throw new Error("This sheet has no measurement rows to save.");
+  }
+
+  const dupes = duplicateTemplateCodes(rows);
+  if (dupes.length > 0) {
+    throw new Error(
+      `Duplicate POM codes (${dupes.join(", ")}) — make them unique first.`,
+    );
+  }
+
+  const { data: template, error } = await supabase
+    .from("spec_templates")
+    .insert({
+      source: "workspace",
+      workspace_id: workspaceId,
+      created_by: userId,
+      name: input.name,
+      category: input.category,
+    })
+    .select("id")
+    .single();
+  if (error || !template) {
+    throw new Error(error?.message ?? "Could not create the template.");
+  }
+
+  const { error: pomsError } = await supabase
+    .from("spec_template_poms")
+    .insert(specRowsToTemplatePoms(rows, template.id));
+  if (pomsError) {
+    // Don't strand a header row with no POMs — a template that can't offer
+    // its rows is worse than the save failing cleanly. The cleanup can itself
+    // fail (the same outage that broke the insert), so its result is checked
+    // and surfaced rather than silently ignored.
+    const { error: cleanupError } = await supabase
+      .from("spec_templates")
+      .delete()
+      .eq("id", template.id);
+    throw new Error(
+      cleanupError
+        ? `${pomsError.message} An empty template may have been left behind — delete '${input.name}' via Supabase if it appears in the picker.`
+        : pomsError.message,
+    );
+  }
+
+  revalidatePath(`/products/${input.productId}`);
+  return { id: template.id };
 }
 
 // ---- Step 2/3: size run + sample sizes ---------------------------------------
