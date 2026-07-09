@@ -732,7 +732,13 @@ function DeletePartnerDialog({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [usage, setUsage] = useState<{ productCount: number } | null>(null);
+  // The usage result is tagged with the partner it was loaded for, so "still
+  // loading" is derived (result for a different/no partner) rather than reset
+  // with a synchronous setState inside the effect.
+  const [usage, setUsage] = useState<{
+    partnerId: string;
+    productCount: number;
+  } | null>(null);
 
   // Lazy-load the supplier-usage count when the dialog opens (an effect, not
   // render — it's a side effect). `ignore` guards against a late response
@@ -740,18 +746,21 @@ function DeletePartnerDialog({
   useEffect(() => {
     if (!open) return;
     let ignore = false;
-    setUsage(null);
     getPartnerSupplierUsage(partner.id)
       .then((u) => {
-        if (!ignore) setUsage(u);
+        if (!ignore) setUsage({ partnerId: partner.id, productCount: u.productCount });
       })
       .catch(() => {
-        if (!ignore) setUsage({ productCount: 0 });
+        if (!ignore) setUsage({ partnerId: partner.id, productCount: 0 });
       });
     return () => {
       ignore = true;
     };
   }, [open, partner.id]);
+
+  // Only trust the count if it's this partner's (a stale result from a
+  // previous open reads as "still loading").
+  const currentUsage = usage?.partnerId === partner.id ? usage : null;
 
   function onDelete() {
     startTransition(async () => {
@@ -772,11 +781,11 @@ function DeletePartnerDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete &ldquo;{partner.name}&rdquo;?</AlertDialogTitle>
           <AlertDialogDescription>
-            {usage === null
+            {currentUsage === null
               ? "Checking where this partner is used…"
-              : usage.productCount > 0
-                ? `This partner is set as a supplier on ${usage.productCount} product${
-                    usage.productCount === 1 ? "" : "s"
+              : currentUsage.productCount > 0
+                ? `This partner is set as a supplier on ${currentUsage.productCount} product${
+                    currentUsage.productCount === 1 ? "" : "s"
                   }. Those pins keep the supplier name but lose the directory link. Its contacts and grants are also removed. This can't be undone.`
                 : "Its contacts and access grants will be removed too. This can't be undone."}
           </AlertDialogDescription>

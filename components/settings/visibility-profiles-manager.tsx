@@ -142,14 +142,22 @@ function ProfileDialog({
     profile ? readFieldGroups(profile.field_groups) : newProfileFieldGroups(),
   );
 
-  // Re-seed when the dialog opens for a different profile (or create).
-  const [seededFor, setSeededFor] = useState<string | null>(profile?.id ?? null);
-  if (open && seededFor !== (profile?.id ?? null)) {
-    setSeededFor(profile?.id ?? null);
-    setName(profile?.name ?? "");
-    setGroups(
-      profile ? readFieldGroups(profile.field_groups) : newProfileFieldGroups(),
-    );
+  // Re-seed the form on every open transition (adjust-state-during-render, the
+  // supported React pattern — pure setState, no effect). Keying on the id alone
+  // wouldn't fire for the create dialog (profile stays null across opens) or an
+  // edit row reopened after an uncommitted change, so track the open edge and
+  // reset from the profile's saved values — or a fresh blank profile — each time.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setName(profile?.name ?? "");
+      setGroups(
+        profile
+          ? readFieldGroups(profile.field_groups)
+          : newProfileFieldGroups(),
+      );
+    }
   }
 
   function toggle(section: VisibilitySectionKey, group: VisibilityGroupKey) {

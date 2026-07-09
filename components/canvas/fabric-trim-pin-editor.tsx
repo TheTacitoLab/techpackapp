@@ -193,10 +193,26 @@ export function FabricTrimPinEditor(
     categories.includes(i.category),
   );
   const selectedItem = libraryItems.find((i) => i.id === libraryItemId) ?? null;
-  // The picked directory partner (if its id still resolves — a deleted partner
-  // leaves the denormalised name on the pin but no live option here).
+  // Supplier options = the live directory, PLUS the pin's own partner if it has
+  // since been deleted (its id no longer resolves). Keeping the dangling
+  // partner as an option preserves the retained name — the delete-partner flow
+  // deliberately leaves the denormalised `supplier_partner_name` on the pin —
+  // so it stays visible in the Select and round-trips through buildData()
+  // instead of being silently nulled when an unrelated field is edited.
+  const supplierPartnerOptions =
+    supplierPartnerId &&
+    !supplierPartners.some((p) => p.id === supplierPartnerId)
+      ? [
+          ...supplierPartners,
+          {
+            id: supplierPartnerId,
+            name: initial.supplier_partner_name ?? "Unknown partner",
+            type: "supplier" as const,
+          },
+        ]
+      : supplierPartners;
   const supplierPartner =
-    supplierPartners.find((p) => p.id === supplierPartnerId) ?? null;
+    supplierPartnerOptions.find((p) => p.id === supplierPartnerId) ?? null;
   const colourOptions = selectedItem ? libraryColourOptions(selectedItem) : [];
   // A colour picked from the WORKSPACE library isn't among the item's own
   // variants — append it as an extra option so the Select can display it
@@ -546,7 +562,7 @@ export function FabricTrimPinEditor(
 
       <div className="space-y-1.5">
         <Label className="text-xs">Supplier</Label>
-        {supplierPartners.length > 0 && (
+        {supplierPartnerOptions.length > 0 && (
           <Select
             value={supplierPartnerId ?? NO_PARTNER}
             onValueChange={(v) =>
@@ -560,7 +576,7 @@ export function FabricTrimPinEditor(
               <SelectItem value={NO_PARTNER}>
                 Not in directory
               </SelectItem>
-              {supplierPartners.map((p) => (
+              {supplierPartnerOptions.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name}
                 </SelectItem>
