@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { Plus } from "lucide-react";
+import { FilePlus2, LayoutTemplate, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -177,13 +177,19 @@ export function CreateProductDialog({
         </DialogHeader>
 
         {effectiveMode === "choose" && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Same option-card look as the Spec Sheet fork — bg-card, icon
+                circle, brand ring on hover — so choosers read identically
+                across the app. */}
             <button
               type="button"
               onClick={() => setMode("blank")}
-              className="hover:border-primary hover:bg-accent flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-colors"
+              className="bg-card hover:ring-brand/40 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-shadow hover:ring-2"
             >
-              <span className="text-sm font-medium">Create New Tech Pack</span>
+              <span className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-full">
+                <FilePlus2 className="size-5" />
+              </span>
+              <span className="text-sm font-semibold">Create New Tech Pack</span>
               <span className="text-muted-foreground text-xs">
                 A blank product with empty sections.
               </span>
@@ -191,9 +197,12 @@ export function CreateProductDialog({
             <button
               type="button"
               onClick={() => setMode("template")}
-              className="hover:border-primary hover:bg-accent flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-colors"
+              className="bg-card hover:ring-brand/40 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-shadow hover:ring-2"
             >
-              <span className="text-sm font-medium">Use A Template</span>
+              <span className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-full">
+                <LayoutTemplate className="size-5" />
+              </span>
+              <span className="text-sm font-semibold">Use A Template</span>
               <span className="text-muted-foreground text-xs">
                 Start from a reusable base garment.
               </span>
@@ -292,10 +301,10 @@ export function CreateProductDialog({
                   type="button"
                   onClick={() => setTemplateId(template.id)}
                   className={cn(
-                    "flex w-full flex-col gap-1.5 rounded-lg border p-3 text-left transition-colors",
+                    "bg-card flex w-full flex-col gap-1.5 rounded-lg border p-3 text-left transition-shadow",
                     templateId === template.id
-                      ? "border-primary bg-accent"
-                      : "hover:border-primary/50 hover:bg-accent",
+                      ? "border-brand ring-brand ring-2"
+                      : "hover:ring-brand/40 hover:ring-2",
                   )}
                   aria-pressed={templateId === template.id}
                 >

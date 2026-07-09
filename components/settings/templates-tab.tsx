@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutTemplate, MoreHorizontal, Plus } from "lucide-react";
+import { Copy, FilePlus2, LayoutTemplate, MoreHorizontal, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -352,13 +352,18 @@ function NewTemplateDialog({
         </DialogHeader>
 
         {mode === "choose" && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Same option-card look as the Spec Sheet fork and the New
+                Product chooser — bg-card, icon circle, brand ring on hover. */}
             <button
               type="button"
               onClick={() => setMode("blank")}
-              className="hover:border-primary hover:bg-accent flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-colors"
+              className="bg-card hover:ring-brand/40 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-shadow hover:ring-2"
             >
-              <span className="text-sm font-medium">Start Blank</span>
+              <span className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-full">
+                <FilePlus2 className="size-5" />
+              </span>
+              <span className="text-sm font-semibold">Start Blank</span>
               <span className="text-muted-foreground text-xs">
                 An empty template you build in the editor.
               </span>
@@ -367,9 +372,12 @@ function NewTemplateDialog({
               type="button"
               onClick={() => setMode("clone")}
               disabled={products.length === 0}
-              className="hover:border-primary hover:bg-accent flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="bg-card hover:ring-brand/40 flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-shadow hover:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="text-sm font-medium">From Existing Product</span>
+              <span className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-full">
+                <Copy className="size-5" />
+              </span>
+              <span className="text-sm font-semibold">From Existing Product</span>
               <span className="text-muted-foreground text-xs">
                 {products.length === 0
                   ? "No products to clone yet."
