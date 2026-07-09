@@ -207,7 +207,17 @@ drop policy if exists "partner_contacts_update_member" on public.partner_contact
 create policy "partner_contacts_update_member"
   on public.partner_contacts for update to authenticated
   using (workspace_id = public.auth_workspace_id())
-  with check (workspace_id = public.auth_workspace_id());
+  with check (
+    workspace_id = public.auth_workspace_id()
+    -- Mirror the INSERT check: an UPDATE must not repoint partner_id at
+    -- another workspace's partner (the FK is validated with RLS bypassed, so
+    -- the workspace column alone wouldn't catch it).
+    and exists (
+      select 1 from public.partners p
+      where p.id = partner_contacts.partner_id
+        and p.workspace_id = public.auth_workspace_id()
+    )
+  );
 
 drop policy if exists "partner_contacts_delete_member" on public.partner_contacts;
 create policy "partner_contacts_delete_member"
@@ -270,6 +280,15 @@ create policy "partner_grants_update_member"
   using (workspace_id = public.auth_workspace_id())
   with check (
     workspace_id = public.auth_workspace_id()
+    -- Mirror the INSERT check on BOTH FK'd references: neither partner_id nor
+    -- visibility_profile_id may be repointed at another workspace's row via
+    -- UPDATE (FKs are validated with RLS bypassed). subject_id stays
+    -- server-verified (polymorphic, no FK) — see the insert policy note.
+    and exists (
+      select 1 from public.partners p
+      where p.id = partner_grants.partner_id
+        and p.workspace_id = public.auth_workspace_id()
+    )
     and exists (
       select 1 from public.visibility_profiles vp
       where vp.id = partner_grants.visibility_profile_id
