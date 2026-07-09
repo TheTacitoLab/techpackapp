@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
+import type { TemplateSummary } from "@/lib/templates";
 import { useUiStore } from "@/stores/ui-store";
 import type {
   Brand,
@@ -48,6 +49,7 @@ export function DashboardClient({
   sections,
   labels,
   productLabels,
+  templates = [],
 }: {
   workspaceName: string | null;
   brands: Brand[];
@@ -57,6 +59,7 @@ export function DashboardClient({
   sections: SectionSummary[];
   labels: Label[];
   productLabels: ProductLabelLink[];
+  templates?: TemplateSummary[];
 }) {
   const { activeBrandId, activeCollectionId, setActiveCollectionId, showArchived, setShowArchived } =
     useUiStore();
@@ -176,7 +179,10 @@ export function DashboardClient({
         </div>
         <div className="flex items-center gap-2">
           <CreateCollectionDialogSimple seasons={seasons} />
-          <CreateProductDialog collections={brandCollections} />
+          <CreateProductDialog
+            collections={brandCollections}
+            templates={templates}
+          />
         </div>
       </div>
 
@@ -271,7 +277,12 @@ export function DashboardClient({
           icon={PackagePlus}
           title="No products yet"
           description="Create your first tech pack to start building modular, factory-ready sections."
-          action={<CreateProductDialog collections={brandCollections} />}
+          action={
+            <CreateProductDialog
+              collections={brandCollections}
+              templates={templates}
+            />
+          }
         />
       )}
 

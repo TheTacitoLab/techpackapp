@@ -1,6 +1,7 @@
 import { DashboardClient } from "@/components/dashboard-client";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getTemplateSummaries } from "@/lib/templates";
 import type { Product, SectionStatus } from "@/types";
 
 export default async function ProductsPage() {
@@ -16,6 +17,7 @@ export default async function ProductsPage() {
     { data: collections },
     { data: products },
     { data: labels },
+    templates,
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -28,12 +30,16 @@ export default async function ProductsPage() {
       .select("*")
       .eq("workspace_id", wsId)
       .order("name"),
+    // Templates never appear in the product grid — they live in
+    // Settings → Templates and the "Use A Template" picker.
     supabase
       .from("products")
       .select("*")
       .eq("workspace_id", wsId)
+      .eq("is_template", false)
       .order("created_at", { ascending: false }),
     supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
+    getTemplateSummaries(supabase, wsId),
   ]);
 
   const allProducts: Product[] = products ?? [];
@@ -67,6 +73,7 @@ export default async function ProductsPage() {
       sections={sectionsData ?? []}
       labels={labels ?? []}
       productLabels={productLabels ?? []}
+      templates={templates}
     />
   );
 }

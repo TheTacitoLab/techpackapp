@@ -1,6 +1,7 @@
 import { LaunchpadClient } from "@/components/launchpad-client";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getTemplateSummaries } from "@/lib/templates";
 import type { Product, SectionStatus } from "@/types";
 
 export default async function DashboardPage() {
@@ -15,6 +16,7 @@ export default async function DashboardPage() {
     { data: seasons },
     { data: collections },
     { data: products },
+    templates,
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -27,11 +29,15 @@ export default async function DashboardPage() {
       .select("*")
       .eq("workspace_id", wsId)
       .order("name"),
+    // Templates are excluded from every launchpad number (stats, collection
+    // progress, needs-attention, recently updated) — they aren't work.
     supabase
       .from("products")
       .select("*")
       .eq("workspace_id", wsId)
+      .eq("is_template", false)
       .order("updated_at", { ascending: false }),
+    getTemplateSummaries(supabase, wsId),
   ]);
 
   const allProducts: Product[] = products ?? [];
@@ -53,6 +59,7 @@ export default async function DashboardPage() {
       collections={collections ?? []}
       products={allProducts}
       sections={sectionsData ?? []}
+      templates={templates}
       // Server Component: reading the request-time clock is intentional.
       // eslint-disable-next-line react-hooks/purity
       now={Date.now()}

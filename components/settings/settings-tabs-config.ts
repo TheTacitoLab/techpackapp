@@ -1,5 +1,6 @@
 import {
   CreditCard,
+  LayoutTemplate,
   Library,
   MapPin,
   Palette,
@@ -17,6 +18,7 @@ import {
  */
 export const SETTINGS_TABS = [
   { key: "brands", label: "Brands", icon: Palette },
+  { key: "templates", label: "Templates", icon: LayoutTemplate },
   { key: "labels", label: "Labels", icon: Tag },
   { key: "markers", label: "Marker Colours", icon: MapPin },
   { key: "library", label: "Master Library", icon: Library },

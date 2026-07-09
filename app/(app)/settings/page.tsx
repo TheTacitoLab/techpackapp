@@ -9,10 +9,12 @@ import {
   isSettingsTabKey,
   type SettingsTabKey,
 } from "@/components/settings/settings-tabs-config";
+import { TemplatesTab } from "@/components/settings/templates-tab";
 import { WorkspaceTab } from "@/components/settings/workspace-tab";
 import { getWorkspaceLibrary } from "@/lib/library";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getTemplateSummaries } from "@/lib/templates";
 
 interface PageProps {
   searchParams: Promise<{ tab?: string | string[] }>;
@@ -45,6 +47,8 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     { data: products },
     { data: labels },
     { data: productLabels },
+    templates,
+    { data: pickerProducts },
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -52,13 +56,25 @@ export default async function SettingsPage({ searchParams }: PageProps) {
       .select("*")
       .eq("workspace_id", wsId)
       .order("year", { ascending: false }),
+    // Brand product counts exclude templates (they aren't live products).
     supabase
       .from("products")
       .select("brand_id")
       .eq("workspace_id", wsId)
+      .eq("is_template", false)
       .not("brand_id", "is", null),
     supabase.from("labels").select("*").eq("workspace_id", wsId).order("name"),
     supabase.from("product_labels").select("label_id"),
+    getTemplateSummaries(supabase, wsId),
+    // The "From Existing Product" picker: live (non-template, non-archived)
+    // products only.
+    supabase
+      .from("products")
+      .select("id, name")
+      .eq("workspace_id", wsId)
+      .eq("is_template", false)
+      .is("archived_at", null)
+      .order("name"),
   ]);
 
   // Resolved Master Library for this workspace (incl. hidden globals so the
@@ -108,6 +124,12 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               brands={brandsWithCounts}
               seasons={seasons ?? []}
               workspaceId={wsId}
+            />
+          ),
+          templates: (
+            <TemplatesTab
+              templates={templates}
+              products={pickerProducts ?? []}
             />
           ),
           labels: <LabelsTab labels={labelsWithUsage} />,

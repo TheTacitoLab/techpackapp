@@ -18,6 +18,7 @@ export function useProducts(workspaceId: string) {
         .from("products")
         .select("*")
         .eq("workspace_id", workspaceId)
+        .eq("is_template", false)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;

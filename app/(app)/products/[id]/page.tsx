@@ -9,6 +9,7 @@ import { TechnicalDetailsSection } from "@/components/canvas/technical-details-s
 import { ChangeLogSection } from "@/components/change-log-section";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { IdentitySection } from "@/components/identity-section";
+import { ProductHeaderMenu } from "@/components/product-header-menu";
 import { ProductLabels } from "@/components/product-labels";
 import { ProductStatusControl } from "@/components/product-status-control";
 import { ProductVersionControl } from "@/components/product-version-control";
@@ -16,6 +17,7 @@ import { QuickExportDialog } from "@/components/quick-export-dialog";
 import { SectionCompleteToggle } from "@/components/section-complete-toggle";
 import { SectionIcon } from "@/components/section-icon";
 import { SizeSpecificationsSection } from "@/components/spec/size-specifications-section";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CHANGE_LOG_FETCH_LIMIT } from "@/lib/change-log";
 import { getWorkspaceLibrary } from "@/lib/library";
@@ -351,12 +353,21 @@ export default async function ProductDetailPage({ params }: PageProps) {
         <div className="@container flex h-12 items-center gap-4 px-6">
           {/* Left zone: breadcrumb */}
           <nav className="text-muted-foreground flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-[13px] whitespace-nowrap">
-            <Link
-              href="/products"
-              className="hover:text-foreground shrink-0 transition-colors"
-            >
-              Products
-            </Link>
+            {product.is_template ? (
+              <Link
+                href="/settings?tab=templates"
+                className="hover:text-foreground shrink-0 transition-colors"
+              >
+                Templates
+              </Link>
+            ) : (
+              <Link
+                href="/products"
+                className="hover:text-foreground shrink-0 transition-colors"
+              >
+                Products
+              </Link>
+            )}
             {brand && (
               <>
                 <span className="shrink-0">/</span>
@@ -383,6 +394,14 @@ export default async function ProductDetailPage({ params }: PageProps) {
                 ? `· ${product.style_number}`
                 : "· No style #"}
             </span>
+            {/* Template-ness must be unmissable while editing — a template
+                opens in this same editor and must never be mistaken for a
+                live product. */}
+            {product.is_template && (
+              <Badge className="bg-primary text-primary-foreground ml-1 shrink-0 text-[10px] tracking-wide">
+                TEMPLATE
+              </Badge>
+            )}
           </nav>
 
           <span aria-hidden className="bg-border h-5 w-px shrink-0" />
@@ -421,6 +440,12 @@ export default async function ProductDetailPage({ params }: PageProps) {
               productId={product.id}
               currentStatus={product.status}
             />
+            {!product.is_template && (
+              <ProductHeaderMenu
+                productId={product.id}
+                productName={product.name}
+              />
+            )}
           </div>
         </div>
       </div>

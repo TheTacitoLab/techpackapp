@@ -19,6 +19,7 @@ import { StatusPill } from "@/components/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/section-card";
+import type { TemplateSummary } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import type {
@@ -97,6 +98,7 @@ export function LaunchpadClient({
   collections,
   products,
   sections,
+  templates = [],
   now,
 }: {
   brands: Brand[];
@@ -104,6 +106,7 @@ export function LaunchpadClient({
   collections: Collection[];
   products: Product[];
   sections: SectionSummary[];
+  templates?: TemplateSummary[];
   now: number;
 }) {
   const router = useRouter();
@@ -368,7 +371,10 @@ export function LaunchpadClient({
         <div className="space-y-6 lg:col-span-2">
           <SectionCard title="Quick Actions" icon={<Plus />}>
             <div className="flex flex-col gap-2">
-              <CreateProductDialog collections={brandCollections} />
+              <CreateProductDialog
+                collections={brandCollections}
+                templates={templates}
+              />
               <CreateCollectionDialogSimple
                 seasons={seasons}
                 trigger={
