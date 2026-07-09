@@ -11,6 +11,7 @@ export type SectionTemplate = Tables<"section_templates">;
 export type ProductSection = Tables<"product_sections">;
 export type Label = Tables<"labels">;
 export type ProductLabel = Tables<"product_labels">;
+export type WorkspaceColour = Tables<"workspace_colours">;
 export type LibraryItem = Tables<"library_items">;
 export type WorkspaceLibraryToggle = Tables<"workspace_library_toggles">;
 export type PlatformAdmin = Tables<"platform_admins">;

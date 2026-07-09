@@ -951,6 +951,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      workspace_colours: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          name: string;
+          hex: string;
+          pantone: string | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          name: string;
+          hex: string;
+          pantone?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          name?: string;
+          hex?: string;
+          pantone?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
