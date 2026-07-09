@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { SaveSheetAsTemplateDialog } from "@/components/spec/save-sheet-as-template-dialog";
 import { SpecSheetFlow } from "@/components/spec/spec-sheet-flow";
 import { SpecTemplatePicker } from "@/components/spec/spec-template-picker";
 import { demographicLabel } from "@/components/spec/spec-demographics";
@@ -79,6 +80,9 @@ export function SizeSpecificationsSection({
   const [creating, setCreating] = useState<"fork" | "template" | null>(null);
   const [renameTarget, setRenameTarget] = useState<ResolvedSpecSheet | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ResolvedSpecSheet | null>(null);
+  const [templateTarget, setTemplateTarget] = useState<ResolvedSpecSheet | null>(
+    null,
+  );
 
   /** Create a sheet (from a template, or blank when templateId is null) and open it. */
   function createSheet(templateId: string | null) {
@@ -229,6 +233,7 @@ export function SizeSpecificationsSection({
             profiles={profiles}
             onOpen={() => setOpenSheetId(sheet.id)}
             onRename={() => setRenameTarget(sheet)}
+            onSaveAsTemplate={() => setTemplateTarget(sheet)}
             onDelete={() => setDeleteTarget(sheet)}
           />
         ))}
@@ -247,6 +252,14 @@ export function SizeSpecificationsSection({
           setRenameTarget(null);
           router.refresh();
         }}
+      />
+
+      {/* Save as template */}
+      <SaveSheetAsTemplateDialog
+        sheet={templateTarget}
+        productId={productId}
+        templates={templates}
+        onOpenChange={(open) => !open && setTemplateTarget(null)}
       />
 
       {/* Delete */}
@@ -301,12 +314,14 @@ function SheetCard({
   profiles,
   onOpen,
   onRename,
+  onSaveAsTemplate,
   onDelete,
 }: {
   sheet: ResolvedSpecSheet;
   profiles: ResolvedGradingProfile[];
   onOpen: () => void;
   onRename: () => void;
+  onSaveAsTemplate: () => void;
   onDelete: () => void;
 }) {
   const name = sheet.name ?? sheet.template_name ?? "Untitled sheet";
@@ -363,6 +378,9 @@ function SheetCard({
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={onOpen}>Open</DropdownMenuItem>
           <DropdownMenuItem onSelect={onRename}>Rename…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onSaveAsTemplate}>
+            Save as template…
+          </DropdownMenuItem>
           <DropdownMenuItem className="text-destructive" onSelect={onDelete}>
             Delete…
           </DropdownMenuItem>

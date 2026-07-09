@@ -14,7 +14,7 @@ import type { ResolvedSpecTemplate, SpecTemplateCategory } from "@/types";
  * pending state.
  */
 
-const CATEGORY_ORDER: readonly SpecTemplateCategory[] = [
+export const CATEGORY_ORDER: readonly SpecTemplateCategory[] = [
   "tops",
   "bottoms",
   "outerwear",
@@ -23,7 +23,7 @@ const CATEGORY_ORDER: readonly SpecTemplateCategory[] = [
   "accessories",
 ];
 
-const CATEGORY_LABEL: Record<SpecTemplateCategory, string> = {
+export const CATEGORY_LABEL: Record<SpecTemplateCategory, string> = {
   tops: "Tops",
   bottoms: "Bottoms",
   outerwear: "Outerwear",

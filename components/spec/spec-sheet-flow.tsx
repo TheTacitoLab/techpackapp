@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { GradingProfilePicker } from "@/components/spec/grading-profile-picker";
+import { SaveSheetAsTemplateDialog } from "@/components/spec/save-sheet-as-template-dialog";
 import { SpecRowEditor, type SpecRowDraft } from "@/components/spec/spec-row-editor";
 import { SpecSampleStep } from "@/components/spec/spec-sample-step";
 import { SpecSheetTable } from "@/components/spec/spec-sheet-table";
@@ -148,6 +149,10 @@ export function SpecSheetFlow({
   }
 
   const [changeTemplateOpen, setChangeTemplateOpen] = useState(false);
+  // "Save as template" from the done view — captures the sheet's rows as a
+  // workspace spec template (dialog owns name/category; the action owns the
+  // values-never-copy rule).
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   // A pending "switch to auto-grade" action, held while we confirm that manual
   // edits to the non-sample columns will be discarded (finding: no confirm
   // before the lossy manual→auto prune).
@@ -731,9 +736,19 @@ export function SpecSheetFlow({
               />
             ) : (
               <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                <Button variant="ghost" onClick={() => setStep(5)} disabled={isWorking}>
-                  Change grading
-                </Button>
+                <span className="flex items-center gap-2">
+                  <Button variant="ghost" onClick={() => setStep(5)} disabled={isWorking}>
+                    Change grading
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setSaveTemplateOpen(true)}
+                    disabled={isWorking}
+                    title="Reuse this sheet's measurements as a workspace template"
+                  >
+                    Save as template
+                  </Button>
+                </span>
                 <span className="flex items-center gap-2">
                   <Button variant="outline" onClick={onClose} disabled={isWorking}>
                     Add another Size Spec
@@ -758,6 +773,13 @@ export function SpecSheetFlow({
                 </span>
               </div>
             )}
+
+            <SaveSheetAsTemplateDialog
+              sheet={saveTemplateOpen ? { ...sheet, rows: localRows } : null}
+              productId={productId}
+              templates={templates}
+              onOpenChange={(open) => !open && setSaveTemplateOpen(false)}
+            />
           </div>
         </StepShell>
       )}
