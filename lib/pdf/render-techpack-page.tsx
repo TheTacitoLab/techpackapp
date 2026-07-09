@@ -20,7 +20,6 @@ import {
   Document,
   Image,
   Line,
-  Link,
   Page,
   Path,
   StyleSheet,
@@ -35,11 +34,8 @@ import {
   BOX_BG,
   HAIRLINE,
   INK,
-  LINK_BLUE,
   MUTED,
   PDF_BRAND_NAME,
-  shareDisplay,
-  shareUrl,
 } from "@/lib/pdf/branding";
 import { containFit, type PdfImage } from "@/lib/pdf/image-fit";
 import {
@@ -936,8 +932,10 @@ export type PdfFooterData = Pick<
   "brandName" | "styleNumber" | "shareToken" | "pageNumber" | "pageCount"
 >;
 
+// The "View online" share link is deliberately absent until the /view/{token}
+// share route ships — data.shareToken stays threaded through so re-adding it
+// is a render-only change.
 export function Footer({ data }: { data: PdfFooterData }) {
-  const shareHref = shareUrl(data.shareToken);
   return (
     <View
       style={{
@@ -955,14 +953,9 @@ export function Footer({ data }: { data: PdfFooterData }) {
       <Text style={{ fontSize: 6.5, color: MUTED }}>
         Confidential, property of {data.brandName}. For production purposes only.
       </Text>
-      <View style={{ flexDirection: "row" }}>
-        <Link src={shareHref} style={{ fontSize: 6.5, color: LINK_BLUE }}>
-          View online: {shareDisplay(data.shareToken)}
-        </Link>
-        <Text style={{ fontSize: 6.5, color: MUTED, marginLeft: 8 }}>
-          {PDF_BRAND_NAME} · {data.styleNumber} · Page {data.pageNumber} of {data.pageCount}
-        </Text>
-      </View>
+      <Text style={{ fontSize: 6.5, color: MUTED }}>
+        {PDF_BRAND_NAME} · {data.styleNumber} · Page {data.pageNumber} of {data.pageCount}
+      </Text>
     </View>
   );
 }
