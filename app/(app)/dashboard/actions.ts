@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { STATUS_LABELS } from "@/components/status-pill";
 import { logChange } from "@/lib/change-log";
+import { FULL_SECTION_MASK, copyProductDeep } from "@/lib/product-copy";
 import {
   COMPLETABLE_SECTION_KEYS,
   recomputeSectionStatus,
@@ -320,64 +321,47 @@ export async function deleteCollection(id: string) {
 
 // ---- Product quick-actions ---------------------------------------------------
 
+/**
+ * Duplicate = a FULL deep copy via the shared engine (`copyProductDeep`) — the
+ * same one the template flows use, so there is exactly one copy semantics in
+ * the codebase. The clone carries identity fields, assets (with Storage
+ * binaries), canvas pages/pins/colourways and spec sheets; name is prefixed,
+ * style number cleared, status draft, and completion re-derived from the
+ * copy's actual content (the engine never copies statuses). Stays in the
+ * source's collection.
+ */
 export async function duplicateProduct(id: string) {
-  const { supabase, workspaceId } = await requireActionContext();
+  const { supabase, workspaceId, userId } = await requireActionContext();
 
   const { data: src, error: fetchErr } = await supabase
     .from("products")
-    .select("*")
+    .select("id, name, brand_id, collection_id")
     .eq("id", id)
     .eq("workspace_id", workspaceId)
     .single();
   if (fetchErr || !src) throw new Error("Product not found.");
 
-  const { data: copy, error: copyErr } = await supabase
-    .from("products")
-    .insert({
-      workspace_id: src.workspace_id,
-      brand_id: src.brand_id,
-      collection_id: src.collection_id,
-      name: `${src.name} (copy)`,
-      style_number: null,
-      category: src.category,
-      gender: src.gender,
-      size_range: src.size_range,
-      status: "draft",
-    })
-    .select("id")
-    .single();
-  if (copyErr || !copy) throw new Error("Could not duplicate product.");
+  const { id: copyId, warnings } = await copyProductDeep(supabase, {
+    workspaceId,
+    userId,
+    sourceProductId: src.id,
+    targetName: `Copy of ${src.name}`,
+    isTemplate: false,
+    brandId: src.brand_id,
+    collectionId: src.collection_id,
+    mask: FULL_SECTION_MASK,
+  });
 
-  const { data: srcSections } = await supabase
-    .from("product_sections")
-    .select("*")
-    .eq("product_id", id);
-
-  if (srcSections && srcSections.length > 0) {
-    // Completion is NOT copied: the duplicate carries none of the content the
-    // source's completion described (no assets, pages, pins or spec sheets
-    // are duplicated, and style_number resets) — a copied green tick would be
-    // a durable lie the recompute could never correct. Each section's status
-    // is re-derived from the copy's actual content below.
-    const rows = srcSections.map((s) => ({
-      product_id: copy.id,
-      section_key: s.section_key,
-      status: "not_started" as const,
-      completed_manually: false,
-      sort_order: s.sort_order,
-      is_enabled: s.is_enabled,
-      data: s.data,
-    }));
-    await supabase.from("product_sections").insert(rows);
-    for (const key of COMPLETABLE_SECTION_KEYS) {
-      await recomputeSectionStatus(supabase, copy.id, workspaceId, key);
-    }
+  // The engine deliberately leaves status derivation and provenance to the
+  // caller (see lib/product-copy.ts) — recompute from the copy's real content.
+  for (const key of COMPLETABLE_SECTION_KEYS) {
+    await recomputeSectionStatus(supabase, copyId, workspaceId, key);
   }
 
   // The copy starts its own history (at v1.0) — the source's log stays with
   // the source; only the provenance is recorded here.
   await logChange(supabase, {
-    productId: copy.id,
+    productId: copyId,
     workspaceId,
     area: "product_setup",
     description: `Product created as a copy of '${src.name}'`,
@@ -385,7 +369,7 @@ export async function duplicateProduct(id: string) {
 
   revalidatePath("/dashboard");
   revalidatePath("/products");
-  return { id: copy.id };
+  return { id: copyId, warnings };
 }
 
 export async function archiveProduct(id: string) {

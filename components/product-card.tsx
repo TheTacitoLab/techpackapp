@@ -66,7 +66,8 @@ export function ProductCard({
   function handleDuplicate() {
     startTransition(async () => {
       try {
-        const { id } = await duplicateProduct(product.id);
+        const { id, warnings } = await duplicateProduct(product.id);
+        for (const warning of warnings) toast.warning(warning);
         toast.success("Product duplicated.");
         router.push(`/products/${id}`);
       } catch {
