@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { updateSession } from "@/lib/supabase/proxy";
 
+// /update-password is deliberately NOT listed: the recovery flow arrives there
+// with an authenticated session (set by /auth/callback), and listing it would
+// bounce that session to /dashboard before the user can set a new password.
 const AUTH_ROUTES = ["/login", "/signup", "/reset-password"];
 
 /**

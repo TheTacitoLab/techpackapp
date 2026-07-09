@@ -42,8 +42,10 @@ export default function ResetPasswordPage() {
   async function onSubmit(values: FormValues) {
     setIsSubmitting(true);
     const supabase = createClient();
+    // Through the PKCE callback: it exchanges the recovery code for a session,
+    // then forwards to the update-password page to set the new one.
     const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${window.location.origin}/auth/callback?next=/update-password`,
     });
     setIsSubmitting(false);
     if (error) {
