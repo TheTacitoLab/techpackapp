@@ -230,6 +230,8 @@ export function readFabricTrimData(
     unit: asString(raw.unit) as FabricTrimAnnotationData["unit"],
     unit_cost: asNumber(raw.unit_cost),
     supplier_code: asString(raw.supplier_code),
+    supplier_partner_id: asString(raw.supplier_partner_id),
+    supplier_partner_name: asString(raw.supplier_partner_name),
     notes: asString(raw.notes),
   };
 }

@@ -16,9 +16,11 @@ import { useState } from "react";
 
 import { PageEditor } from "@/components/canvas/page-editor";
 import { PageOverview } from "@/components/canvas/page-overview";
+import { SupplierPartnersProvider } from "@/components/canvas/supplier-partners-context";
 import type { LayerKey } from "@/components/canvas/layers";
 import type {
   CanvasColourway,
+  PartnerOption,
   ProductAsset,
   ResolvedCanvasPage,
   ResolvedLibraryItem,
@@ -35,6 +37,7 @@ export function TechnicalDetailsSection({
   colourways,
   libraryItems,
   workspaceColours,
+  supplierPartners,
 }: {
   productId: string;
   workspaceId: string;
@@ -43,6 +46,7 @@ export function TechnicalDetailsSection({
   colourways: CanvasColourway[];
   libraryItems: ResolvedLibraryItem[];
   workspaceColours: WorkspaceColour[];
+  supplierPartners: PartnerOption[];
 }) {
   const [mode, setMode] = useState<Mode>({ view: "overview" });
   // Default to Fabrics & Trim — the most-used layer, and the one that builds the BOM.
@@ -118,32 +122,34 @@ export function TechnicalDetailsSection({
   }
 
   return (
-    <PageEditor
-      productId={productId}
-      workspaceId={workspaceId}
-      assets={assets}
-      pages={pages}
-      pageId={mode.pageId}
-      activeLayer={activeLayer}
-      viewAllLayers={viewAllLayers}
-      libraryItems={libraryItems}
-      colourLibrary={{
-        colours: localWorkspaceColours,
-        onSaved: handleWorkspaceColourSaved,
-      }}
-      colourways={localColourways}
-      lastUsedColourwayId={lastUsedColourwayId}
-      onColourwayCreated={handleColourwayCreated}
-      onColourwayUsed={setLastUsedColourwayId}
-      onColourwayRenamed={handleColourwayRenamed}
-      onLayerChange={(layer) => {
-        // Selecting a real layer exits the All-layers composite.
-        setActiveLayer(layer);
-        setViewAllLayers(false);
-      }}
-      onViewAllLayers={() => setViewAllLayers(true)}
-      onSelectPage={(pageId) => setMode({ view: "edit", pageId })}
-      onBackToOverview={backToOverview}
-    />
+    <SupplierPartnersProvider partners={supplierPartners}>
+      <PageEditor
+        productId={productId}
+        workspaceId={workspaceId}
+        assets={assets}
+        pages={pages}
+        pageId={mode.pageId}
+        activeLayer={activeLayer}
+        viewAllLayers={viewAllLayers}
+        libraryItems={libraryItems}
+        colourLibrary={{
+          colours: localWorkspaceColours,
+          onSaved: handleWorkspaceColourSaved,
+        }}
+        colourways={localColourways}
+        lastUsedColourwayId={lastUsedColourwayId}
+        onColourwayCreated={handleColourwayCreated}
+        onColourwayUsed={setLastUsedColourwayId}
+        onColourwayRenamed={handleColourwayRenamed}
+        onLayerChange={(layer) => {
+          // Selecting a real layer exits the All-layers composite.
+          setActiveLayer(layer);
+          setViewAllLayers(false);
+        }}
+        onViewAllLayers={() => setViewAllLayers(true)}
+        onSelectPage={(pageId) => setMode({ view: "edit", pageId })}
+        onBackToOverview={backToOverview}
+      />
+    </SupplierPartnersProvider>
   );
 }

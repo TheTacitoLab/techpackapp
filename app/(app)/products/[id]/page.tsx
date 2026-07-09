@@ -38,6 +38,7 @@ import type {
   Collection,
   IdentitySectionData,
   Label,
+  PartnerOption,
   ProductAsset,
   ProductChangeLogEntry,
   ProductSpecRow,
@@ -156,17 +157,22 @@ export default async function ProductDetailPage({ params }: PageProps) {
   // Canvas data (Phase 4b): the product's image assets and its pages with slots
   // (each slot's chosen asset + annotation pins nested) resolved for the UI,
   // plus its named colourways (the Colourways layer groups pins by these).
-  const [assetsResult, pagesResult, colourwaysResult, workspaceColoursResult] =
-    await Promise.all([
-      supabase
-        .from("product_assets")
-        .select("*")
-        .eq("product_id", product.id)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("canvas_pages")
-        .select(
-          `
+  const [
+    assetsResult,
+    pagesResult,
+    colourwaysResult,
+    workspaceColoursResult,
+    supplierPartnersResult,
+  ] = await Promise.all([
+    supabase
+      .from("product_assets")
+      .select("*")
+      .eq("product_id", product.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("canvas_pages")
+      .select(
+        `
         *,
         canvas_slots (
           *,
@@ -174,27 +180,36 @@ export default async function ProductDetailPage({ params }: PageProps) {
           canvas_annotations (*)
         )
       `,
-        )
-        .eq("product_id", product.id)
-        .order("sort_order", { ascending: true }),
-      supabase
-        .from("canvas_colourways")
-        .select("*")
-        .eq("product_id", product.id)
-        .order("sequence_number", { ascending: true }),
-      // The workspace colour library — the pin editors' "From library" picker,
-      // threaded down the same chain as libraryItems.
-      supabase
-        .from("workspace_colours")
-        .select("*")
-        .eq("workspace_id", ctx.profile.workspace_id)
-        .order("sort_order")
-        .order("created_at"),
-    ]);
+      )
+      .eq("product_id", product.id)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("canvas_colourways")
+      .select("*")
+      .eq("product_id", product.id)
+      .order("sequence_number", { ascending: true }),
+    // The workspace colour library — the pin editors' "From library" picker,
+    // threaded down the same chain as libraryItems.
+    supabase
+      .from("workspace_colours")
+      .select("*")
+      .eq("workspace_id", ctx.profile.workspace_id)
+      .order("sort_order")
+      .order("created_at"),
+    // Partner directory (suppliers + factories only) for the Fabrics & Trim
+    // pin editor's supplier picker — provided to the editor via context.
+    supabase
+      .from("partners")
+      .select("id, name, type")
+      .eq("workspace_id", ctx.profile.workspace_id)
+      .in("type", ["supplier", "factory"])
+      .order("name"),
+  ]);
 
   const assets: ProductAsset[] = assetsResult.data ?? [];
   const colourways: CanvasColourway[] = colourwaysResult.data ?? [];
   const workspaceColours: WorkspaceColour[] = workspaceColoursResult.data ?? [];
+  const supplierPartners: PartnerOption[] = supplierPartnersResult.data ?? [];
 
   // The nested embed shape (slots carry their asset + annotations); mapped into
   // the flat ResolvedCanvasPage the canvas UI expects. The generated types don't
@@ -323,6 +338,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
             colourways={colourways}
             libraryItems={libraryItems}
             workspaceColours={workspaceColours}
+            supplierPartners={supplierPartners}
           />
         );
       case "bom":
