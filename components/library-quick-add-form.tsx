@@ -88,7 +88,7 @@ export function LibraryQuickAddForm({
       // the server-passed library everywhere catches up. The caller doesn't
       // wait for it — the returned row is selected immediately.
       router.refresh();
-      onCreated({ ...row, isGlobal: false, isHidden: false });
+      onCreated({ ...row, isGlobal: false, isHidden: false, isFavourite: false });
     } catch {
       // Leave the form (and everything typed) intact for a retry.
       toast.error("Could not add the item.");

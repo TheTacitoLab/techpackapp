@@ -36,15 +36,16 @@ export const BRANDING_LABEL_FAMILY_LABEL: Record<BrandingLabelFamilyKey, string>
 
 /**
  * The Master Library categories each family's OPTIONAL artwork/spec link
- * draws from — the pre-existing `print_type` (artwork specs) for Branding and
- * `label_type` for Labels, both already carrying field definitions in the
- * shared `FIELD_CONFIG`, so the inline quick-add works for them unchanged.
+ * draws from — `embellishment` (artwork specs; the category formerly keyed
+ * `print_type`) for Branding and `label_type` for Labels, both already
+ * carrying field definitions in the shared `FIELD_CONFIG`, so the inline
+ * quick-add works for them unchanged.
  */
 export const BRANDING_LABEL_LIBRARY_CATEGORIES: Record<
   BrandingLabelFamilyKey,
   readonly LibraryCategory[]
 > = {
-  branding: ["print_type"],
+  branding: ["embellishment"],
   label: ["label_type"],
 };
 
@@ -145,7 +146,7 @@ function asNumber(value: unknown): number | null {
 
 /**
  * One-line summary for a library item in this layer's picker: the key spec
- * fields of the `label_type` / `print_type` categories (matching their
+ * fields of the `label_type` / `embellishment` categories (matching their
  * `FIELD_CONFIG` fields), whichever are present. Falls back to the item's
  * description, then null (picker just shows the name).
  */

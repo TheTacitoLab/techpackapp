@@ -17,7 +17,7 @@ export const CATEGORY_META: { key: LibraryCategory; label: string }[] = [
   { key: "stitch_type", label: "Stitch Types" },
   { key: "thread", label: "Thread" },
   { key: "label_type", label: "Labels" },
-  { key: "print_type", label: "Print Types" },
+  { key: "embellishment", label: "Embellishments" },
   { key: "packaging", label: "Packaging" },
   { key: "interlining", label: "Interlining" },
 ];
@@ -31,7 +31,7 @@ export const CATEGORY_SINGULAR: Record<LibraryCategory, string> = {
   stitch_type: "stitch type",
   thread: "thread",
   label_type: "label",
-  print_type: "print type",
+  embellishment: "embellishment",
   packaging: "packaging",
   interlining: "interlining",
 };
@@ -89,7 +89,7 @@ export const FIELD_CONFIG: Record<LibraryCategory, FieldDef[]> = {
     { key: "attachment", label: "Attachment", type: "text", placeholder: "Sew-in (centre fold)" },
     { key: "wash_fastness", label: "Wash Fastness", type: "text", placeholder: "High" },
   ],
-  print_type: [
+  embellishment: [
     { key: "artwork_format", label: "Artwork Format", type: "text", placeholder: "AI / EPS vector" },
     { key: "colour_mode", label: "Colour Mode", type: "text", placeholder: "Spot (Pantone)" },
     { key: "max_colours", label: "Max Colours", type: "number", placeholder: "8" },

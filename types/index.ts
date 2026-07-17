@@ -15,6 +15,7 @@ export type CollectionLabel = Tables<"collection_labels">;
 export type WorkspaceColour = Tables<"workspace_colours">;
 export type LibraryItem = Tables<"library_items">;
 export type WorkspaceLibraryToggle = Tables<"workspace_library_toggles">;
+export type LibraryFavourite = Tables<"library_favourites">;
 export type PlatformAdmin = Tables<"platform_admins">;
 
 // Enum aliases
@@ -37,11 +38,14 @@ export type ResolvedSection = ProductSection & {
  * A library item resolved for a workspace's view. `isGlobal` distinguishes the
  * GarSpec catalogue from the workspace's own items; `isHidden` is true only
  * for global items the workspace has toggled off (surfaced in the "hidden" view
- * of the manager, excluded from the default resolved library elsewhere).
+ * of the manager, excluded from the default resolved library elsewhere);
+ * `isFavourite` is true for items the workspace has starred (global or
+ * workspace) — the manager's star toggle and the pickers' Favourites group.
  */
 export type ResolvedLibraryItem = LibraryItem & {
   isGlobal: boolean;
   isHidden: boolean;
+  isFavourite: boolean;
 };
 
 /** A single colourway row in the Identity section's material summary. */

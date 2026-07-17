@@ -450,6 +450,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      library_favourites: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          library_item_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          library_item_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          library_item_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       product_assets: {
         Row: {
           id: string;
@@ -1044,7 +1065,7 @@ export type Database = {
         | "stitch_type"
         | "thread"
         | "label_type"
-        | "print_type"
+        | "embellishment"
         | "packaging"
         | "interlining";
       library_source: "global" | "workspace";

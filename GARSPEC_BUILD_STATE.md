@@ -35,6 +35,27 @@ Read-only audit of the codebase as it exists on branch `claude/new-session-b2eec
 > inherit the parent's brand. Statements below about the sidebar, launchpad
 > brand scoping, or the archived toggle describe the pre-session state.
 
+> **Addendum — Master Library session (migrations 0044–0045):** seven new
+> global stitch types (No Visible Stitch, Single-Needle Topstitch,
+> Twin-Needle Topstitch One Side / Straddling Seam, Flatlock, Turned Hem
+> Single / Twin Stitch), each with an inline base64 SVG diagram rescaled to
+> the library's 120×80 convention (0044). The `library_category` enum value
+> `print_type` was **renamed to `embellishment`** — a real key rename
+> (`ALTER TYPE … RENAME VALUE`), labels now "Embellishments"; the nine
+> seeded print items carry over automatically and `canvas_layer_type`'s
+> retired `print` value was deliberately left untouched. Four embellishment
+> items added: Direct Embroidery, Blockout DTF, Sublimated Patch, Screen
+> Print Sticker (0044). **Library favourites** landed per-workspace:
+> `library_favourites` join table + RLS mirroring the toggles table (0045),
+> `toggleFavouriteItem` server action, a star toggle on every item in
+> Settings → Master Library, and a pinned "Favourites" group at the top of
+> the shared annotation library picker (`fabric-picker.tsx`, driven by
+> `ResolvedLibraryItem.isFavourite` + `lib/favourites.ts`). Note: migration
+> **0043 does not exist** — this session numbered its migrations 0044/0045
+> to match the live-database numbering it was briefed against. Statements
+> below about the library category list or item counts describe the
+> pre-session state.
+
 ---
 
 ## 1. Stack & Infrastructure

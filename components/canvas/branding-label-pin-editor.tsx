@@ -66,7 +66,7 @@ type CreatedResult = {
  * precedent). The specific type within the family (`branding_type` /
  * `label_type`), dimensions, placement, colour, notes and the OPTIONAL
  * library link are all just data — editable in both modes. The library
- * picker inherits the inline quick-add (category-driven: print_type for
+ * picker inherits the inline quick-add (category-driven: embellishment for
  * Branding, label_type for Labels), so a missing artwork/label item can be
  * created on the spot without leaving the canvas.
  */
@@ -247,7 +247,7 @@ export function BrandingLabelPinEditor(
     return (
       <LibraryQuickAddForm
         categories={categories}
-        defaultCategory={isBranding ? "print_type" : "label_type"}
+        defaultCategory={isBranding ? "embellishment" : "label_type"}
         initialName={inlineAddName}
         onCreated={(item) => {
           registerCreated(item);

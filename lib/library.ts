@@ -13,6 +13,9 @@ import type { LibraryCategory, LibraryItem, ResolvedLibraryItem } from "@/types"
  *   - `isHidden`  — true only for global items this workspace toggled off. These
  *     are excluded by default and only included when `includeHidden` is set
  *     (the Settings manager passes it so it can offer a "Show hidden" view).
+ *   - `isFavourite` — true for items this workspace starred (global or
+ *     workspace); drives the manager's star toggle and the annotation
+ *     pickers' Favourites group.
  *
  * @param category       optional filter to a single library category.
  * @param options.includeHidden  include hidden global items (tagged isHidden).
@@ -39,23 +42,36 @@ export async function getWorkspaceLibrary(
     )
     .order("name");
 
-  const [{ data: items }, { data: toggles }] = await Promise.all([
-    category ? itemsQuery.eq("category", category) : itemsQuery,
-    supabase
-      .from("workspace_library_toggles")
-      .select("library_item_id")
-      .eq("workspace_id", workspaceId)
-      .eq("hidden", true),
-  ]);
+  const [{ data: items }, { data: toggles }, { data: favourites }] =
+    await Promise.all([
+      category ? itemsQuery.eq("category", category) : itemsQuery,
+      supabase
+        .from("workspace_library_toggles")
+        .select("library_item_id")
+        .eq("workspace_id", workspaceId)
+        .eq("hidden", true),
+      supabase
+        .from("library_favourites")
+        .select("library_item_id")
+        .eq("workspace_id", workspaceId),
+    ]);
 
   const hiddenIds = new Set((toggles ?? []).map((t) => t.library_item_id));
+  const favouriteIds = new Set(
+    (favourites ?? []).map((f) => f.library_item_id),
+  );
 
   const resolved: ResolvedLibraryItem[] = [];
   for (const item of (items ?? []) as LibraryItem[]) {
     const isGlobal = item.source === "global";
     const isHidden = isGlobal && hiddenIds.has(item.id);
     if (isHidden && !includeHidden) continue;
-    resolved.push({ ...item, isGlobal, isHidden });
+    resolved.push({
+      ...item,
+      isGlobal,
+      isHidden,
+      isFavourite: favouriteIds.has(item.id),
+    });
   }
 
   return resolved;

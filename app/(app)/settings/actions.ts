@@ -285,7 +285,7 @@ const LIBRARY_CATEGORIES = [
   "stitch_type",
   "thread",
   "label_type",
-  "print_type",
+  "embellishment",
   "packaging",
   "interlining",
 ] as const satisfies readonly LibraryCategory[];
@@ -375,6 +375,53 @@ export async function deleteLibraryItem(id: string) {
     .eq("source", "workspace")
     .eq("workspace_id", workspaceId);
   if (error) throw new Error(error.message);
+
+  revalidatePath("/settings");
+}
+
+/**
+ * Star or unstar a library item for the active workspace. Both global and
+ * workspace items can be starred; the favourite is per-WORKSPACE (a row in
+ * `library_favourites`), so the whole team shares one starred set. Verifies
+ * the item is actually visible to this workspace (an active global item or
+ * one of its own) before writing — RLS scopes the favourites row itself.
+ * Starring inserts (duplicate = harmless no-op), unstarring deletes.
+ */
+export async function toggleFavouriteItem(
+  libraryItemId: string,
+  favourite: boolean,
+) {
+  const id = z.string().min(1).parse(libraryItemId);
+  const clean = z.boolean().parse(favourite);
+  const { supabase, workspaceId } = await requireActionContext();
+
+  const { data: item } = await supabase
+    .from("library_items")
+    .select("id, source, workspace_id, is_active")
+    .eq("id", id)
+    .single();
+  const visible =
+    item &&
+    (item.source === "global"
+      ? item.is_active
+      : item.workspace_id === workspaceId);
+  if (!visible) throw new Error("Not found in your library.");
+
+  if (clean) {
+    const { error } = await supabase.from("library_favourites").insert({
+      workspace_id: workspaceId,
+      library_item_id: id,
+    });
+    // Ignore unique-violation: starring twice is a harmless no-op.
+    if (error && error.code !== "23505") throw new Error(error.message);
+  } else {
+    const { error } = await supabase
+      .from("library_favourites")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("library_item_id", id);
+    if (error) throw new Error(error.message);
+  }
 
   revalidatePath("/settings");
 }

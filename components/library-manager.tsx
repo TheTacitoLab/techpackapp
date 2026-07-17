@@ -2,12 +2,13 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   createLibraryItem,
   deleteLibraryItem,
+  toggleFavouriteItem,
   toggleGlobalItem,
   updateLibraryItem,
 } from "@/app/(app)/settings/actions";
@@ -225,6 +226,20 @@ function LibraryItemRow({ item }: { item: ResolvedLibraryItem }) {
     });
   }
 
+  function onFavourite(favourite: boolean) {
+    startTransition(async () => {
+      try {
+        await toggleFavouriteItem(item.id, favourite);
+        toast.success(
+          favourite ? "Added to favourites." : "Removed from favourites.",
+        );
+        router.refresh();
+      } catch {
+        toast.error("Could not update favourites.");
+      }
+    });
+  }
+
   function onDelete() {
     startTransition(async () => {
       try {
@@ -284,6 +299,30 @@ function LibraryItemRow({ item }: { item: ResolvedLibraryItem }) {
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {/* Star toggle — every item (GarSpec or Custom) can be a favourite;
+            the filled lockup-coloured star makes the starred state readable
+            at a glance. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          disabled={isPending}
+          onClick={() => onFavourite(!item.isFavourite)}
+          aria-label={
+            item.isFavourite
+              ? `Remove ${item.name} from favourites`
+              : `Add ${item.name} to favourites`
+          }
+        >
+          <Star
+            className={cn(
+              "size-3.5",
+              item.isFavourite
+                ? "fill-brand text-brand-foreground"
+                : "text-muted-foreground",
+            )}
+          />
+        </Button>
         {item.isGlobal ? (
           <Button
             variant="ghost"

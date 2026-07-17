@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Star } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { partitionFavourites } from "@/lib/favourites";
 import { cn } from "@/lib/utils";
 import type { ResolvedLibraryItem } from "@/types";
 
@@ -63,6 +64,13 @@ function gsm(item: ResolvedLibraryItem): string | null {
  * Construction editor passes `thumbnailUrl` so each stitch row leads with its
  * SVG diagram. Searches both name and the summary line, and flags global
  * GarSpec catalogue items with a small chip.
+ *
+ * Items the workspace starred in Settings → Master Library (`isFavourite`)
+ * are pulled out into a pinned "Favourites" group at the TOP of the list
+ * (partitioned, never duplicated — the remainder renders under "All items"),
+ * so starred items are pickable without scrolling the full catalogue. Search
+ * still filters across both groups; cmdk hides a group when nothing in it
+ * matches.
  *
  * `onCreateNew` (optional) adds the inline "add to library" entry point: a
  * pinned action below the result list — always visible, so it works both when
@@ -110,12 +118,64 @@ export function FabricPicker({
   const selected = fabrics.find((f) => f.id === value) ?? null;
   const selectedThumb = selected ? (thumbnailUrl?.(selected) ?? null) : null;
   const summary = summaryLine ?? composition;
+  const { favourites, rest } = partitionFavourites(fabrics);
 
   function handleCreateNew() {
     const text = search.trim();
     setOpen(false);
     setSearch("");
     onCreateNew?.(text);
+  }
+
+  // One row renderer shared by the Favourites and All-items groups — the
+  // groups partition the same list, so a row must look identical in both.
+  function renderItem(fabric: ResolvedLibraryItem) {
+    const line = summary(fabric);
+    const weight = gsm(fabric);
+    const thumb = thumbnailUrl?.(fabric) ?? null;
+    // cmdk filters on this value — include the summary so search
+    // matches both the item name and its make-up.
+    const searchValue = `${fabric.name} ${line ?? ""}`;
+    return (
+      <CommandItem
+        key={fabric.id}
+        value={searchValue}
+        onSelect={() => {
+          onChange(fabric.id, fabric);
+          setOpen(false);
+        }}
+        className="items-start"
+      >
+        <Check
+          className={cn(
+            "mt-0.5 size-4 shrink-0",
+            fabric.id === value ? "opacity-100" : "opacity-0",
+          )}
+        />
+        {thumb && <ItemThumb url={thumb} />}
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium">{fabric.name}</span>
+            {fabric.isFavourite && (
+              <Star className="fill-brand text-brand-foreground size-3 shrink-0" />
+            )}
+            {weight && (
+              <Badge variant="secondary" className="text-[10px]">
+                {weight} GSM
+              </Badge>
+            )}
+            {fabric.isGlobal && (
+              <Badge variant="outline" className="text-[10px]">
+                GarSpec
+              </Badge>
+            )}
+          </span>
+          {line && (
+            <span className="text-muted-foreground text-xs">{line}</span>
+          )}
+        </span>
+      </CommandItem>
+    );
   }
 
   if (fabrics.length === 0) {
@@ -199,55 +259,22 @@ export function FabricPicker({
           />
           <CommandList>
             <CommandEmpty>No matching items.</CommandEmpty>
-            <CommandGroup>
-              {fabrics.map((fabric) => {
-                const line = summary(fabric);
-                const weight = gsm(fabric);
-                const thumb = thumbnailUrl?.(fabric) ?? null;
-                // cmdk filters on this value — include the summary so search
-                // matches both the item name and its make-up.
-                const searchValue = `${fabric.name} ${line ?? ""}`;
-                return (
-                  <CommandItem
-                    key={fabric.id}
-                    value={searchValue}
-                    onSelect={() => {
-                      onChange(fabric.id, fabric);
-                      setOpen(false);
-                    }}
-                    className="items-start"
-                  >
-                    <Check
-                      className={cn(
-                        "mt-0.5 size-4 shrink-0",
-                        fabric.id === value ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                    {thumb && <ItemThumb url={thumb} />}
-                    <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-medium">{fabric.name}</span>
-                        {weight && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            {weight} GSM
-                          </Badge>
-                        )}
-                        {fabric.isGlobal && (
-                          <Badge variant="outline" className="text-[10px]">
-                            GarSpec
-                          </Badge>
-                        )}
-                      </span>
-                      {line && (
-                        <span className="text-muted-foreground text-xs">
-                          {line}
-                        </span>
-                      )}
-                    </span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
+            {favourites.length > 0 ? (
+              <>
+                <CommandGroup heading="Favourites">
+                  {favourites.map((fabric) => renderItem(fabric))}
+                </CommandGroup>
+                {rest.length > 0 && (
+                  <CommandGroup heading="All items">
+                    {rest.map((fabric) => renderItem(fabric))}
+                  </CommandGroup>
+                )}
+              </>
+            ) : (
+              <CommandGroup>
+                {fabrics.map((fabric) => renderItem(fabric))}
+              </CommandGroup>
+            )}
           </CommandList>
           {onCreateNew && (
             /* Pinned BELOW the list (not a CommandItem) so cmdk's filtering
