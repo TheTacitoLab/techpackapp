@@ -50,11 +50,13 @@ Read-only audit of the codebase as it exists on branch `claude/new-session-b2eec
 > `toggleFavouriteItem` server action, a star toggle on every item in
 > Settings → Master Library, and a pinned "Favourites" group at the top of
 > the shared annotation library picker (`fabric-picker.tsx`, driven by
-> `ResolvedLibraryItem.isFavourite` + `lib/favourites.ts`). Note: migration
-> **0043 does not exist** — this session numbered its migrations 0044/0045
-> to match the live-database numbering it was briefed against. Statements
-> below about the library category list or item counts describe the
-> pre-session state.
+> `ResolvedLibraryItem.isFavourite` + `lib/favourites.ts`). This session
+> originally branched from a point without migration 0043; a follow-up
+> reconciliation merge (`c6c17ad`) brought the partner-foundation branch in,
+> so the sequence now runs 0042 → **0043 (partners)** → 0044 → 0045 on one
+> branch — 0043 is applied live, 0044/0045 still need manual application.
+> Statements below about the library category list or item counts describe
+> the pre-session state.
 
 ---
 
