@@ -28,6 +28,13 @@ import { cn } from "@/lib/utils";
  * mode). The close (X) is intentionally hidden — every editor carries its own
  * Cancel/Save, exactly as under the popover; Escape and backdrop-click still
  * dismiss (routing through `onOpenChange`, same as the popover did).
+ *
+ * HEIGHT: capped at the viewport (minus a 1rem gutter top and bottom) with the
+ * body scrolling INTERNALLY, so a tall editor — Fabrics & Trim is the worst
+ * case — can never grow past the top or bottom edge and clip its own tabs or
+ * Save button, at any zoom or screen height. The cap lives here, once, so
+ * every editor that opens in this container inherits it. Select/Popover menus
+ * inside portal to `document.body`, so the scroll container never clips them.
  */
 export function PinEditorDialog({
   open,
@@ -52,7 +59,10 @@ export function PinEditorDialog({
       <DialogContent
         showCloseButton={false}
         aria-describedby={undefined}
-        className={cn("w-80 gap-3 p-4", className)}
+        className={cn(
+          "max-h-[calc(100dvh-2rem)] w-[27rem] gap-3 overflow-y-auto p-4",
+          className,
+        )}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
         {header}

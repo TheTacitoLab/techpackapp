@@ -40,6 +40,7 @@ import {
   deleteAnnotation,
   updateAnnotation,
 } from "@/app/(app)/products/[id]/canvas-actions";
+import { cn } from "@/lib/utils";
 import type {
   CanvasAnnotation,
   CanvasLayerType,
@@ -526,7 +527,12 @@ export function FabricTrimPinEditor(
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div
+        className={cn(
+          "grid gap-2",
+          subType === "fabric" ? "grid-cols-2" : "grid-cols-1",
+        )}
+      >
         {subType === "fabric" && (
           <div className="space-y-1.5">
             <Label htmlFor="ftpe-width" className="text-xs">
@@ -562,37 +568,44 @@ export function FabricTrimPinEditor(
 
       <div className="space-y-1.5">
         <Label className="text-xs">Supplier</Label>
-        {supplierPartnerOptions.length > 0 && (
-          <Select
-            value={supplierPartnerId ?? NO_PARTNER}
-            onValueChange={(v) =>
-              setSupplierPartnerId(v === NO_PARTNER ? null : v)
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Link a partner…" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_PARTNER}>
-                Not in directory
-              </SelectItem>
-              {supplierPartnerOptions.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
+        <div
+          className={cn(
+            "grid gap-2",
+            supplierPartnerOptions.length > 0 ? "grid-cols-2" : "grid-cols-1",
+          )}
+        >
+          {supplierPartnerOptions.length > 0 && (
+            <Select
+              value={supplierPartnerId ?? NO_PARTNER}
+              onValueChange={(v) =>
+                setSupplierPartnerId(v === NO_PARTNER ? null : v)
+              }
+            >
+              <SelectTrigger className="min-w-0">
+                <SelectValue placeholder="Link a partner…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_PARTNER}>
+                  Not in directory
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <Input
-          value={supplierCode}
-          onChange={(e) => setSupplierCode(e.target.value)}
-          placeholder={
-            supplierPartners.length > 0
-              ? "Supplier code or reference (optional)"
-              : "Supplier code or name (optional)"
-          }
-        />
+                {supplierPartnerOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Input
+            value={supplierCode}
+            onChange={(e) => setSupplierCode(e.target.value)}
+            placeholder={
+              supplierPartners.length > 0
+                ? "Supplier code (optional)"
+                : "Supplier code or name (optional)"
+            }
+          />
+        </div>
         <p className="text-muted-foreground text-xs">
           {supplierPartners.length > 0
             ? "Link a directory partner, or type a supplier that isn’t in your directory. Manage partners in Settings → Partners."

@@ -551,7 +551,7 @@ export function AnnotationPin({
           if (!next) setConfirmingDelete(false);
         }}
         title={`Edit ${annotation.reference_code}`}
-        className={hasDedicatedEditor ? "w-80" : "w-64"}
+        className={hasDedicatedEditor ? "w-[27rem]" : "w-64"}
         header={
           <div className="flex items-center justify-between">
             <span
