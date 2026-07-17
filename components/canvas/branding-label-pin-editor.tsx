@@ -23,12 +23,12 @@ import {
 import {
   BRANDING_LABEL_FAMILY_LABEL,
   BRANDING_LABEL_LIBRARY_CATEGORIES,
-  BRANDING_TYPES,
   BRANDING_TYPE_LABEL,
   LABEL_TYPES,
   LABEL_TYPE_LABEL,
   brandingLabelDataFromLibraryItem,
   brandingLabelSummaryLine,
+  brandingTypeForSave,
   readBrandingLabelData,
   type BrandingLabelFamilyKey,
 } from "@/components/canvas/branding-label-data";
@@ -39,7 +39,6 @@ import {
 } from "@/app/(app)/products/[id]/canvas-actions";
 import type {
   BrandingLabelAnnotationData,
-  BrandingType,
   CanvasAnnotation,
   CanvasLayerType,
   LabelType,
@@ -63,12 +62,18 @@ type CreatedResult = {
  *
  * Family (Branding vs Labels) IS the pin's layer_type and fixes the B/L
  * reference-code prefix — choosable only at creation, immutable after (house
- * precedent). The specific type within the family (`branding_type` /
- * `label_type`), dimensions, placement, colour, notes and the OPTIONAL
- * library link are all just data — editable in both modes. The library
- * picker inherits the inline quick-add (category-driven: embellishment for
- * Branding, label_type for Labels), so a missing artwork/label item can be
- * created on the spot without leaving the canvas.
+ * precedent). Everything else is data, editable in both modes. The two
+ * families type their pins differently:
+ *   - Branding: ONE "Embellishment" picker over the Master Library's
+ *     `embellishment` category (global + workspace, favourites pinned) — the
+ *     picked item IS the branding type. It replaced the old hardcoded
+ *     branding-type dropdown plus separate library field; pins saved with a
+ *     legacy `branding_type` slug keep it (rendered as a fallback) until an
+ *     embellishment is linked — see `brandingTypeForSave`.
+ *   - Labels: a `label_type` dropdown plus the OPTIONAL `label_type`-category
+ *     library link, unchanged.
+ * Both pickers inherit the inline quick-add (category-driven), so a missing
+ * item can be created on the spot without leaving the canvas.
  */
 export function BrandingLabelPinEditor(
   props: { libraryItems: ResolvedLibraryItem[] } & (
@@ -120,11 +125,10 @@ export function BrandingLabelPinEditor(
     fixedFamily ?? "branding",
   );
 
-  // Per-family specific type — descriptive stored fields (never in the code),
-  // so both stay editable on existing pins too.
-  const [brandingType, setBrandingType] = useState<BrandingType | null>(
-    initial.branding_type,
-  );
+  // The Labels family's specific type — a descriptive stored field (never in
+  // the code), editable on existing pins too. Branding has no equivalent
+  // state: its type IS the linked embellishment; `initial.branding_type` is
+  // only read back as the legacy fallback on save.
   const [labelType, setLabelType] = useState<LabelType | null>(
     initial.label_type,
   );
@@ -165,7 +169,12 @@ export function BrandingLabelPinEditor(
   const selectedItem = libraryItems.find((i) => i.id === libraryItemId) ?? null;
 
   const isBranding = family === "branding";
-  const familyNoun = isBranding ? "branding item" : "label";
+  // Legacy pins carry a hardcoded-dropdown slug; surface it under the picker
+  // so an old pin's type is visible (and its replacement understood) in edit.
+  const legacyBrandingLabel =
+    initial.branding_type !== null
+      ? BRANDING_TYPE_LABEL[initial.branding_type]
+      : null;
 
   function handlePickLibraryItem(id: string, item: ResolvedLibraryItem) {
     setLibraryItemId(id);
@@ -179,15 +188,18 @@ export function BrandingLabelPinEditor(
   }
 
   function handleUnlinkLibraryItem() {
-    // The link is OPTIONAL — unlinking only clears the denormalised item
-    // fields; everything typed on the pin (dimensions, placement…) stays.
+    // Clearing only drops the denormalised item fields; everything typed on
+    // the pin (dimensions, placement…) stays. On a legacy branding pin the
+    // stored slug becomes the pin's type again (see `brandingTypeForSave`).
     setLibraryItemId(null);
     setAutoFilled({ library_item_name: null, library_item_image_url: null });
   }
 
   function buildData(): BrandingLabelAnnotationData {
     return {
-      branding_type: isBranding ? brandingType : null,
+      branding_type: isBranding
+        ? brandingTypeForSave(initial.branding_type, libraryItemId)
+        : null,
       label_type: !isBranding ? labelType : null,
       library_item_id: libraryItemId,
       library_item_name: autoFilled.library_item_name,
@@ -271,7 +283,6 @@ export function BrandingLabelPinEditor(
                 setFamily(key);
                 // Family-specific fields reset; user-entered spec fields
                 // (dimensions, placement, colour, notes) deliberately survive.
-                setBrandingType(null);
                 setLabelType(null);
                 handleUnlinkLibraryItem();
               }}
@@ -295,70 +306,88 @@ export function BrandingLabelPinEditor(
       )}
 
       {isBranding ? (
+        /* ONE picker types a branding pin: the Embellishment Master Library
+           category (the same list managed in Settings → Master Library →
+           Embellishments) — no separate hardcoded type dropdown. */
         <div className="space-y-1.5">
-          <Label className="text-xs">Branding type</Label>
-          <Select
-            value={brandingType ?? undefined}
-            onValueChange={(v) => setBrandingType(v as BrandingType)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select a branding type…" />
-            </SelectTrigger>
-            <SelectContent>
-              {BRANDING_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {BRANDING_TYPE_LABEL[t]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          <Label className="text-xs">Label type</Label>
-          <Select
-            value={labelType ?? undefined}
-            onValueChange={(v) => setLabelType(v as LabelType)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select a label type…" />
-            </SelectTrigger>
-            <SelectContent>
-              {LABEL_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {LABEL_TYPE_LABEL[t]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">Library item (optional)</Label>
-          {selectedItem && (
-            <button
-              type="button"
-              onClick={handleUnlinkLibraryItem}
-              className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-0.5 text-xs transition-colors"
-            >
-              <X className="size-3" /> Unlink
-            </button>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Embellishment</Label>
+            {selectedItem && (
+              <button
+                type="button"
+                onClick={handleUnlinkLibraryItem}
+                className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-0.5 text-xs transition-colors"
+              >
+                <X className="size-3" /> Clear
+              </button>
+            )}
+          </div>
+          <FabricPicker
+            fabrics={filteredItems}
+            value={libraryItemId}
+            onChange={handlePickLibraryItem}
+            summaryLine={brandingLabelSummaryLine}
+            thumbnailUrl={(item) => item.image_url}
+            placeholder="Select an embellishment…"
+            emptyMessage={<>No embellishments in your library yet.</>}
+            onCreateNew={setInlineAddName}
+            createLabel="Add new embellishment to library"
+          />
+          {legacyBrandingLabel && !libraryItemId && (
+            <p className="text-muted-foreground text-xs">
+              Currently saved as &ldquo;{legacyBrandingLabel}&rdquo;. Picking
+              an embellishment replaces it.
+            </p>
           )}
         </div>
-        <FabricPicker
-          fabrics={filteredItems}
-          value={libraryItemId}
-          onChange={handlePickLibraryItem}
-          summaryLine={brandingLabelSummaryLine}
-          thumbnailUrl={(item) => item.image_url}
-          placeholder={`Link a ${familyNoun} from the library…`}
-          emptyMessage={<>No {familyNoun}s in your library yet.</>}
-          onCreateNew={setInlineAddName}
-          createLabel={`Add new ${familyNoun} to library`}
-        />
-      </div>
+      ) : (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Label type</Label>
+            <Select
+              value={labelType ?? undefined}
+              onValueChange={(v) => setLabelType(v as LabelType)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a label type…" />
+              </SelectTrigger>
+              <SelectContent>
+                {LABEL_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {LABEL_TYPE_LABEL[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Library item (optional)</Label>
+              {selectedItem && (
+                <button
+                  type="button"
+                  onClick={handleUnlinkLibraryItem}
+                  className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-0.5 text-xs transition-colors"
+                >
+                  <X className="size-3" /> Unlink
+                </button>
+              )}
+            </div>
+            <FabricPicker
+              fabrics={filteredItems}
+              value={libraryItemId}
+              onChange={handlePickLibraryItem}
+              summaryLine={brandingLabelSummaryLine}
+              thumbnailUrl={(item) => item.image_url}
+              placeholder="Link a label from the library…"
+              emptyMessage={<>No labels in your library yet.</>}
+              onCreateNew={setInlineAddName}
+              createLabel="Add new label to library"
+            />
+          </div>
+        </>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1.5">

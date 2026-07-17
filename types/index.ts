@@ -261,10 +261,12 @@ export type MeasurementAnnotationData = {
 };
 
 /**
- * The Branding family's sub-types (`layer_type` = 'branding', prefix B) —
- * decorative/applied branded elements. Stored as `data.branding_type`, shown
- * in the editor/list panel, NEVER encoded in the reference code (same
- * principle as `TrimKind`).
+ * LEGACY — the Branding family's hardcoded sub-type slugs (`layer_type` =
+ * 'branding', prefix B) from before the single Embellishment picker: a
+ * branding pin's type is now the linked `embellishment` library item, and
+ * `data.branding_type` is no longer written. The union remains so pins saved
+ * with a slug still validate and render (list panel/tooltip fallback), NEVER
+ * encoded in the reference code (same principle as `TrimKind`).
  */
 export type BrandingType =
   | "screen_print"
@@ -295,12 +297,14 @@ export type LabelType =
 
 /**
  * Structured `data` jsonb shape for Branding & Labels annotations
- * (`layer_type` in branding/label — the fifth canvas layer). Exactly one of
- * `branding_type`/`label_type` is set, matching the pin's layer_type; both
- * stay editable after creation (descriptive fields, not part of the B/L
- * reference codes). The library link is OPTIONAL — an attached Master Library
- * artwork/label item denormalises `library_item_id`/`_name`/`_image_url`
- * (list panel + future PDF need no join back), but every spec field can be
+ * (`layer_type` in branding/label — the fifth canvas layer). How a pin is
+ * typed depends on its family: a BRANDING pin's type is its linked
+ * `embellishment` library item (`branding_type` is legacy-only — read as a
+ * render fallback for pins saved under the old hardcoded dropdown, cleared
+ * once an embellishment is linked, never written otherwise); a LABEL pin
+ * stores `label_type`, with the library link as an OPTIONAL extra. A linked
+ * Master Library item denormalises `library_item_id`/`_name`/`_image_url`
+ * (list panel + future PDF need no join back), and every spec field can be
  * filled directly without one. `width_mm`/`height_mm` carry the exact
  * physical dimensions real tech packs specify for placements (60×7.5mm
  * labels, 30×26mm embroidery); `colour` is manual thread/print/Pantone entry

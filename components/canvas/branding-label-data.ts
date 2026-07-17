@@ -35,11 +35,13 @@ export const BRANDING_LABEL_FAMILY_LABEL: Record<BrandingLabelFamilyKey, string>
   };
 
 /**
- * The Master Library categories each family's OPTIONAL artwork/spec link
- * draws from — `embellishment` (artwork specs; the category formerly keyed
- * `print_type`) for Branding and `label_type` for Labels, both already
- * carrying field definitions in the shared `FIELD_CONFIG`, so the inline
- * quick-add works for them unchanged.
+ * The Master Library categories each family's picker draws from —
+ * `embellishment` (the category formerly keyed `print_type`) for Branding,
+ * `label_type` for Labels — both carrying field definitions in the shared
+ * `FIELD_CONFIG`, so the inline quick-add works for them unchanged. For
+ * Branding the picked embellishment IS the pin's type (the single picker
+ * replaced the old hardcoded type dropdown); for Labels the library link is
+ * still the OPTIONAL extra beside the `label_type` field.
  */
 export const BRANDING_LABEL_LIBRARY_CATEGORIES: Record<
   BrandingLabelFamilyKey,
@@ -49,7 +51,14 @@ export const BRANDING_LABEL_LIBRARY_CATEGORIES: Record<
   label: ["label_type"],
 };
 
-/** Dropdown order for the Branding-type field. */
+/**
+ * LEGACY — the hardcoded branding-type list the editor offered before the
+ * single Embellishment picker replaced it (the global `embellishment`
+ * category now carries these as library items, seeded in 0046). Kept ONLY so
+ * pins saved with a `branding_type` slug still validate and render; never
+ * offered as choices, and never written to new pins (see
+ * `brandingTypeForSave`).
+ */
 export const BRANDING_TYPES: readonly BrandingType[] = [
   "screen_print",
   "heat_transfer",
@@ -63,6 +72,7 @@ export const BRANDING_TYPES: readonly BrandingType[] = [
   "other",
 ];
 
+/** Display labels for the LEGACY `branding_type` slugs (see BRANDING_TYPES). */
 export const BRANDING_TYPE_LABEL: Record<BrandingType, string> = {
   screen_print: "Screen print",
   heat_transfer: "Heat transfer",
@@ -102,10 +112,25 @@ export const LABEL_TYPE_LABEL: Record<LabelType, string> = {
 };
 
 /**
+ * The `branding_type` a save should persist. Legacy pins (saved when the
+ * editor offered the hardcoded type dropdown) KEEP their stored slug — it
+ * still titles the pin via `brandingLabelTypeLabel` — until an embellishment
+ * is linked, at which point the library item IS the type and the legacy slug
+ * is cleared so the two can never disagree. Pins created since the single
+ * Embellishment picker only ever carry the library reference.
+ */
+export function brandingTypeForSave(
+  legacyType: BrandingType | null,
+  libraryItemId: string | null,
+): BrandingType | null {
+  return libraryItemId ? null : legacyType;
+}
+
+/**
  * The human-readable specific type of a pin, from whichever family field is
- * set — "Embroidery", "Care label" — or null when the type isn't chosen yet.
- * One helper so the editor, list panel/tooltip, and the future PDF export all
- * print the same words.
+ * set — "Embroidery" (legacy branding slugs), "Care label" — or null when the
+ * type isn't chosen yet. One helper so the editor, list panel/tooltip, and
+ * the future PDF export all print the same words.
  */
 export function brandingLabelTypeLabel(
   d: Pick<BrandingLabelAnnotationData, "branding_type" | "label_type">,
