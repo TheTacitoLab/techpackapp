@@ -5,6 +5,7 @@ import { ColoursTab } from "@/components/settings/colours-tab";
 import { LabelsTab } from "@/components/settings/labels-tab";
 import { LibraryTab } from "@/components/settings/library-tab";
 import { MarkerColoursTab } from "@/components/settings/marker-colours-tab";
+import { PartnersTab } from "@/components/settings/partners-tab";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import {
   isSettingsTabKey,
@@ -13,9 +14,11 @@ import {
 import { TemplatesTab } from "@/components/settings/templates-tab";
 import { WorkspaceTab } from "@/components/settings/workspace-tab";
 import { getWorkspaceLibrary } from "@/lib/library";
+import { resolvePartners } from "@/lib/partners";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTemplateSummaries } from "@/lib/templates";
+import type { GrantScopeOptions } from "@/components/settings/partner-scope-picker";
 
 interface PageProps {
   searchParams: Promise<{ tab?: string | string[] }>;
@@ -51,6 +54,11 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     { data: colours },
     templates,
     { data: pickerProducts },
+    { data: partners },
+    { data: partnerContacts },
+    { data: partnerGrants },
+    { data: visibilityProfiles },
+    { data: scopeCollections },
   ] = await Promise.all([
     supabase.from("brands").select("*").eq("workspace_id", wsId).order("name"),
     supabase
@@ -82,6 +90,26 @@ export default async function SettingsPage({ searchParams }: PageProps) {
       .eq("workspace_id", wsId)
       .eq("is_template", false)
       .is("archived_at", null)
+      .order("name"),
+    // Partners + their contacts, grants, and the workspace's visibility
+    // profiles (the Partners tab). Collections carry parent_id so the scope
+    // picker can label sub-collections.
+    supabase.from("partners").select("*").eq("workspace_id", wsId).order("name"),
+    supabase
+      .from("partner_contacts")
+      .select("*")
+      .eq("workspace_id", wsId)
+      .order("full_name"),
+    supabase.from("partner_grants").select("*").eq("workspace_id", wsId),
+    supabase
+      .from("visibility_profiles")
+      .select("*")
+      .eq("workspace_id", wsId)
+      .order("name"),
+    supabase
+      .from("collections")
+      .select("id, name, parent_id")
+      .eq("workspace_id", wsId)
       .order("name"),
   ]);
 
@@ -115,6 +143,37 @@ export default async function SettingsPage({ searchParams }: PageProps) {
     productCount: productCountByBrand.get(b.id) ?? 0,
   }));
 
+  // ---- Partners assembly -------------------------------------------------------
+  // Name lookups for resolving each grant's polymorphic subject + its profile.
+  const collectionsList = scopeCollections ?? [];
+  const brandNames = new Map((brands ?? []).map((b) => [b.id, b.name]));
+  const collectionNames = new Map(collectionsList.map((c) => [c.id, c.name]));
+  const productNames = new Map((pickerProducts ?? []).map((p) => [p.id, p.name]));
+  const profileNames = new Map(
+    (visibilityProfiles ?? []).map((p) => [p.id, p.name]),
+  );
+
+  const resolvedPartners = resolvePartners(
+    partners ?? [],
+    partnerContacts ?? [],
+    partnerGrants ?? [],
+    { brandNames, collectionNames, productNames, profileNames },
+  );
+
+  // The scope picker's options: brands, collections (sub-collections labelled
+  // by parent), and live products — everything a grant can target.
+  const scopeOptions: GrantScopeOptions = {
+    brands: brandsWithCounts.map((b) => ({ id: b.id, name: b.name })),
+    collections: collectionsList.map((c) => ({
+      id: c.id,
+      name: c.name,
+      parentName: c.parent_id
+        ? (collectionNames.get(c.parent_id) ?? null)
+        : null,
+    })),
+    products: (pickerProducts ?? []).map((p) => ({ id: p.id, name: p.name })),
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -144,6 +203,13 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           colours: <ColoursTab colours={colours ?? []} />,
           markers: <MarkerColoursTab />,
           library: <LibraryTab items={libraryItems} />,
+          partners: (
+            <PartnersTab
+              partners={resolvedPartners}
+              profiles={visibilityProfiles ?? []}
+              scopeOptions={scopeOptions}
+            />
+          ),
           workspace: <WorkspaceTab />,
         }}
       />

@@ -170,6 +170,15 @@ export type TrimKind =
  * `{ label, notes }` — those legacy fields are read as a display fallback
  * (never migrated) so old pins keep working; see `readFabricTrimData` in
  * `components/canvas/fabric-trim-data.ts`.
+ *
+ * `supplier_partner_id` links this material to a Partner directory record
+ * (P1 — migration 0043), filtered to supplier/factory partners. It's optional
+ * and coexists with the pre-existing free-text `supplier_code`: pins can name
+ * a supplier that isn't in the directory. `supplier_partner_name` is
+ * denormalised at pick time so the pin/BOM can show the name without a join
+ * and it survives the partner being deleted (the link goes dangling, the name
+ * stays). Existing pins carry neither key and need no migration — this is
+ * purely additive.
  */
 export type FabricTrimAnnotationData = {
   library_item_id: string | null;
@@ -185,6 +194,8 @@ export type FabricTrimAnnotationData = {
   unit: "per_metre" | "per_unit" | "per_kg" | null;
   unit_cost: number | null;
   supplier_code: string | null;
+  supplier_partner_id: string | null;
+  supplier_partner_name: string | null;
   notes: string | null;
 };
 
@@ -413,6 +424,69 @@ export type ResolvedSpecSheet = ProductSpecSheet & {
   rows: ProductSpecRow[];
   values: ProductSpecValue[];
 };
+
+// ---- Partners (P1 foundation) ---------------------------------------------------
+// The Partner directory + Visibility Profiles + scope grants (migration 0043).
+// P1 is setup-only: no partner auth, no portal — `access_enabled` on a contact
+// stores intent for P2. The field-group contract lives in types/visibility.ts.
+
+// Row aliases
+export type Partner = Tables<"partners">;
+export type PartnerContact = Tables<"partner_contacts">;
+export type VisibilityProfile = Tables<"visibility_profiles">;
+export type PartnerGrant = Tables<"partner_grants">;
+
+// Enum aliases
+export type PartnerType = Enums<"partner_type">;
+export type PartnerGrantSubject = Enums<"partner_grant_subject">;
+
+/** Dropdown/badge order for the four partner types. */
+export const PARTNER_TYPES: readonly PartnerType[] = [
+  "supplier",
+  "factory",
+  "brand_client",
+  "collaborator",
+];
+
+export const PARTNER_TYPE_LABEL: Record<PartnerType, string> = {
+  supplier: "Supplier",
+  factory: "Factory",
+  brand_client: "Brand client",
+  collaborator: "Collaborator",
+};
+
+/**
+ * The types offered by the fabric/trim pins' supplier picker — the partners
+ * that can be a material's source. Brand clients are never material
+ * suppliers; collaborators aren't in the supply chain.
+ */
+export const SUPPLIER_PARTNER_TYPES: readonly PartnerType[] = [
+  "supplier",
+  "factory",
+];
+
+/**
+ * A partner with its contacts and grants attached — the shape the Settings →
+ * Partners tab consumes. Grant subject/profile names are resolved server-side
+ * (subject_id is polymorphic, so the page joins them from its own
+ * brand/collection/product fetches).
+ */
+export type ResolvedPartner = Partner & {
+  contacts: PartnerContact[];
+  grants: ResolvedPartnerGrant[];
+};
+
+/** A grant with display names resolved for the list row. */
+export type ResolvedPartnerGrant = PartnerGrant & {
+  subjectName: string;
+  profileName: string;
+};
+
+/**
+ * The minimal partner shape threaded down to the canvas pin editors' supplier
+ * picker (full rows would drag contacts/notes through the whole chain).
+ */
+export type PartnerOption = Pick<Partner, "id" | "name" | "type">;
 
 // ---- Change Log & Versioning --------------------------------------------------
 

@@ -1029,6 +1029,135 @@ export type Database = {
         };
         Relationships: [];
       };
+      partners: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          name: string;
+          type: Database["public"]["Enums"]["partner_type"];
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          name: string;
+          type: Database["public"]["Enums"]["partner_type"];
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          name?: string;
+          type?: Database["public"]["Enums"]["partner_type"];
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      partner_contacts: {
+        Row: {
+          id: string;
+          partner_id: string;
+          workspace_id: string;
+          full_name: string;
+          email: string | null;
+          is_primary: boolean;
+          access_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          partner_id: string;
+          workspace_id: string;
+          full_name: string;
+          email?: string | null;
+          is_primary?: boolean;
+          access_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          partner_id?: string;
+          workspace_id?: string;
+          full_name?: string;
+          email?: string | null;
+          is_primary?: boolean;
+          access_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      visibility_profiles: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          name: string;
+          field_groups: Json;
+          is_default: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          name: string;
+          field_groups?: Json;
+          is_default?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          name?: string;
+          field_groups?: Json;
+          is_default?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      partner_grants: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          partner_id: string;
+          subject_type: Database["public"]["Enums"]["partner_grant_subject"];
+          subject_id: string;
+          visibility_profile_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          partner_id: string;
+          subject_type: Database["public"]["Enums"]["partner_grant_subject"];
+          subject_id: string;
+          visibility_profile_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          partner_id?: string;
+          subject_type?: Database["public"]["Enums"]["partner_grant_subject"];
+          subject_id?: string;
+          visibility_profile_id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -1111,6 +1240,8 @@ export type Database = {
       spec_fabric_type: "knit" | "woven";
       spec_demographic: "youth" | "mens" | "womens" | "custom";
       spec_sizing_system: "alpha" | "numeric";
+      partner_type: "supplier" | "factory" | "brand_client" | "collaborator";
+      partner_grant_subject: "brand" | "collection" | "product";
     };
     CompositeTypes: {
       [_ in never]: never;

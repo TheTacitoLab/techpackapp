@@ -21,6 +21,7 @@ import {
   useInlineAddedLibraryItems,
 } from "@/components/library-quick-add-form";
 import { ColourLibraryPickPanel } from "@/components/canvas/colour-library-picker";
+import { useSupplierPartners } from "@/components/canvas/supplier-partners-context";
 import {
   FABRIC_FAMILY_LABEL,
   FABRIC_FAMILY_LIBRARY_CATEGORIES,
@@ -49,6 +50,10 @@ import type {
 } from "@/types";
 
 const FABRIC_FAMILY_KEYS: readonly FabricFamilyKey[] = ["fabric", "trim"];
+
+// Sentinel for the "no directory partner" Select option — Radix Select can't
+// use an empty-string value, so a real token stands in for null.
+const NO_PARTNER = "__none__";
 
 const UNIT_LABEL: Record<NonNullable<FabricTrimAnnotationData["unit"]>, string> = {
   per_metre: "per metre",
@@ -118,6 +123,8 @@ export function FabricTrimPinEditor(
           unit: null,
           unit_cost: null,
           supplier_code: null,
+          supplier_partner_id: null,
+          supplier_partner_name: null,
           notes: null,
         };
 
@@ -130,16 +137,26 @@ export function FabricTrimPinEditor(
   // the reference code), so it stays editable on existing trim pins too.
   const [trimKind, setTrimKind] = useState<TrimKind | null>(initial.trim_kind);
 
+  // The workspace's supplier/factory partners (from context) for the supplier
+  // picker — empty when none exist yet.
+  const supplierPartners = useSupplierPartners();
+
   const [libraryItemId, setLibraryItemId] = useState(initial.library_item_id);
   const [autoFilled, setAutoFilled] = useState<
-    Pick<FabricTrimAnnotationData, "library_item_name" | "category" | "composition" | "gsm" | "supplier_code">
+    Pick<FabricTrimAnnotationData, "library_item_name" | "category" | "composition" | "gsm">
   >({
     library_item_name: initial.library_item_name,
     category: initial.category,
     composition: initial.composition,
     gsm: initial.gsm,
-    supplier_code: initial.supplier_code,
   });
+  // Supplier: a Partner-directory link (preferred) plus a free-text fallback
+  // (supplier_code) for anything not in the directory. Both can be set; the
+  // directory link is what P2's portal reads, the free text is display-only.
+  const [supplierPartnerId, setSupplierPartnerId] = useState(
+    initial.supplier_partner_id,
+  );
+  const [supplierCode, setSupplierCode] = useState(initial.supplier_code ?? "");
   const [colour, setColour] = useState(initial.colour);
   const [placement, setPlacement] = useState(initial.placement ?? "");
   const [quantity, setQuantity] = useState(
@@ -176,6 +193,26 @@ export function FabricTrimPinEditor(
     categories.includes(i.category),
   );
   const selectedItem = libraryItems.find((i) => i.id === libraryItemId) ?? null;
+  // Supplier options = the live directory, PLUS the pin's own partner if it has
+  // since been deleted (its id no longer resolves). Keeping the dangling
+  // partner as an option preserves the retained name — the delete-partner flow
+  // deliberately leaves the denormalised `supplier_partner_name` on the pin —
+  // so it stays visible in the Select and round-trips through buildData()
+  // instead of being silently nulled when an unrelated field is edited.
+  const supplierPartnerOptions =
+    supplierPartnerId &&
+    !supplierPartners.some((p) => p.id === supplierPartnerId)
+      ? [
+          ...supplierPartners,
+          {
+            id: supplierPartnerId,
+            name: initial.supplier_partner_name ?? "Unknown partner",
+            type: "supplier" as const,
+          },
+        ]
+      : supplierPartners;
+  const supplierPartner =
+    supplierPartnerOptions.find((p) => p.id === supplierPartnerId) ?? null;
   const colourOptions = selectedItem ? libraryColourOptions(selectedItem) : [];
   // A colour picked from the WORKSPACE library isn't among the item's own
   // variants — append it as an extra option so the Select can display it
@@ -199,8 +236,12 @@ export function FabricTrimPinEditor(
       category: filled.category,
       composition: filled.composition,
       gsm: filled.gsm,
-      supplier_code: filled.supplier_code,
     });
+    // If the library item carries a supplier code and the field is empty,
+    // seed the free-text fallback with it (still editable).
+    if (filled.supplier_code && !supplierCode.trim()) {
+      setSupplierCode(filled.supplier_code);
+    }
     const options = libraryColourOptions(item);
     setColour(options.length === 1 ? options[0].name : null);
     // A fastener/elastic library item states what kind of trim it is —
@@ -226,7 +267,9 @@ export function FabricTrimPinEditor(
       quantity: quantity.trim() ? Number(quantity) : null,
       unit,
       unit_cost: unitCost.trim() ? Number(unitCost) : null,
-      supplier_code: autoFilled.supplier_code,
+      supplier_code: supplierCode.trim() || null,
+      supplier_partner_id: supplierPartner?.id ?? null,
+      supplier_partner_name: supplierPartner?.name ?? null,
       notes: notes.trim() || null,
     };
   }
@@ -323,7 +366,6 @@ export function FabricTrimPinEditor(
                   category: null,
                   composition: null,
                   gsm: null,
-                  supplier_code: null,
                 });
               }}
               className={
@@ -387,12 +429,6 @@ export function FabricTrimPinEditor(
             <div>
               <span className="text-muted-foreground">GSM: </span>
               <span className="font-medium">{autoFilled.gsm}</span>
-            </div>
-          )}
-          {autoFilled.supplier_code && (
-            <div>
-              <span className="text-muted-foreground">Supplier code: </span>
-              <span className="font-medium">{autoFilled.supplier_code}</span>
             </div>
           )}
         </div>
@@ -522,6 +558,46 @@ export function FabricTrimPinEditor(
             placeholder={unit ? `Cost ${UNIT_LABEL[unit]}` : "Cost per unit"}
           />
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Supplier</Label>
+        {supplierPartnerOptions.length > 0 && (
+          <Select
+            value={supplierPartnerId ?? NO_PARTNER}
+            onValueChange={(v) =>
+              setSupplierPartnerId(v === NO_PARTNER ? null : v)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Link a partner…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_PARTNER}>
+                Not in directory
+              </SelectItem>
+              {supplierPartnerOptions.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Input
+          value={supplierCode}
+          onChange={(e) => setSupplierCode(e.target.value)}
+          placeholder={
+            supplierPartners.length > 0
+              ? "Supplier code or reference (optional)"
+              : "Supplier code or name (optional)"
+          }
+        />
+        <p className="text-muted-foreground text-xs">
+          {supplierPartners.length > 0
+            ? "Link a directory partner, or type a supplier that isn’t in your directory. Manage partners in Settings → Partners."
+            : "Add partners in Settings → Partners to link suppliers from your directory."}
+        </p>
       </div>
 
       <div className="space-y-1.5">

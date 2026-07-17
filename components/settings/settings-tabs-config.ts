@@ -1,5 +1,6 @@
 import {
   CreditCard,
+  Handshake,
   LayoutTemplate,
   Library,
   MapPin,
@@ -24,6 +25,7 @@ export const SETTINGS_TABS = [
   { key: "colours", label: "Colours", icon: SwatchBook },
   { key: "markers", label: "Marker Colours", icon: MapPin },
   { key: "library", label: "Master Library", icon: Library },
+  { key: "partners", label: "Partners", icon: Handshake },
   { key: "workspace", label: "Workspace", icon: CreditCard },
 ] as const satisfies readonly { key: string; label: string; icon: LucideIcon }[];
 
