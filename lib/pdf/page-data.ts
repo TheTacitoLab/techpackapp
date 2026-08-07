@@ -2,7 +2,9 @@
  * Shared server-side data assembly for the PDF routes: the raw
  * canvas_pages/canvas_slots embed shape, the image fetcher (data URIs, origin-
  * pinned, MEMOISED per URL so an asset reused across slots/pages — or the hero
- * doubling as a slot image — is fetched exactly once per request), and the
+ * doubling as a slot image — is fetched exactly once per request, downscaled
+ * through `lib/pdf/image-source.ts`, and rate-limited so peak memory does not
+ * scale with the size of the product), and the
  * slot-row → PdfSlotData mapping. Both the single-page route
  * (`/products/[id]/pdf`) and the full-document route
  * (`/products/[id]/techpack.pdf`) build their data through here, so the two
@@ -10,6 +12,11 @@
  */
 
 import type { PdfImage } from "@/lib/pdf/image-fit";
+import {
+  MAX_SOURCE_BYTES,
+  PDF_EMBEDDABLE_TYPES,
+  prepareImageForPdf,
+} from "@/lib/pdf/image-source";
 import type { PdfSlotData } from "@/lib/pdf/render-techpack-page";
 import type {
   CanvasAnnotation,
@@ -26,36 +33,91 @@ export type RawPdfSlot = CanvasSlot & {
 };
 export type RawPdfPage = CanvasPage & { canvas_slots: RawPdfSlot[] };
 
-/** Formats @react-pdf 4.5.1 can actually rasterise (Step 0-verified). WebP is
- * uploadable but NOT renderable by the PDF engine — it degrades to the
- * "image unavailable" box rather than crashing the whole export. */
-const PDF_RENDERABLE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/svg+xml",
-]);
+/** Formats worth downloading at all: what @react-pdf can embed, plus WebP,
+ * which the upload flow accepts and `prepareImageForPdf` transcodes on the way
+ * in (the PDF engine cannot rasterise WebP itself). Anything else degrades to
+ * the "image unavailable" box rather than crashing the export. */
+const PDF_FETCHABLE_TYPES = new Set([...PDF_EMBEDDABLE_TYPES, "image/webp"]);
 
-export type ImageFetcher = (url: string) => Promise<string | null>;
+/**
+ * How many images are fetched-and-prepared at once. The export used to pull
+ * every asset on every page concurrently, so peak memory scaled with the
+ * PRODUCT — one big tech pack could hold a hundred full-resolution buffers at
+ * the same moment and take the serverless function down with it. A small
+ * window keeps peak memory flat regardless of page count, and the work is
+ * network- and CPU-bound rather than latency-bound, so it costs little.
+ */
+const FETCH_CONCURRENCY = 4;
+
+/** What one request's images cost — logged by the export routes on the way
+ *  out, so a slow or failing export can be read straight off the function log
+ *  instead of guessed at. */
+export type ImageStats = {
+  /** Images successfully prepared and embedded. */
+  embedded: number;
+  /** Assets that could not be embedded (fetch failure, unsupported format,
+   *  over the size cap) and render as a fallback box. */
+  skipped: number;
+  /** Total bytes handed to the renderer, after downscaling. */
+  bytes: number;
+};
+
+export type ImageFetcher = ((url: string) => Promise<string | null>) & {
+  stats: () => ImageStats;
+};
+
+/** A minimal counting semaphore — enough to bound the fetch/resize window
+ *  without pulling in a dependency. A finishing task hands its slot straight
+ *  to the next waiter rather than releasing it, so the limit holds even while
+ *  the waiter is still queued as a microtask. */
+export function createGate(
+  limit: number,
+): <T>(task: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+
+  return async function run<T>(task: () => Promise<T>): Promise<T> {
+    if (active >= limit) {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    } else {
+      active += 1;
+    }
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active -= 1;
+    }
+  };
+}
 
 /**
  * Fetch an image server-side and hand @react-pdf a data URI — Step 0 verified
  * both PNG and SVG data URIs render (raw Buffers are only sniffed for raster
  * magic bytes, which would reject SVG uploads), and URL-fetching inside the
  * renderer was deliberately not relied on. A failed fetch, an unsupported
- * format, or an off-origin URL returns null → the consumer renders a visible
- * fallback, never a crash.
+ * format, an oversized file, or an off-origin URL returns null → the consumer
+ * renders a visible fallback, never a crash.
  *
  * Origin pinning: image URLs come from workspace-writable DB columns
  * (product_assets.file_url, brands.logo_url), so the server only ever fetches
  * from the configured Supabase host — never an arbitrary URL a tampered row
  * could point at (SSRF guard).
  *
+ * Rasters are downscaled to the resolution the page can actually show before
+ * they become data URIs (`lib/pdf/image-source.ts`) — uploads keep their
+ * original resolution, and embedding 4000–8000 px sources verbatim is what
+ * exhausted the export function's memory.
+ *
  * The returned fetcher memoises by URL — including in-flight promises and
- * failures — so each unique asset is fetched once per request no matter how
- * many slots/pages reference it.
+ * failures — so each unique asset is fetched, resized and encoded exactly once
+ * per request no matter how many slots/pages reference it.
  */
 export function createImageFetcher(): ImageFetcher {
   const cache = new Map<string, Promise<string | null>>();
+  const gate = createGate(FETCH_CONCURRENCY);
+  const stats: ImageStats = { embedded: 0, skipped: 0, bytes: 0 };
 
   async function fetchOnce(url: string): Promise<string | null> {
     try {
@@ -65,22 +127,51 @@ export function createImageFetcher(): ImageFetcher {
       const res = await fetch(url);
       if (!res.ok) return null;
       const type = res.headers.get("content-type")?.split(";")[0] || "image/png";
-      if (!PDF_RENDERABLE_TYPES.has(type)) return null;
+      if (!PDF_FETCHABLE_TYPES.has(type)) return null;
+      // Refuse a pathological upload before it is buffered, so one bad asset
+      // cannot take the whole export down with it.
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_SOURCE_BYTES) {
+        console.warn(`[pdf] image skipped, ${declared} bytes exceeds the cap`);
+        return null;
+      }
       const buffer = Buffer.from(await res.arrayBuffer());
-      return `data:${type};base64,${buffer.toString("base64")}`;
+      if (buffer.byteLength > MAX_SOURCE_BYTES) {
+        console.warn(
+          `[pdf] image skipped, ${buffer.byteLength} bytes exceeds the cap`,
+        );
+        return null;
+      }
+      const prepared = await prepareImageForPdf(buffer, type);
+      // A source the resizer could not convert (an unavailable `sharp`, a
+      // decode failure) may still be a format the engine cannot embed.
+      if (!PDF_EMBEDDABLE_TYPES.has(prepared.contentType)) return null;
+      return `data:${prepared.contentType};base64,${prepared.data.toString("base64")}`;
     } catch {
       return null;
     }
   }
 
-  return (url: string) => {
+  const fetcher = (url: string) => {
     let hit = cache.get(url);
     if (!hit) {
-      hit = fetchOnce(url);
+      hit = gate(() => fetchOnce(url)).then((src) => {
+        if (src === null) {
+          stats.skipped += 1;
+        } else {
+          stats.embedded += 1;
+          // `data:<type>;base64,<payload>` — the payload decodes to ¾ of its
+          // own length, near enough for a log line.
+          stats.bytes += Math.floor((src.length - src.indexOf(",") - 1) * 0.75);
+        }
+        return src;
+      });
       cache.set(url, hit);
     }
     return hit;
   };
+
+  return Object.assign(fetcher, { stats: (): ImageStats => ({ ...stats }) });
 }
 
 /**

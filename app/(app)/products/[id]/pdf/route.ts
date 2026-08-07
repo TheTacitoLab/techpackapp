@@ -9,10 +9,15 @@ import {
   resolvePdfImage,
   type RawPdfPage,
 } from "@/lib/pdf/page-data";
+import { pdfBody } from "@/lib/pdf/response";
 import { renderTechPackPagePdf } from "@/lib/pdf/render-techpack-page";
 import type { PdfPageData } from "@/lib/pdf/render-techpack-page";
 import { getCurrentUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+
+/** Matches the full-document route — a page carrying several large assets can
+ *  outrun a platform's 10s default. */
+export const maxDuration = 60;
 
 /**
  * GET /products/{id}/pdf?pageId={uuid}
@@ -25,6 +30,20 @@ import { createClient } from "@/lib/supabase/server";
  * first locked page.
  */
 export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  // Matches the full-document route: one guard around the whole handler, so
+  // any assembly failure answers with a logged 500 instead of throwing out.
+  try {
+    return await exportPage(req, ctx);
+  } catch (err) {
+    console.error("[pdf] page export failed:", err);
+    return new Response("PDF generation failed", { status: 500 });
+  }
+}
+
+async function exportPage(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
@@ -125,15 +144,9 @@ export async function GET(
     slots,
   };
 
-  let pdf: Buffer;
-  try {
-    pdf = await renderTechPackPagePdf(data);
-  } catch (err) {
-    console.error("[pdf] renderTechPackPagePdf failed:", err);
-    return new Response("PDF generation failed", { status: 500 });
-  }
+  const pdf = await renderTechPackPagePdf(data);
   const filename = `${product.name.replace(/[^\w-]+/g, "_")}_p${pageIndex + 1}.pdf`;
-  return new Response(new Uint8Array(pdf), {
+  return new Response(pdfBody(pdf), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename="${filename}"`,

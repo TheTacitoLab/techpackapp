@@ -23,6 +23,7 @@ import type {
   PdfCoverColourway,
   PdfCoverSwatch,
 } from "@/lib/pdf/palette-blocks";
+import { pdfBody } from "@/lib/pdf/response";
 import {
   buildBomRows,
   paginateBom,
@@ -58,6 +59,14 @@ import type {
   ProductSpecValue,
   ResolvedSpecSheet,
 } from "@/types";
+
+/**
+ * Assembling a whole tech pack — fetching and downscaling every asset, then
+ * laying out and writing the document — is genuinely slower than a page
+ * render, and the platform default (often 10s) cuts it off mid-flight. Hosts
+ * read this from the Next.js build output to widen the function's limit.
+ */
+export const maxDuration = 60;
 
 const ALL_LAYER_KEYS = ANNOTATION_LAYERS.map((l) => l.key);
 
@@ -191,6 +200,23 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
+  // One guard around the whole handler: everything below the render was
+  // previously unprotected, so a single bad row anywhere in the assembly threw
+  // out of the route instead of answering. Every failure now leaves a logged
+  // reason and a plain 500.
+  try {
+    return await exportTechPack(req, ctx);
+  } catch (err) {
+    console.error("[pdf] techpack export failed:", err);
+    return new Response("PDF generation failed", { status: 500 });
+  }
+}
+
+async function exportTechPack(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  const startedAt = Date.now();
   const { id } = await ctx.params;
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
@@ -511,21 +537,25 @@ export async function GET(
     },
   );
 
-  let pdf: Buffer;
-  try {
-    pdf = await renderTechPackDocumentPdf({
-      cover,
-      palettePage,
-      pages: pageData,
-      bomPages,
-      specPages,
-    });
-  } catch (err) {
-    console.error("[pdf] renderTechPackDocumentPdf failed:", err);
-    return new Response("PDF generation failed", { status: 500 });
-  }
+  const pdf = await renderTechPackDocumentPdf({
+    cover,
+    palettePage,
+    pages: pageData,
+    bomPages,
+    specPages,
+  });
 
-  return new Response(new Uint8Array(pdf), {
+  // The one line that makes a struggling export legible in the function log:
+  // how much imagery it carried, how big the answer is, and how long it took.
+  const images = fetchImage.stats();
+  console.log(
+    `[pdf] techpack ${product.id}: ${pageCount} pages, ` +
+      `${images.embedded} images (${images.skipped} skipped, ` +
+      `${Math.round(images.bytes / 1024)} KB), ` +
+      `${Math.round(pdf.byteLength / 1024)} KB out, ${Date.now() - startedAt} ms`,
+  );
+
+  return new Response(pdfBody(pdf), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${exportFilename(product.style_number, product.name, "pdf")}"`,
