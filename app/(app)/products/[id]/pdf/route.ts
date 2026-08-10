@@ -9,7 +9,7 @@ import {
   resolvePdfImage,
   type RawPdfPage,
 } from "@/lib/pdf/page-data";
-import { pdfBody } from "@/lib/pdf/response";
+import { pdfStream } from "@/lib/pdf/response";
 import { renderTechPackPagePdf } from "@/lib/pdf/render-techpack-page";
 import type { PdfPageData } from "@/lib/pdf/render-techpack-page";
 import { getCurrentUser } from "@/lib/supabase/auth";
@@ -146,7 +146,7 @@ async function exportPage(
 
   const pdf = await renderTechPackPagePdf(data);
   const filename = `${product.name.replace(/[^\w-]+/g, "_")}_p${pageIndex + 1}.pdf`;
-  return new Response(pdfBody(pdf), {
+  return new Response(pdfStream(pdf), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `inline; filename="${filename}"`,

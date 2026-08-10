@@ -34,7 +34,36 @@ import type { Sharp } from "sharp";
  *  can draw is ~566 × 322 pt, so 2000 px still leaves ~250 DPI at full bleed
  *  and holds up under the canvas's 4× max zoom on the region actually shown.
  *  Override with PDF_IMAGE_MAX_EDGE if a workspace needs more or less. */
-const MAX_EDGE = readEnvInt("PDF_IMAGE_MAX_EDGE", 2000, 256, 8000);
+export const MAX_EDGE = readEnvInt("PDF_IMAGE_MAX_EDGE", 2000, 256, 8000);
+
+/** The floor `imageEdgeFor` will not go below, however many images a document
+ *  carries — quality has to stop falling somewhere. 700 px is ~90 DPI across a
+ *  full-bleed slot: soft, but legible, and only a ~100-image pack reaches it.
+ *  It is the floor, not the budget, that binds past that point, so a pack that
+ *  large does start growing again — the export log makes that visible. */
+const MIN_EDGE = 700;
+
+/**
+ * ONE pixel budget for the whole document, shared equally between its images.
+ * Per-image caps alone do not bound a tech pack: 60 slots at 2000 px is a
+ * 30 MB download whatever each individual image costs, and the host drops any
+ * response past 20 MB. Sharing a fixed budget keeps the total roughly constant
+ * as a product grows, so a big pack degrades in resolution instead of failing
+ * to arrive. Sized as "12 images may each have the full 2000 px" — beyond
+ * that, everything shrinks together.
+ */
+const TOTAL_PIXEL_BUDGET = 12 * MAX_EDGE * MAX_EDGE;
+
+/**
+ * The longest edge each image may keep in a document carrying `imageCount` of
+ * them. Bytes scale with area, so an equal share of the pixel budget means an
+ * edge of √(budget / count), clamped to the per-image ceiling and floor.
+ */
+export function imageEdgeFor(imageCount: number): number {
+  if (imageCount <= 1) return MAX_EDGE;
+  const share = Math.sqrt(TOTAL_PIXEL_BUDGET / imageCount);
+  return Math.round(Math.min(MAX_EDGE, Math.max(MIN_EDGE, share)));
+}
 
 /** JPEG quality for re-encoded photographic sources. */
 const JPEG_QUALITY = readEnvInt("PDF_IMAGE_JPEG_QUALITY", 80, 40, 100);
@@ -43,12 +72,20 @@ const JPEG_QUALITY = readEnvInt("PDF_IMAGE_JPEG_QUALITY", 80, 40, 100);
  *  embed as-is — re-encoding it would only risk generational quality loss. */
 const PASSTHROUGH_MAX_BYTES = 600 * 1024;
 
-/** How large a downscaled LOSSLESS encode may be before it is re-encoded as
- *  JPEG instead. This is really a content test dressed as a size test: at
- *  2000 px a technical flat lands around 700 KB as PNG, a photograph around
- *  6 MB. Line work — where JPEG ringing would actually show — therefore stays
- *  lossless, and only genuinely photographic content pays for it. */
-const LOSSLESS_MAX_BYTES = 1024 * 1024;
+/**
+ * How expensive a lossless encode may be, PER PIXEL, before JPEG is used
+ * instead. This is a content test: PNG compresses line art perhaps 15:1
+ * against raw RGB and a photograph barely 1.5:1, so cost-per-pixel separates
+ * the two no matter what size the image ends up. Measured: a technical flat
+ * lands near 0.26 B/px, photographic content near 1.5–2.3 B/px. 0.6 B/px —
+ * a 5:1 ratio — sits in the wide gap between them.
+ *
+ * It has to be a RATE and not a byte count. An absolute threshold moves with
+ * the image: shrink a photograph enough and its PNG slips under the limit, so
+ * the document would flip back to lossless exactly when it was trying to get
+ * smaller. That cost 34 MB on a 60-image pack in testing.
+ */
+const LOSSLESS_MAX_BYTES_PER_PIXEL = 0.6;
 
 /** Hard ceiling on a single source file. Beyond this the asset is treated as
  *  unavailable (a visible "Image unavailable" box) rather than risking the
@@ -109,12 +146,24 @@ async function loadSharp(): Promise<((input: Buffer) => Sharp) | null> {
   return sharpModule;
 }
 
-/** Whether these bytes need the resizer at all. */
-function needsPreparation(bytes: Buffer, contentType: string): boolean {
-  if (!RESIZABLE_TYPES.has(contentType)) return false;
+/**
+ * Whether an image can be embedded exactly as fetched. Both tests matter and
+ * for different reasons: BYTES decide what the download weighs, PIXELS decide
+ * what the render costs, since pdfkit decodes every PNG to a raw bitmap
+ * (width × height × 4). A well-compressed 4000 px flat can be under 600 KB on
+ * disk and still 64 MB decoded, so a size test alone would wave it through.
+ */
+function canEmbedAsIs(
+  bytes: Buffer,
+  contentType: string,
+  meta: { width?: number; height?: number },
+  maxEdge: number,
+): boolean {
   // WebP always needs transcoding — @react-pdf cannot embed it.
-  if (contentType === "image/webp") return true;
-  return bytes.byteLength > PASSTHROUGH_MAX_BYTES;
+  if (contentType === "image/webp") return false;
+  if (bytes.byteLength > PASSTHROUGH_MAX_BYTES) return false;
+  const edge = Math.max(meta.width ?? Infinity, meta.height ?? Infinity);
+  return edge <= maxEdge;
 }
 
 /**
@@ -125,9 +174,8 @@ function needsPreparation(bytes: Buffer, contentType: string): boolean {
  *  · already-lossy source (JPEG) → JPEG, since a lossless re-encode would only
  *    inflate it without recovering anything;
  *  · transparent source → PNG, the only one of the two with an alpha channel;
- *  · otherwise → PNG, unless it is still heavy at this size, which is the
- *    signature of photographic content: flats land near 700 KB, photographs
- *    nearer 6 MB.
+ *  · otherwise → PNG, unless it costs more than LOSSLESS_MAX_BYTES_PER_PIXEL,
+ *    which is the signature of photographic content.
  *
  * Default PNG compression deliberately — level 9 costs seconds per image on a
  * serverless CPU for a few percent of size.
@@ -147,9 +195,15 @@ async function encode(
 
   if (sourceType === "image/jpeg") return jpeg();
 
-  const png = await pipeline.clone().png().toBuffer();
-  if (!hasAlpha && png.byteLength > LOSSLESS_MAX_BYTES) return jpeg();
-  return { data: png, contentType: "image/png" };
+  // `resolveWithObject` gives the ENCODED dimensions, so the rate is measured
+  // against the pixels actually embedded rather than the source's.
+  const { data, info } = await pipeline
+    .clone()
+    .png()
+    .toBuffer({ resolveWithObject: true });
+  const perPixel = data.byteLength / Math.max(1, info.width * info.height);
+  if (!hasAlpha && perPixel > LOSSLESS_MAX_BYTES_PER_PIXEL) return jpeg();
+  return { data, contentType: "image/png" };
 }
 
 /**
@@ -163,14 +217,19 @@ async function encode(
 export async function prepareImageForPdf(
   bytes: Buffer,
   contentType: string,
+  maxEdge: number = MAX_EDGE,
 ): Promise<PreparedImage> {
   const original: PreparedImage = { data: bytes, contentType };
-  if (!needsPreparation(bytes, contentType)) return original;
+  if (!RESIZABLE_TYPES.has(contentType)) return original;
 
   const sharp = await loadSharp();
   if (!sharp) return original;
 
   try {
+    // A header read, not a decode — cheap enough to do for every image.
+    const meta = await sharp(bytes).metadata();
+    if (canEmbedAsIs(bytes, contentType, meta, maxEdge)) return original;
+
     const pipeline = sharp(bytes)
       // Apply EXIF orientation, so the embedded pixels agree with the
       // width/height the browser recorded at upload (which the page geometry
@@ -178,18 +237,17 @@ export async function prepareImageForPdf(
       // rotated phone photos that used to export sideways.
       .rotate()
       .resize({
-        width: MAX_EDGE,
-        height: MAX_EDGE,
+        width: maxEdge,
+        height: maxEdge,
         fit: "inside",
         withoutEnlargement: true,
       });
 
+    // Transparency forces PNG — JPEG has no alpha channel.
     const { data: encoded, contentType: encodedType } = await encode(
       pipeline,
       contentType,
-      // Transparency forces PNG — JPEG has no alpha channel. `metadata()`
-      // reads the header only; it does not decode the image.
-      (await sharp(bytes).metadata()).hasAlpha === true,
+      meta.hasAlpha === true,
     );
 
     // A re-encode that gained nothing (an already-optimised source) is

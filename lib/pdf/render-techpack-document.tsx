@@ -6,7 +6,7 @@
  * page's data; nothing about the per-page layout changes here.
  */
 
-import { Document, renderToBuffer } from "@react-pdf/renderer";
+import { Document, renderToStream } from "@react-pdf/renderer";
 
 import { PDF_BRAND_NAME } from "@/lib/pdf/branding";
 import { BomPage, type PdfBomPageData } from "@/lib/pdf/render-bom-page";
@@ -64,9 +64,22 @@ export function TechPackDocument({ data }: { data: TechPackDocumentData }) {
   );
 }
 
-/** Render the full document to a PDF Buffer (server-side). */
+/**
+ * Render the full document to a PDF stream (server-side).
+ *
+ * A STREAM rather than a Buffer, for two reasons. The response can then be
+ * streamed to the client, which is what lets a large tech pack past the host's
+ * 6 MB buffered-response cap (see `lib/pdf/response.ts`); and it skips the
+ * `Buffer.concat` inside `renderToBuffer`, which holds the finished document
+ * twice over at the moment of concatenation.
+ *
+ * The promise resolves only after layout has completed — react-pdf awaits
+ * `layoutDocument` before handing back the stream — so a document that cannot
+ * be laid out still rejects here, in time for the route to answer with a 500
+ * instead of a half-written download.
+ */
 export async function renderTechPackDocumentPdf(
   data: TechPackDocumentData,
-): Promise<Buffer> {
-  return renderToBuffer(<TechPackDocument data={data} />);
+): Promise<NodeJS.ReadableStream> {
+  return renderToStream(<TechPackDocument data={data} />);
 }

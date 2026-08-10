@@ -23,7 +23,7 @@ import type {
   PdfCoverColourway,
   PdfCoverSwatch,
 } from "@/lib/pdf/palette-blocks";
-import { pdfBody } from "@/lib/pdf/response";
+import { pdfStream } from "@/lib/pdf/response";
 import {
   buildBomRows,
   paginateBom,
@@ -318,8 +318,18 @@ async function exportTechPack(
 
   // One memoised fetcher for the whole document: each unique asset URL (slot
   // images, the hero — often also a slot image — and the brand logo) is
-  // fetched exactly once per request.
-  const fetchImage = createImageFetcher();
+  // fetched exactly once per request. The DISTINCT count is what sets the
+  // shared pixel budget, so a product that reuses one asset across ten slots
+  // is not penalised for it.
+  const assetUrls = new Set<string>();
+  for (const page of allPages) {
+    for (const slot of page.canvas_slots) {
+      if (slot.product_assets) assetUrls.add(slot.product_assets.file_url);
+    }
+  }
+  if (heroResult.data) assetUrls.add(heroResult.data.file_url);
+  if (brand?.logo_url) assetUrls.add(brand.logo_url);
+  const fetchImage = createImageFetcher(assetUrls.size);
 
   // Canvas pages, layer-filtered through the ONE shared assembly path.
   const pageSlots = await Promise.all(
@@ -537,6 +547,9 @@ async function exportTechPack(
     },
   );
 
+  // Layout happens before this resolves, so a document that cannot be built
+  // still fails here — in time for the handler's guard to answer 500 rather
+  // than a truncated download.
   const pdf = await renderTechPackDocumentPdf({
     cover,
     palettePage,
@@ -546,16 +559,20 @@ async function exportTechPack(
   });
 
   // The one line that makes a struggling export legible in the function log:
-  // how much imagery it carried, how big the answer is, and how long it took.
+  // how much imagery it carried, how big the answer was, and how long it took.
+  // Logged once the last byte is out, since streaming means the size is not
+  // known when the response starts.
   const images = fetchImage.stats();
-  console.log(
-    `[pdf] techpack ${product.id}: ${pageCount} pages, ` +
-      `${images.embedded} images (${images.skipped} skipped, ` +
-      `${Math.round(images.bytes / 1024)} KB), ` +
-      `${Math.round(pdf.byteLength / 1024)} KB out, ${Date.now() - startedAt} ms`,
-  );
+  const body = pdfStream(pdf, (bytes) => {
+    console.log(
+      `[pdf] techpack ${product.id}: ${pageCount} pages, ` +
+        `${images.embedded} images (${images.skipped} skipped, ` +
+        `${Math.round(images.bytes / 1024)} KB), ` +
+        `${Math.round(bytes / 1024)} KB out, ${Date.now() - startedAt} ms`,
+    );
+  });
 
-  return new Response(pdfBody(pdf), {
+  return new Response(body, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${exportFilename(product.style_number, product.name, "pdf")}"`,

@@ -26,7 +26,7 @@ import {
   Svg,
   Text,
   View,
-  renderToBuffer,
+  renderToStream,
 } from "@react-pdf/renderer";
 
 import { getAnnotationSummary } from "@/components/canvas/annotation-summary";
@@ -1037,7 +1037,10 @@ export function TechPackPage({ data }: { data: PdfPageData }) {
   );
 }
 
-/** Render the page to a PDF Buffer (server-side). */
-export async function renderTechPackPagePdf(data: PdfPageData): Promise<Buffer> {
-  return renderToBuffer(<TechPackPage data={data} />);
+/** Render the page to a PDF stream (server-side) — same delivery contract as
+ *  the full document; see `renderTechPackDocumentPdf`. */
+export async function renderTechPackPagePdf(
+  data: PdfPageData,
+): Promise<NodeJS.ReadableStream> {
+  return renderToStream(<TechPackPage data={data} />);
 }

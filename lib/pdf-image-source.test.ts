@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import sharp from "sharp";
 
-import { prepareImageForPdf } from "./pdf/image-source.ts";
+import { imageEdgeFor, MAX_EDGE, prepareImageForPdf } from "./pdf/image-source.ts";
 import { createGate } from "./pdf/page-data.ts";
 
 /** A solid-colour raster of the given size, in the given format. */
@@ -120,6 +120,41 @@ describe("prepareImageForPdf", () => {
     assert.equal((await sharp(out.data).metadata()).width, 64);
   });
 
+  it("resizes a large-but-well-compressed source — pixels cost memory, not just bytes", async () => {
+    // A 4000 px flat that deflates to well under the pass-through byte
+    // threshold. pdfkit would still decode it to ~64 MB of raw bitmap, so a
+    // size-only test would wave through exactly the images that hurt most.
+    const wide = await sharp({
+      create: {
+        width: 4000,
+        height: 4000,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 },
+      },
+    })
+      .png()
+      .toBuffer();
+    assert.ok(wide.byteLength < 600 * 1024, "fixture must look small on disk");
+
+    const out = await prepareImageForPdf(wide, "image/png");
+    assert.equal((await sharp(out.data).metadata()).width, MAX_EDGE);
+  });
+
+  it("routes photographic content to JPEG at every size the budget picks", async () => {
+    // The format rule is a RATE, not a byte count: shrinking a photograph must
+    // not flip it back to lossless just because its PNG got small. That
+    // regression cost 34 MB on a 60-image pack.
+    const photo = await noise(4000, 3000, 3).png().toBuffer();
+    for (const edge of [2000, 1095, 894, 700]) {
+      const out = await prepareImageForPdf(photo, "image/png", edge);
+      assert.equal(
+        out.contentType,
+        "image/jpeg",
+        `a photograph at ${edge}px should still be JPEG`,
+      );
+    }
+  });
+
   it("keeps the original when re-encoding would not shrink it", async () => {
     // Heavily-compressed JPEG noise, already inside the edge cap: re-encoding
     // it at our quality would grow it AND add generational loss, so the
@@ -131,6 +166,44 @@ describe("prepareImageForPdf", () => {
     );
     const out = await prepareImageForPdf(jpeg, "image/jpeg");
     assert.equal(out.data, jpeg);
+  });
+});
+
+describe("imageEdgeFor", () => {
+  it("gives a small document the full per-image ceiling", () => {
+    for (const count of [0, 1, 4, 12]) {
+      assert.equal(imageEdgeFor(count), MAX_EDGE);
+    }
+  });
+
+  it("holds the document's total pixel count roughly flat as it grows", () => {
+    // The whole point of the shared budget: a 40-image pack must not be five
+    // times the download of an 8-image one.
+    const total = (n: number) => n * imageEdgeFor(n) ** 2;
+    const base = total(12);
+    for (const count of [20, 40, 60]) {
+      const ratio = total(count) / base;
+      assert.ok(
+        ratio > 0.9 && ratio < 1.1,
+        `${count} images used ${ratio.toFixed(2)}x the budget`,
+      );
+    }
+  });
+
+  it("never drops below the legibility floor, and never rises above the ceiling", () => {
+    for (const count of [1, 50, 500, 5000]) {
+      const edge = imageEdgeFor(count);
+      assert.ok(edge <= MAX_EDGE && edge >= 700, `${count} -> ${edge}`);
+    }
+  });
+
+  it("is monotonic — more images never means a bigger per-image budget", () => {
+    let previous = Infinity;
+    for (let count = 1; count <= 200; count++) {
+      const edge = imageEdgeFor(count);
+      assert.ok(edge <= previous, `${count} images went back up to ${edge}`);
+      previous = edge;
+    }
   });
 });
 

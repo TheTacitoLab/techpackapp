@@ -15,6 +15,7 @@ import type { PdfImage } from "@/lib/pdf/image-fit";
 import {
   MAX_SOURCE_BYTES,
   PDF_EMBEDDABLE_TYPES,
+  imageEdgeFor,
   prepareImageForPdf,
 } from "@/lib/pdf/image-source";
 import type { PdfSlotData } from "@/lib/pdf/render-techpack-page";
@@ -113,11 +114,19 @@ export function createGate(
  * The returned fetcher memoises by URL — including in-flight promises and
  * failures — so each unique asset is fetched, resized and encoded exactly once
  * per request no matter how many slots/pages reference it.
+ *
+ * `imageCount` is how many DISTINCT assets the caller is about to ask for. It
+ * only sets the shared pixel budget (`imageEdgeFor`); over-estimating costs
+ * some resolution, under-estimating costs nothing but size. A rough count is
+ * fine — a caller with a handful of images can leave it at the default.
  */
-export function createImageFetcher(): ImageFetcher {
+export function createImageFetcher(imageCount = 1): ImageFetcher {
   const cache = new Map<string, Promise<string | null>>();
   const gate = createGate(FETCH_CONCURRENCY);
   const stats: ImageStats = { embedded: 0, skipped: 0, bytes: 0 };
+  // The document's images share one pixel budget, so a 60-image pack shrinks
+  // its images rather than producing a download the host will refuse to send.
+  const maxEdge = imageEdgeFor(imageCount);
 
   async function fetchOnce(url: string): Promise<string | null> {
     try {
@@ -142,7 +151,7 @@ export function createImageFetcher(): ImageFetcher {
         );
         return null;
       }
-      const prepared = await prepareImageForPdf(buffer, type);
+      const prepared = await prepareImageForPdf(buffer, type, maxEdge);
       // A source the resizer could not convert (an unavailable `sharp`, a
       // decode failure) may still be a format the engine cannot embed.
       if (!PDF_EMBEDDABLE_TYPES.has(prepared.contentType)) return null;
